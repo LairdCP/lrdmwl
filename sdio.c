@@ -578,21 +578,11 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
 static void mwl_sdio_cleanup(struct mwl_priv *priv)
 {
 	int num;
-	struct mwl_sdio_card *card = priv->intf;
 
-	/* Disable Interrupt before tx/rx cleanup */
-	sdio_claim_host(card->func);
-	sdio_release_irq(card->func);
-	sdio_release_host(card->func);
-
-	/* Free Tx bufs */
 	for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++) {
 		skb_queue_purge(&priv->txq[num]);
 		priv->fw_desc_cnt[num] = 0;
 	}
-
-	/* Free Rx bufs */
-	skb_queue_purge(&card->rx_data_q);
 	return;
 }
 
@@ -2227,8 +2217,6 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 	struct mwl_sdio_card *card = priv->intf;
 
 	destroy_workqueue(card->tx_workq);
-
-	tasklet_enable(&priv->rx_task);
 	tasklet_kill(&priv->rx_task);
 
 	if (card) {
@@ -2334,26 +2322,9 @@ err_add_card:
 
 static void mwl_sdio_remove(struct sdio_func *func)
 {
-	struct mwl_priv *priv;
-	struct mwl_sdio_card *card;
-	struct ieee80211_hw *hw;
-
-	card = sdio_get_drvdata(func);
-	if (!card || !card->priv) {
-		pr_err("int: func=%p card=%p priv=%p\n",
-			 func, card, card ? card->priv : NULL);
-		return;
-	}
-	priv = card->priv;
-	hw = priv->hw;
-
-	mwl_wl_deinit(priv);
-
-	mwl_sdio_cleanup(priv);
-	mwl_sdio_unregister_dev(priv);
-
-	ieee80211_free_hw(hw);
-
+	sdio_claim_host(func);
+	sdio_release_irq(func);
+	sdio_release_host(func);
 	return;
 }
 
