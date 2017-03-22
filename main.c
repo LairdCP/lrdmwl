@@ -648,6 +648,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->recv_limit = SYSADPT_RECEIVE_LIMIT;
 
 	priv->is_rx_schedule = false;
+	priv->cmd_timeout = false;
 
 	mutex_init(&priv->fwcmd_mutex);
 	spin_lock_init(&priv->tx_desc_lock);

@@ -17,7 +17,7 @@ mwlwifi_pcie-y += pcie.o
 mwlwifi_pcie-y += pfu.o
 mwlwifi_sdio-y += sdio.o
 #obj-$(CONFIG_MWLWIFI_PCIE) += mwlwifi_pcie.o
-obj-m += mwlwifi_pcie.o
+#obj-m += mwlwifi_pcie.o
 obj-m += mwlwifi_sdio.o
 
 

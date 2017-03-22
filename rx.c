@@ -125,7 +125,7 @@ void mwl_rx_prepare_status(struct mwl_rx_desc *pdesc,
 }
 EXPORT_SYMBOL_GPL(mwl_rx_prepare_status);
 
-#if KERNEL_VERSION(4, 6, 0) > LINUX_VERSION_CODE
+//#if KERNEL_VERSION(4, 6, 0) > LINUX_VERSION_CODE
 void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 					   u8 *sta_addr)
 {
@@ -144,7 +144,7 @@ void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 	spin_unlock_bh(&priv->sta_lock);
 }
 EXPORT_SYMBOL_GPL(mwl_rx_enable_sta_amsdu);
-#endif
+//#endif
 
 struct mwl_vif *mwl_rx_find_vif_bss(struct mwl_priv *priv,
 						  u8 *bssid)
