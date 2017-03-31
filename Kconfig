@@ -1,25 +1,46 @@
-config MWLWIFI
-	tristate "Marvell Avastar 88W88xx/88W89xx PCIe driver (mac80211 compatible)"
-	depends on PCI && MAC80211
-	select FW_LOADER
+config LRDMWL
+	tristate "Laird wireless support based on Marvell chipsets (mac80211 compatible)"
+	depends on MAC80211
 	---help---
 		Select to build the driver supporting the:
 
-		Marvell Wireless Wi-Fi 88W8864 modules
-		Marvell Wireless Wi-Fi 88W8897 modules
-		Marvell Wireless Wi-Fi 88W8964 modules
-		Marvell wireless Wi-Fi 88W8997 modules
+		Laird 60 Series Wi-Fi module
 
 		This driver uses the kernel's mac80211 subsystem.
 
 		If you want to compile the driver as a module (= code which can be
 		inserted in and removed from the running kernel whenever you want),
 		say M here and read <file:Documentation/kbuild/modules.txt>.  The
-		module will be called mwlwifi.
+		module will be called lrdmwl.
 
-		NOTE: Selecting this driver may cause conflict with MWIFIEX driver
-		that also operates on the same part number 88W8897. Users should
-		select either MWIFIEX or MWLWIFI, not both. MWIFIEX is fullmac,
-		supporting more comprehensive client functions for laptops/embedded
-		devices. MWLWIFI is mac80211-based for full AP/Wireless Bridge.
+config LRDMWL_PCIE
+	tristate "Laird wireless support based on Marvell chipsets for PCIE"
+	depends on LRDMWL && PCI
+	select FW_LOADER
+	---help---
+		Select to build the driver supporting the:
 
+		Laird 60 Series Wi-Fi module for PCIE
+
+		This driver uses the kernel's mac80211 subsystem.
+
+		If you want to compile the driver as a module (= code which can be
+		inserted in and removed from the running kernel whenever you want),
+		say M here and read <file:Documentation/kbuild/modules.txt>.  The
+		module will be called lrdmwl_pcie.
+
+ config LRDMWL_SDIO
+	tristate "Laird wireless support based on Marvell chipsets for SDIO"
+	depends on LRDMWL && MMC
+	select FW_LOADER
+	---help---
+		Select to build the driver supporting the:
+
+		Laird 60 Series Wi-Fi module for SDIO
+
+		This driver uses the kernel's mac80211 subsystem.
+
+		If you want to compile the driver as a module (= code which can be
+		inserted in and removed from the running kernel whenever you want),
+		say M here and read <file:Documentation/kbuild/modules.txt>.  The
+		module will be called lrdmwl_sdio.
