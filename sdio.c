@@ -33,7 +33,7 @@
 #ifdef CONFIG_ARCH_BERLIN
 #define MWL_FW_ROOT     "mrvl"
 #else
-#define MWL_FW_ROOT     "mwlwifi"
+#define MWL_FW_ROOT     "lrdmwl"
 #endif
 static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8864] = {
