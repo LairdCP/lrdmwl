@@ -169,7 +169,7 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		return -EIO;
 	}
 
-	if (priv->cmd_timeout) {
+	if (priv->cmd_timeout && cmd != HOSTCMD_CMD_GET_HW_SPEC) {
 		wiphy_debug(priv->hw->wiphy,
 		"Skip CMD(%04xh, %s) - due to prev cmd_timeout\n",
 		cmd, mwl_fwcmd_get_cmd_string(cmd));
@@ -189,17 +189,24 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		/* mwl_hex_dump((char*)cmd_hdr, cmd_hdr->len); */
 		
 		mwl_fwcmd_send_cmd(priv);
-        if(priv->cmd_timeout) {
+		if(priv->cmd_timeout) {
+			priv->in_send_cmd = false;
             return -EIO;
-        }
-		if (priv->if_ops.cmd_resp_wait_completed)
+		}
+		
+		if (priv->if_ops.cmd_resp_wait_completed) {
 			rc = priv->if_ops.cmd_resp_wait_completed(priv,
 				HOSTCMD_RESP_BIT | cmd);
+		}
+		
 		if (rc != 0) {
 			wiphy_err(priv->hw->wiphy, "timeout(# %02x) CMD=0x%04x\n", 
 				pcmd->seq_num, cmd);
 			priv->in_send_cmd = false;
-			priv->cmd_timeout = true;
+			
+			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
+				priv->cmd_timeout = true;
+			}
 
 			return -EIO;
 		}
