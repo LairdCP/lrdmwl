@@ -60,7 +60,7 @@ static int mwl_tx_ring_init(struct mwl_priv *priv);
 static void mwl_tx_ring_cleanup(struct mwl_priv *priv);
 static void mwl_tx_ring_free(struct mwl_priv *priv);
 
-#define MAX_WAIT_FW_COMPLETE_ITERATIONS         4000
+#define MAX_WAIT_FW_COMPLETE_ITERATIONS         8000
 
 static irqreturn_t mwl_pcie_isr(int irq, void *dev_id);
 static struct pci_device_id mwl_pci_id_tbl[] = {
@@ -424,8 +424,9 @@ void mwl_pcie_rx_recv(unsigned long data)
 			goto out;
 		}
 
-		if (curr_hndl->pdesc->channel !=
-		    hw->conf.chandef.chan->hw_value) {
+		if ((curr_hndl->pdesc->channel != hw->conf.chandef.chan->hw_value) &&
+			!(priv->roc.tmr_running && priv->roc.in_progress &&
+				(curr_hndl->pdesc->channel == priv->roc.chan))) {
 			dev_kfree_skb_any(prx_skb);
 			goto out;
 		}
@@ -518,7 +519,7 @@ void mwl_pcie_rx_recv(unsigned long data)
 		}
 #endif
 		memcpy(IEEE80211_SKB_RXCB(prx_skb), &status, sizeof(status));
-		ieee80211_rx(hw, prx_skb);
+		mwl_rx_upload_pkt(hw, prx_skb);
 out:
 		mwl_rx_refill(priv, curr_hndl);
 		curr_hndl->pdesc->rx_control = EAGLE_RXD_CTRL_DRIVER_OWN;
@@ -1105,7 +1106,7 @@ static int mwl_pcie_cmd_resp_wait_completed(struct mwl_priv *priv,
 	unsigned short int_code = 0;
 
 	do {
-        usleep_range(500, 1000);        
+        usleep_range(250, 500);        
 		int_code = le16_to_cpu(*((__le16 *)&priv->pcmd_buf[
 				INTF_CMDHEADER_LEN(INTF_HEADER_LEN)+0]));
 	} while ((int_code != cmd) && (--curr_iteration));
@@ -1159,7 +1160,11 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 	if (tx_info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT) {
 		tx_desc->flags |= MWL_TX_WCB_FLAGS_DONT_ENCRYPT;
 	}
-	
+
+	if (tx_info->flags & IEEE80211_TX_CTL_NO_CCK_RATE) {
+		tx_desc->flags |= MWL_TX_WCB_FLAGS_NO_CCK_RATE;
+	}
+
 	tx_desc->tx_priority = tx_ctrl->tx_priority;
 	tx_desc->qos_ctrl = cpu_to_le16(tx_ctrl->qos_ctrl);
 	tx_desc->pkt_len = cpu_to_le16(tx_skb->len);
@@ -1346,6 +1351,10 @@ void mwl_non_pfu_tx_done(unsigned long data)
 	return;
 }
 
+/* XXX: Tx Rate to be indicated to mac80211 - For KF2 PCIe & SDIO,
+** driver has no way of knowing the rate at which the pkt was Tx'ed.
+** Use hardcoded max value for this
+*/
 static void mwl_tx_complete_skb(struct sk_buff *done_skb,
 		struct _mlan_pcie_data_buf *tx_ring_entry,
 		struct ieee80211_hw *hw)

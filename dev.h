@@ -216,6 +216,7 @@ struct mwl_hw_data {
 
 
 #define MWL_TX_WCB_FLAGS_DONT_ENCRYPT 0x00000001 
+#define MWL_TX_WCB_FLAGS_NO_CCK_RATE  0x00000002
 
 struct mwl_tx_desc {
 	u8 data_rate;
@@ -317,6 +318,15 @@ struct mwl_survey_info {
 	s8 noise;
 };
 
+struct mwl_roc_info {
+	bool in_progress;
+	bool tmr_running;
+	u8 type;
+	u8 duration;
+	u32 chan;
+	struct timer_list roc_timer;
+};
+
 #ifdef CONFIG_DEBUG_FS
 #define MWL_ACCESS_MAC                1
 #define MWL_ACCESS_RF                 2
@@ -409,6 +419,7 @@ struct mwl_priv {
 	unsigned short *pcmd_buf;    /* pointer to CmdBuf (virtual)  */
 	dma_addr_t pphys_cmd_buf;    /* pointer to CmdBuf (physical) */
 	bool in_send_cmd;
+	u8 cmd_seq_num; 	/* CMD Seq Number */
 	bool cmd_timeout;
 	int irq;
 	struct mwl_hw_data hw_data;  /* Adapter HW specific info     */
@@ -435,6 +446,9 @@ struct mwl_priv {
 	int recv_limit;
 
 	struct timer_list period_timer;
+
+	/*Remain on channel info*/
+	struct mwl_roc_info roc;
 
 	/* keep survey information */
 	bool sw_scanning;
@@ -528,6 +542,11 @@ struct mwl_priv {
 	struct sk_buff *tx_buf_list[MLAN_MAX_TXRX_BD];
 	/** Flush indicator for txbd_ring */
 	unsigned char txbd_flush;
+
+	struct workqueue_struct *rx_defer_workq;
+	struct work_struct rx_defer_work;
+	struct sk_buff_head rx_defer_skb_q;
+	bool is_rx_defer_schedule;
 };
 
 struct beacon_info {
@@ -546,6 +565,7 @@ struct beacon_info {
 	u8 *ie_ht_ptr;
 	u8 *ie_vht_ptr;
 	u8 *ie_country_ptr;
+	u8 *ie_wfd_ptr;
 	u8 ie_ssid_len;
 	u8 ie_wmm_len;
 	u8 ie_wsc_len;
@@ -554,6 +574,7 @@ struct beacon_info {
 	u8 ie_ht_len;
 	u8 ie_vht_len;
 	u8 ie_country_len;
+	u8 ie_wfd_len;
 };
 
 struct mwl_vif {
@@ -607,6 +628,9 @@ struct mwl_sta {
 	} ____cacheline_aligned_in_smp;
 	u16 iv16;
 	u32 iv32;
+
+	struct work_struct rc_update_work;
+	struct mwl_priv *mwl_private;
 };
 
 /* DMA header used by firmware and hardware. */
