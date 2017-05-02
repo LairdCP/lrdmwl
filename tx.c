@@ -718,7 +718,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 		*/
 		if (unlikely((ieee80211_is_assoc_req(wh->frame_control) ||
 			ieee80211_is_reassoc_req(wh->frame_control)) &&
-			(hw->conf.chandef.chan->band == IEEE80211_BAND_2GHZ))) {
+			(hw->conf.chandef.chan->band == NL80211_BAND_2GHZ))) {
 			wiphy_err(hw->wiphy, "Setting 20/40 coex cap\n");
 			mwl_tx_set_cap_2040_coex(wh->frame_control, skb);
 		}
