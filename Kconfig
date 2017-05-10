@@ -29,7 +29,7 @@ config LRDMWL_PCIE
 		say M here and read <file:Documentation/kbuild/modules.txt>.  The
 		module will be called lrdmwl_pcie.
 
- config LRDMWL_SDIO
+config LRDMWL_SDIO
 	tristate "Laird wireless support based on Marvell chipsets for SDIO"
 	depends on LRDMWL && MMC
 	select FW_LOADER
