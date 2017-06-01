@@ -275,7 +275,7 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 						    (prop->value + i));
 				priv->tx_pwr_tbl[j].setcap = prop_value;
 				i += 4;
-				for (k = 0; k < SYSADPT_TX_POWER_LEVEL_TOTAL;
+				for (k = 0; k < SYSADPT_TX_GRP_PWR_LEVEL_TOTAL;
 				     k++) {
 					prop_value =
 						be32_to_cpu(*(__be32 *)
@@ -315,7 +315,7 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 					    pwr_tbl->cdd,
 					    pwr_tbl->txantenna2);
 				disp_ptr = disp_buf;
-				for (j = 0; j < SYSADPT_TX_POWER_LEVEL_TOTAL;
+				for (j = 0; j < SYSADPT_TX_GRP_PWR_LEVEL_TOTAL;
 				     j++) {
 					disp_ptr +=
 						sprintf(disp_ptr, "%x ",
