@@ -203,8 +203,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 			wiphy_err(priv->hw->wiphy, "timeout(# %02x) CMD=0x%04x\n", 
 				pcmd->seq_num, cmd);
 			priv->in_send_cmd = false;
-			priv->cmd_timeout = true;
-
+			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
+				priv->cmd_timeout = true;
+			}
 			return -EIO;
 		}
 		presp = (struct hostcmd_header *)&priv->pcmd_buf[
