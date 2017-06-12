@@ -20,6 +20,7 @@
 #include <linux/firmware.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
+#include <linux/gpio.h>
 #include "sysadpt.h"
 #include "dev.h"
 #include "main.h"
@@ -27,6 +28,7 @@
 #include "rx.h"
 #include "tx.h"
 #include "sdio.h"
+#include "hostcmd.h"
 
 #define INTF_HEADER_LEN         4
 
@@ -68,6 +70,10 @@ static void mwl_sdio_rx_recv(unsigned long data);
 static void mwl_sdio_flush_amsdu(unsigned long data);
 static void mwl_sdio_flush_amsdu_no_lock(unsigned long data);
 static int mwl_sdio_read_fw_status(struct mwl_priv *priv, u16 *dat);
+
+static int mwl_sdio_init_gpio(void);
+static int mwl_sdio_release_gpio(void);
+static int mwl_sdio_reset_gpio(struct mwl_priv *priv);
 
 /* Device ID for SD8897 */
 #define SDIO_DEVICE_ID_MARVELL_8897   (0x912d)
@@ -541,7 +547,7 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
 
     /* Wait till the card informs CMD_DNLD_RDY interrupt except
      * for get HW spec command */
-    if (cmd_hdr->command != 0x0003) {
+    if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
         status = wait_event_interruptible_timeout(card->cmd_wait_q.wait,
                         (card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
                         (12 * HZ));
@@ -668,23 +674,18 @@ static int mwl_check_fw_status(struct mwl_priv *priv,
 	u16 firmware_stat = 0;
 	u32 tries;
 
-	wiphy_err(priv->hw->wiphy,
-			"poll_num = %dx\n", poll_num);
+	wiphy_err(priv->hw->wiphy,"poll_num = %dx\n", poll_num);
 
 	/* Wait for firmware initialization event */
 	for (tries = 0; tries < poll_num; tries++) {
-
-	wiphy_err(priv->hw->wiphy,
-			"tries = %dx\n", tries);
+		wiphy_err(priv->hw->wiphy,"tries = %dx\n", tries);
 
 		ret = mwl_sdio_read_fw_status(priv, &firmware_stat);
 		if (ret)
-{
-
-	wiphy_err(priv->hw->wiphy,
-			"ret = %dx\n", ret);
+		{
+			wiphy_err(priv->hw->wiphy,"ret = %dx\n", ret);
 			continue;
-}
+		}
 		wiphy_err(priv->hw->wiphy,
 				"firmware status = 0x%x\n", firmware_stat);
 		if (firmware_stat == FIRMWARE_READY_SDIO) {
@@ -724,6 +725,7 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 	u16 len = 0;
 	u32 txlen, tx_blocks = 0, tries;
 	u32 i = 0;
+	u16 firmware_status = 0;
 
 	fw = priv->fw_ucode;
 	fw_len = fw->size;
@@ -745,6 +747,19 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -ENOMEM;
 
 	sdio_claim_host(card->func);
+
+	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
+
+	if (!ret) {
+		wiphy_debug(priv->hw->wiphy, "Firmware status %X\n", firmware_status);
+		if (firmware_status == FIRMWARE_READY_SDIO) {
+			wiphy_debug(priv->hw->wiphy, "Resetting Firmware\n");
+			ret = mwl_sdio_reset_gpio(priv);
+			if (ret) {
+				goto err_dnld;
+			}
+		}
+	}
 
 	/* Perform firmware data transfer */
 	do {
@@ -2534,8 +2549,97 @@ static struct sdio_driver mwl_sdio_driver = {
 	}
 };
 
-module_sdio_driver(mwl_sdio_driver);
 
+#define LRDMWL_MMC_PROBE_DELAY	150
+static unsigned int reset_pwd_gpio = ARCH_NR_GPIOS;
+
+#ifdef CONFIG_GPIOLIB
+module_param(reset_pwd_gpio, uint, 0644);
+MODULE_PARM_DESC(reset_pwd_gpio, "WIFI CHIP_PWD reset pin GPIO");
+#endif
+
+static int mwl_sdio_init_gpio(void)
+{
+	int ret = 0;
+
+	if (gpio_is_valid(reset_pwd_gpio)) {
+		/* Request the reset GPIO, and assert it to make sure we get a
+		 * clean boot in-case we had a floating input or other issue.
+		 */
+		ret = gpio_request_one(reset_pwd_gpio,
+				       GPIOF_INIT_LOW |
+				       GPIOF_EXPORT_DIR_FIXED,
+				       "WIFI_RESET");
+
+		if (!ret) {
+			msleep(50);  /* Pin must be asserted a min of 50ms  */
+
+			gpio_set_value(reset_pwd_gpio, 1); /* De-assert the pin */
+
+			msleep(LRDMWL_MMC_PROBE_DELAY);
+		}
+		else {
+			pr_info("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
+		}
+	}
+
+	return ret;
+}
+
+static int mwl_sdio_reset_gpio(struct mwl_priv *priv)
+{
+	int ret = -2;
+
+	if (gpio_is_valid(reset_pwd_gpio)) {
+		gpio_set_value(reset_pwd_gpio, 0);
+
+		msleep(50);
+
+		gpio_set_value(reset_pwd_gpio, 1);
+	}
+
+	return ret;
+}
+
+static int mwl_sdio_release_gpio(void)
+{
+	if (gpio_is_valid(reset_pwd_gpio)) {
+		/* Be sure we release GPIO and leave the chip in reset
+		 * when we unload
+		 */
+		gpio_set_value(reset_pwd_gpio, 0);
+		gpio_free(reset_pwd_gpio);
+	}
+
+	return 0;
+}
+
+static int __init mwl_sdio_driver_init(void)
+{
+	int ret = 0;
+
+	ret = mwl_sdio_init_gpio();
+
+	if (!ret) {
+		ret = sdio_register_driver(&mwl_sdio_driver);
+
+		if (ret) {
+			mwl_sdio_release_gpio();
+		}
+	}
+
+	return ret;
+}
+
+static void __exit mwl_sdio_driver_exit(void)
+{
+	sdio_unregister_driver(&mwl_sdio_driver);
+
+	mwl_sdio_release_gpio();
+}
+
+module_init(mwl_sdio_driver_init);
+module_exit(mwl_sdio_driver_exit);
 MODULE_DESCRIPTION(MWL_SDIO_DESC);
 MODULE_VERSION(MWL_SDIODRV_VERSION);
 MODULE_AUTHOR("Marvell Semiconductor, Inc.");
