@@ -83,8 +83,12 @@ static inline void mwl_tx_add_dma_header(struct mwl_priv *priv,
 	if (hdrlen != reqd_hdrlen)
 		skb_push(skb, reqd_hdrlen - hdrlen);
 
-	if (ieee80211_is_data_qos(wh->frame_control))
+	if (ieee80211_is_data_qos(wh->frame_control)) {
 		hdrlen -= IEEE80211_QOS_CTL_LEN;
+
+		if (ieee80211_has_order(wh->frame_control))
+			hdrlen -= IEEE80211_HT_CTL_LEN;
+	}
 
 	if (((priv->host_if == MWL_IF_PCIE) && 
 		IS_PFU_ENABLED(priv->chip_type))) {
@@ -660,9 +664,11 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 	mwl_vif = mwl_dev_get_vif(tx_info->control.vif);
 
 	if (tx_info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ) {
+		if (tx_info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT)
+			mwl_vif->seqno += 0x10;
+
 		wh->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
 		wh->seq_ctrl |= cpu_to_le16(mwl_vif->seqno);
-		mwl_vif->seqno += 0x10;
 	}
 
 	/* Setup firmware control bit fields for each frame type. */
