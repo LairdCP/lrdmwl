@@ -265,6 +265,7 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 			       u32 changed)
 {
 	struct ieee80211_conf *conf = &hw->conf;
+	struct mwl_priv *priv = hw->priv;
 	int rc;
 
 	wiphy_debug(hw->wiphy, "change: 0x%x\n", changed);
@@ -288,23 +289,20 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 
 		if (conf->chandef.chan->band == NL80211_BAND_2GHZ) {
 			mwl_fwcmd_set_apmode(hw, AP_MODE_2_4GHZ_11AC_MIXED);
-			mwl_fwcmd_set_linkadapt_cs_mode(hw,
-							LINK_CS_STATE_CONSERV);
+			mwl_fwcmd_set_linkadapt_cs_mode(hw, LINK_CS_STATE_CONSERV);
 			rate = mwl_rates_24[0].hw_value;
 		} else if (conf->chandef.chan->band == NL80211_BAND_5GHZ) {
 			mwl_fwcmd_set_apmode(hw, AP_MODE_11AC);
-			mwl_fwcmd_set_linkadapt_cs_mode(hw,
-							LINK_CS_STATE_AUTO);
+			mwl_fwcmd_set_linkadapt_cs_mode(hw, LINK_CS_STATE_AUTO);
 			rate = mwl_rates_50[0].hw_value;
 
 			if (conf->radar_enabled)
 				mwl_fwcmd_set_radar_detect(hw, MONITOR_START);
 			else
-				mwl_fwcmd_set_radar_detect(hw,
-							   STOP_DETECT_RADAR);
+				mwl_fwcmd_set_radar_detect(hw, STOP_DETECT_RADAR);
 		}
 
-        rc = mwl_fwcmd_get_survey(hw, 0);
+		rc = mwl_fwcmd_get_survey(hw, 0);
 		if (rc)
 			goto out;
 		rc = mwl_fwcmd_set_rf_channel(hw, conf);
@@ -313,13 +311,16 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 		rc = mwl_fwcmd_use_fixed_rate(hw, rate, rate);
 		if (rc)
 			goto out;
-		rc = mwl_fwcmd_max_tx_power(hw, conf, 0);
+	}
+
+	if (changed & IEEE80211_CONF_CHANGE_POWER) {
+		priv->target_power = conf->power_level;
+	}
+
+	if (changed & (IEEE80211_CONF_CHANGE_POWER | IEEE80211_CONF_CHANGE_CHANNEL)) {
+		rc = mwl_fwcmd_tx_power(hw, conf, priv->target_power);
 		if (rc)
 			goto out;
-		rc = mwl_fwcmd_tx_power(hw, conf, 0);
-		if (rc)
-			goto out;
-		rc = mwl_fwcmd_set_cdd(hw);
 	}
 
 out:

@@ -436,6 +436,7 @@ struct mwl_priv {
 	u8 powinited;
 	u16 max_tx_pow[SYSADPT_TX_GRP_PWR_LEVEL_TOTAL]; /* max tx power (dBm) */
 	u16 target_powers[SYSADPT_TX_GRP_PWR_LEVEL_TOTAL]; /* target powers   */
+	u16 target_power;
 
 	void *intf;
 	struct mwl_if_ops if_ops;
