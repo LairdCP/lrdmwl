@@ -154,6 +154,7 @@ static const struct region_code_mapping regmap[] = {
 	{"TW", 0x80}, /* Taiwan */
 	{"AU", 0x81}, /* Australia */
 	{"CN", 0x90}, /* China (Asia) */
+	{"00", 0xFF}, /* World Mode */
 };
 
 static int mwl_init_firmware(struct mwl_priv *priv, const char *fw_name)
@@ -207,125 +208,21 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 {
 	struct ieee80211_hw *hw;
 	struct mwl_priv *priv;
-#ifdef CONFIG_OF
-	struct property *prop;
-	struct property *fcc_prop = NULL;
-	struct property *etsi_prop = NULL;
-	struct property *specific_prop = NULL;
-	u32 prop_value;
-	int i, j, k;
-#endif
 
 	hw = (struct ieee80211_hw *)wiphy_priv(wiphy);
 	priv = hw->priv;
 
-	if (priv->forbidden_setting) {
-		if (!priv->regulatory_set) {
+	if (!priv->regulatory_set) {
+		priv->regulatory_set = true;
+		regulatory_hint(wiphy, priv->fw_alpha2);
+	} else {
+		if ( memcmp(priv->fw_alpha2, request->alpha2, 2) &&
+			(request->initiator == NL80211_REGDOM_SET_BY_USER)) {
 			regulatory_hint(wiphy, priv->fw_alpha2);
-			priv->regulatory_set = true;
-		} else {
-			if (memcmp(priv->fw_alpha2, request->alpha2, 2))
-				regulatory_hint(wiphy, priv->fw_alpha2);
 		}
-		return;
 	}
 
 	priv->dfs_region = request->dfs_region;
-
-#ifdef CONFIG_OF
-	if (priv->pwr_node) {
-		for_each_property_of_node(priv->pwr_node, prop) {
-			if (strcmp(prop->name, "FCC") == 0)
-				fcc_prop = prop;
-			if (strcmp(prop->name, "ETSI") == 0)
-				etsi_prop = prop;
-			if ((prop->name[0] == request->alpha2[0]) &&
-			    (prop->name[1] == request->alpha2[1]))
-				specific_prop = prop;
-		}
-
-		prop = NULL;
-
-		if (specific_prop) {
-			prop = specific_prop;
-		} else {
-			if (priv->dfs_region == NL80211_DFS_ETSI)
-				prop = etsi_prop;
-			else
-				prop = fcc_prop;
-		}
-
-		if (prop) {
-			/* Reset the whole table */
-			for (i = 0; i < SYSADPT_MAX_NUM_CHANNELS; i++)
-				memset(&priv->tx_pwr_tbl[i], 0,
-				       sizeof(struct mwl_tx_pwr_tbl));
-
-			/* Load related power table */
-			i = 0;
-			j = 0;
-			while (i < prop->length) {
-				prop_value =
-					be32_to_cpu(*(__be32 *)
-						    (prop->value + i));
-				priv->tx_pwr_tbl[j].channel = prop_value;
-				i += 4;
-				prop_value =
-					be32_to_cpu(*(__be32 *)
-						    (prop->value + i));
-				priv->tx_pwr_tbl[j].setcap = prop_value;
-				i += 4;
-				for (k = 0; k < SYSADPT_TX_GRP_PWR_LEVEL_TOTAL;
-				     k++) {
-					prop_value =
-						be32_to_cpu(*(__be32 *)
-							    (prop->value + i));
-					priv->tx_pwr_tbl[j].tx_power[k] =
-						prop_value;
-					i += 4;
-				}
-				prop_value =
-					be32_to_cpu(*(__be32 *)
-						    (prop->value + i));
-				priv->tx_pwr_tbl[j].cdd =
-					(prop_value == 0) ? false : true;
-				i += 4;
-				prop_value =
-					be32_to_cpu(*(__be32 *)
-						    (prop->value + i));
-				priv->tx_pwr_tbl[j].txantenna2 = prop_value;
-				i += 4;
-				j++;
-			}
-
-			/* Dump loaded power tabel */
-			wiphy_debug(hw->wiphy, "regdomain: %s\n", prop->name);
-			for (i = 0; i < SYSADPT_MAX_NUM_CHANNELS; i++) {
-				struct mwl_tx_pwr_tbl *pwr_tbl;
-				char disp_buf[64];
-				char *disp_ptr;
-
-				pwr_tbl = &priv->tx_pwr_tbl[i];
-				if (pwr_tbl->channel == 0)
-					break;
-				wiphy_debug(hw->wiphy,
-					    "Channel: %d: 0x%x 0x%x 0x%x\n",
-					    pwr_tbl->channel,
-					    pwr_tbl->setcap,
-					    pwr_tbl->cdd,
-					    pwr_tbl->txantenna2);
-				disp_ptr = disp_buf;
-				for (j = 0; j < SYSADPT_TX_GRP_PWR_LEVEL_TOTAL;
-				     j++) {
-					disp_ptr +=
-						sprintf(disp_ptr, "%x ",
-							pwr_tbl->tx_power[j]);
-				}
-				wiphy_debug(hw->wiphy, "%s\n", disp_buf);
-			}
-		}
-	}
-#endif
 }
 
 static void mwl_process_of_dts(struct mwl_priv *priv)
@@ -529,50 +426,22 @@ void mwl_set_caps(struct mwl_priv *priv)
 
 static void mwl_regd_init(struct mwl_priv *priv)
 {
-	u8 region_code;
-	int rc;
 	int i;
 
 	/* hook regulatory domain change notification */
 	priv->hw->wiphy->reg_notifier = mwl_reg_notifier;
 
-	if (priv->chip_type == MWL8964)
-		rc = mwl_fwcmd_get_pwr_tbl_sc4(priv->hw,
-					       &priv->device_pwr_tbl[0],
-					       &region_code,
-					       &priv->number_of_channels,
-					       0);
-	else
-		rc = mwl_fwcmd_get_device_pwr_tbl(priv->hw,
-						  &priv->device_pwr_tbl[0],
-						  &region_code,
-						  &priv->number_of_channels,
-						  0);
-	if (rc)
-		return;
-
-	priv->forbidden_setting = true;
-
-	for (i = 1; i < priv->number_of_channels; i++) {
-		if (priv->chip_type == MWL8964)
-			mwl_fwcmd_get_pwr_tbl_sc4(priv->hw,
-						  &priv->device_pwr_tbl[i],
-						  &region_code,
-						  &priv->number_of_channels,
-						  i);
-		else
-			mwl_fwcmd_get_device_pwr_tbl(priv->hw,
-						     &priv->device_pwr_tbl[i],
-						     &region_code,
-						     &priv->number_of_channels,
-						     i);
-	}
-
-	for (i = 0; i < ARRAY_SIZE(regmap); i++)
+	for (i = 0; i < ARRAY_SIZE(regmap); i++) {
 		if (regmap[i].region_code == priv->fw_region_code) {
 			memcpy(priv->fw_alpha2, regmap[i].alpha2, 2);
 			break;
 		}
+	}
+
+	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
+		wiphy_debug(priv->hw->wiphy, "Setting strict regulatory");
+		priv->hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
+	}
 }
 
 static void remain_on_channel_expire(unsigned long data)
