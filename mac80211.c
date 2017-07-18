@@ -263,9 +263,8 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 {
 	struct ieee80211_conf *conf = &hw->conf;
 	struct mwl_priv *priv = hw->priv;
-	int rc;
 
-	wiphy_debug(hw->wiphy, "change: 0x%x\n", changed);
+	int rc;
 
 	if (conf->flags & IEEE80211_CONF_IDLE)
 		rc = mwl_fwcmd_radio_disable(hw);
@@ -283,6 +282,10 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
 		int rate = 0;
+
+//		wiphy_debug(hw->wiphy, "config: c=%x fl=%x pw=%d rd=%d ch=%d\n", 
+//				changed, conf->flags, conf->power_level, 
+//				conf->radar_enabled, conf->chandef.chan->hw_value);
 
 		if (conf->chandef.chan->band == NL80211_BAND_2GHZ) {
 			mwl_fwcmd_set_apmode(hw, AP_MODE_2_4GHZ_11AC_MIXED);
@@ -1029,8 +1032,8 @@ int mwl_mac80211_get_ant(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
 	else
 		*rx_ant = 0x1;
 
-	wiphy_err(hw->wiphy, "get ant: tx=0x%x rx=0x%x\n",
-			*tx_ant, *rx_ant);
+//	wiphy_err(hw->wiphy, "get ant: tx=0x%x rx=0x%x\n",
+//			*tx_ant, *rx_ant);
 	return 0;
 }
 

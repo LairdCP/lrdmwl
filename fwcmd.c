@@ -32,6 +32,7 @@
 #define MAX_WAIT_FW_COMPLETE_ITERATIONS         2000
 #define MAX_WAIT_GET_HW_SPECS_ITERATONS         3
 
+static int log = 5;
 
 static bool mwl_fwcmd_chk_adapter(struct mwl_priv *priv)
 {
@@ -47,79 +48,78 @@ static void mwl_fwcmd_send_cmd(struct mwl_priv *priv)
 	priv->if_ops.send_cmd(priv);
 }
 
+#define ENTRY(a) { case a: ptr= #a; break; }
+
 char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 {
-	int max_entries = 0;
-	int curr_cmd = 0;
+	static char buf[sizeof(unsigned short) +3];
+	char *ptr = buf;
 
-	static const struct {
-		u16 cmd;
-		char *cmd_string;
-	} cmds[] = {
-		{ HOSTCMD_CMD_GET_HW_SPEC, "GetHwSpecifications" },
-		{ HOSTCMD_CMD_SET_HW_SPEC, "SetHwSepcifications" },
-		{ HOSTCMD_CMD_802_11_GET_STAT, "80211GetStat" },
-		{ HOSTCMD_CMD_MAC_REG_ACCESS, "MACRegAccess" },
-		{ HOSTCMD_CMD_BBP_REG_ACCESS, "BBPRegAccess" },
-		{ HOSTCMD_CMD_RF_REG_ACCESS, "RFRegAccess" },
-		{ HOSTCMD_CMD_802_11_RADIO_CONTROL, "80211RadioControl" },
-		{ HOSTCMD_CMD_MEM_ADDR_ACCESS, "MEMAddrAccess" },
-		{ HOSTCMD_CMD_802_11_TX_POWER, "80211TxPower" },
-		{ HOSTCMD_CMD_802_11_RF_ANTENNA, "80211RfAntenna" },
-		{ HOSTCMD_CMD_BROADCAST_SSID_ENABLE, "broadcast_ssid_enable" },
-		{ HOSTCMD_CMD_SET_RF_CHANNEL, "SetRfChannel" },
-		{ HOSTCMD_CMD_SET_AID, "SetAid" },
-		{ HOSTCMD_CMD_SET_INFRA_MODE, "SetInfraMode" },
-		{ HOSTCMD_CMD_802_11_RTS_THSD, "80211RtsThreshold" },
-		{ HOSTCMD_CMD_SET_EDCA_PARAMS, "SetEDCAParams" },
-		{ HOSTCMD_CMD_802_11H_DETECT_RADAR, "80211hDetectRadar" },
-		{ HOSTCMD_CMD_SET_WMM_MODE, "SetWMMMode" },
-		{ HOSTCMD_CMD_HT_GUARD_INTERVAL, "HtGuardInterval" },
-		{ HOSTCMD_CMD_SET_FIXED_RATE, "SetFixedRate" },
-		{ HOSTCMD_CMD_SET_IES, "SetInformationElements" },
-		{ HOSTCMD_CMD_SET_LINKADAPT_CS_MODE, "LinkAdaptCsMode" },
-		{ HOSTCMD_CMD_SET_MAC_ADDR, "SetMacAddr" },
-		{ HOSTCMD_CMD_SET_RATE_ADAPT_MODE, "SetRateAdaptationMode" },
-		{ HOSTCMD_CMD_GET_WATCHDOG_BITMAP, "GetWatchdogBitMap" },
-		{ HOSTCMD_CMD_DEL_MAC_ADDR, "DelMacAddr" },
-		{ HOSTCMD_CMD_BSS_START, "BssStart" },
-		{ HOSTCMD_CMD_AP_BEACON, "SetApBeacon" },
-		{ HOSTCMD_CMD_SET_NEW_STN, "SetNewStation" },
-		{ HOSTCMD_CMD_SET_APMODE, "SetApMode" },
-		{ HOSTCMD_CMD_SET_SWITCH_CHANNEL, "SetSwitchChannel" },
-		{ HOSTCMD_CMD_UPDATE_ENCRYPTION, "UpdateEncryption" },
-		{ HOSTCMD_CMD_BASTREAM, "BAStream" },
-		{ HOSTCMD_CMD_SET_SPECTRUM_MGMT, "SetSpectrumMgmt" },
-		{ HOSTCMD_CMD_SET_POWER_CONSTRAINT, "SetPowerConstraint" },
-		{ HOSTCMD_CMD_SET_COUNTRY_CODE, "SetCountryCode" },
-		{ HOSTCMD_CMD_SET_OPTIMIZATION_LEVEL, "SetOptimizationLevel" },
-		{ HOSTCMD_CMD_SET_MIMOPSHT, "SetMimoPSMode" },
-		{ HOSTCMD_CMD_SET_WSC_IE, "SetWscIE" },
-		{ HOSTCMD_CMD_DWDS_ENABLE, "DwdsEnable" },
-		{ HOSTCMD_CMD_FW_FLUSH_TIMER, "FwFlushTimer" },
-		{ HOSTCMD_CMD_SET_CDD, "SetCDD" },
-		{ HOSTCMD_CMD_CAU_REG_ACCESS, "CAURegAccess" },
-		{ HOSTCMD_CMD_GET_TEMP, "GetTemp" },
-		{ HOSTCMD_CMD_GET_FW_REGION_CODE, "GetFwRegionCode" },
-		{ HOSTCMD_CMD_GET_DEVICE_PWR_TBL, "GetDevicePwrTbl" },
-		{ HOSTCMD_CMD_GET_FW_REGION_CODE_SC4, "GetFwRegionCodeSC4" },
-		{ HOSTCMD_CMD_GET_DEVICE_PWR_TBL_SC4, "GetDevicePwrTblSC4" },
-		{ HOSTCMD_CMD_QUIET_MODE, "QuietMode" },
-		{ HOSTCMD_CMD_802_11_SLOT_TIME, "SetSlotTime" },
-		{ HOSTCMD_CMD_EDMAC_CTRL, "EdMac Control" },
-		{ HOSTCMD_CMD_DUMP_OTP_DATA, "DumpOtpData" },
-		{ HOSTCMD_CMD_SET_PRE_SCAN, "SetPreScan" },
-		{ HOSTCMD_CMD_SET_POST_SCAN, "SetPostScan" },
-		{ HOSTCMD_LRD_REGION_MAPPING, "GetRegionMapping"},
-	};
+	cmd &= ~HOSTCMD_RESP_BIT;
 
-	max_entries = ARRAY_SIZE(cmds);
+	switch (cmd) {
+		ENTRY(HOSTCMD_CMD_GET_HW_SPEC)
+		ENTRY(HOSTCMD_CMD_SET_HW_SPEC)
+		ENTRY(HOSTCMD_CMD_802_11_GET_STAT)
+		ENTRY(HOSTCMD_CMD_MAC_REG_ACCESS)
+		ENTRY(HOSTCMD_CMD_BBP_REG_ACCESS)
+		ENTRY(HOSTCMD_CMD_RF_REG_ACCESS)
+		ENTRY(HOSTCMD_CMD_802_11_RADIO_CONTROL)
+		ENTRY(HOSTCMD_CMD_MEM_ADDR_ACCESS)
+		ENTRY(HOSTCMD_CMD_802_11_TX_POWER)
+		ENTRY(HOSTCMD_CMD_802_11_RF_ANTENNA)
+		ENTRY(HOSTCMD_CMD_BROADCAST_SSID_ENABLE)
+		ENTRY(HOSTCMD_CMD_SET_RF_CHANNEL)
+		ENTRY(HOSTCMD_CMD_SET_AID)
+		ENTRY(HOSTCMD_CMD_SET_INFRA_MODE)
+		ENTRY(HOSTCMD_CMD_802_11_RTS_THSD)
+		ENTRY(HOSTCMD_CMD_SET_EDCA_PARAMS)
+		ENTRY(HOSTCMD_CMD_802_11H_DETECT_RADAR)
+		ENTRY(HOSTCMD_CMD_SET_WMM_MODE)
+		ENTRY(HOSTCMD_CMD_HT_GUARD_INTERVAL)
+		ENTRY(HOSTCMD_CMD_SET_FIXED_RATE)
+		ENTRY(HOSTCMD_CMD_SET_IES)
+		ENTRY(HOSTCMD_CMD_SET_LINKADAPT_CS_MODE)
+		ENTRY(HOSTCMD_CMD_SET_MAC_ADDR)
+		ENTRY(HOSTCMD_CMD_SET_RATE_ADAPT_MODE)
+		ENTRY(HOSTCMD_CMD_GET_WATCHDOG_BITMAP)
+		ENTRY(HOSTCMD_CMD_DEL_MAC_ADDR)
+		ENTRY(HOSTCMD_CMD_BSS_START)
+		ENTRY(HOSTCMD_CMD_AP_BEACON)
+		ENTRY(HOSTCMD_CMD_SET_NEW_STN)
+		ENTRY(HOSTCMD_CMD_SET_APMODE)
+		ENTRY(HOSTCMD_CMD_SET_SWITCH_CHANNEL)
+		ENTRY(HOSTCMD_CMD_UPDATE_ENCRYPTION)
+		ENTRY(HOSTCMD_CMD_BASTREAM)
+		ENTRY(HOSTCMD_CMD_SET_SPECTRUM_MGMT)
+		ENTRY(HOSTCMD_CMD_SET_POWER_CONSTRAINT)
+		ENTRY(HOSTCMD_CMD_SET_COUNTRY_CODE)
+		ENTRY(HOSTCMD_CMD_SET_OPTIMIZATION_LEVEL)
+		ENTRY(HOSTCMD_CMD_SET_MIMOPSHT)
+		ENTRY(HOSTCMD_CMD_SET_WSC_IE)
+		ENTRY(HOSTCMD_CMD_DWDS_ENABLE)
+		ENTRY(HOSTCMD_CMD_FW_FLUSH_TIMER)
+		ENTRY(HOSTCMD_CMD_SET_CDD)
+		ENTRY(HOSTCMD_CMD_CAU_REG_ACCESS)
+		ENTRY(HOSTCMD_CMD_GET_TEMP)
+		ENTRY(HOSTCMD_CMD_GET_FW_REGION_CODE)
+		ENTRY(HOSTCMD_CMD_GET_DEVICE_PWR_TBL)
+		ENTRY(HOSTCMD_CMD_GET_FW_REGION_CODE_SC4)
+		ENTRY(HOSTCMD_CMD_GET_DEVICE_PWR_TBL_SC4)
+		ENTRY(HOSTCMD_CMD_QUIET_MODE)
+		ENTRY(HOSTCMD_CMD_802_11_SLOT_TIME)
+		ENTRY(HOSTCMD_CMD_EDMAC_CTRL)
+		ENTRY(HOSTCMD_CMD_DUMP_OTP_DATA)
+		ENTRY(HOSTCMD_CMD_SET_PRE_SCAN)
+		ENTRY(HOSTCMD_CMD_SET_POST_SCAN)
+		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
-	for (curr_cmd = 0; curr_cmd < max_entries; curr_cmd++)
-		if ((cmd & 0x7fff) == cmds[curr_cmd].cmd)
-			return cmds[curr_cmd].cmd_string;
+		default:
+			sprintf(buf, "02%x", cmd);
+		break;
+	}
 
-	return "unknown";
+	return ptr;
 }
 EXPORT_SYMBOL_GPL(mwl_fwcmd_get_cmd_string);
 
@@ -191,20 +191,33 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		pcmd->seq_num = priv->cmd_seq_num;
 
 		priv->in_send_cmd = true;
-		wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
-			pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+//		wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
+//			pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 		/* mwl_hex_dump((char*)cmd_hdr, cmd_hdr->len); */
 
 		mwl_fwcmd_send_cmd(priv);
-        if(priv->cmd_timeout) {
-            return -EIO;
-        }
-		if (priv->if_ops.cmd_resp_wait_completed)
+		if(priv->cmd_timeout) {
+			if (log) {
+				log--;
+				wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s) timeout\n",
+					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+				mwl_hex_dump((char*)pcmd, pcmd->len);
+			}
+			return -EIO;
+		}
+
+		if (priv->if_ops.cmd_resp_wait_completed) {
 			rc = priv->if_ops.cmd_resp_wait_completed(priv,
 				HOSTCMD_RESP_BIT | cmd);
+		}
+
 		if (rc != 0) {
-			wiphy_err(priv->hw->wiphy, "timeout(# %02x) CMD=0x%04x\n", 
-				pcmd->seq_num, cmd);
+			if (log) {
+				log--;
+				wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n", 
+					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+				mwl_hex_dump((char*)pcmd, pcmd->len);
+			}
 			priv->in_send_cmd = false;
 			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
 				priv->cmd_timeout = true;
@@ -213,8 +226,8 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		}
 		presp = (struct hostcmd_header *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
-		wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
-			presp->seq_num, presp->cmd);
+//		wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
+//			presp->seq_num, presp->cmd);
 		/* mwl_hex_dump((char*)cmd_hdr, cmd_hdr->len); */
 	} else {
 		wiphy_warn(priv->hw->wiphy,

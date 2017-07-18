@@ -489,9 +489,7 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 			  MWL_DRV_NAME);
 		return -ENOMEM;
 	}
-	wiphy_debug(priv->hw->wiphy,
-		    "priv->pcmd_buf = %p\n",
-		    priv->pcmd_buf);
+
 	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 
 	/* Init the tasklet first in case there are tx/rx interrupts */
@@ -690,14 +688,15 @@ static int mwl_check_fw_status(struct mwl_priv *priv,
 			wiphy_err(priv->hw->wiphy,"ret = %dx\n", ret);
 			continue;
 		}
-		wiphy_err(priv->hw->wiphy,
-				"firmware status = 0x%x\n", firmware_stat);
+
 		if (firmware_stat == FIRMWARE_READY_SDIO) {
 			ret = 0;
 			wiphy_err(priv->hw->wiphy,
-			    "firmware status is ready %x\n", firmware_stat);
+			    "firmware status is ready\n");
 			break;
 		} else {
+				wiphy_err(priv->hw->wiphy,
+				"firmware status = 0x%x\n", firmware_stat);
 			msleep(100);
 			ret = -1;
 		}
@@ -1725,9 +1724,9 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 		!(priv->roc.tmr_running && priv->roc.in_progress && 
 			(pdesc->channel == priv->roc.chan))) {
 		dev_kfree_skb_any(prx_skb);
-		wiphy_debug(priv->hw->wiphy,
-			"<= %s(), not accepted channel (%d, %d)\n", __func__,
-			pdesc->channel, hw->conf.chandef.chan->hw_value);
+//		wiphy_debug(priv->hw->wiphy,
+//			"<= %s(), not accepted channel (%d, %d)\n", __func__,
+//			pdesc->channel, hw->conf.chandef.chan->hw_value);
 		return;
 	}
 

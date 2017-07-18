@@ -383,8 +383,6 @@ static inline struct sk_buff *mwl_tx_do_amsdu(struct mwl_priv *priv,
 	sta = (struct ieee80211_sta *)tx_ctrl->sta;
 	sta_info = mwl_dev_get_sta(sta);
 
-	/* printk(KERN_ALERT "%s() skb=%p\n", __FUNCTION__, tx_skb); */
-
 	if (!sta_info->is_amsdu_allowed)
 		return tx_skb;
 
@@ -404,9 +402,6 @@ static inline struct sk_buff *mwl_tx_do_amsdu(struct mwl_priv *priv,
 
 //	wiphy_err(priv->hw->wiphy, "[1]\n");
 	if (tx_skb->len > SYSADPT_AMSDU_ALLOW_SIZE) {
-#if 0
-	pr_alert("(1) len=%d a->num=%d\n", tx_skb->len, amsdu->num);
-#endif
 		if (amsdu->num) {
 			spin_unlock_bh(&sta_info->amsdu_lock);
 			mwl_tx_skb(priv, desc_num, amsdu->skb);
