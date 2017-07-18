@@ -36,7 +36,6 @@
 #include "main.h"
 
 
-#define MWL_DEV_NAME     "Marvell 802.11ac Adapter"
 #define FILE_PATH_LEN    64
 
 static const struct ieee80211_channel mwl_channels_24[] = {
@@ -830,8 +829,8 @@ MODULE_PARM_DESC(EDMAC_Ctrl, "EDMAC CFG: BIT0:2G_enbl, BIT1:5G_enbl, " \
                              "BIT[4:11]: 2G_Offset, BIT[12:19]:5G_offset, " \
                              "BIT[20:27]:Queue_lock");
 
-MODULE_DESCRIPTION(MWL_DESC);
-MODULE_VERSION(MWL_DRV_VERSION);
-MODULE_AUTHOR("Marvell Semiconductor, Inc.");
+MODULE_DESCRIPTION(LRD_DESC);
+MODULE_VERSION(LRD_DRV_VERSION);
+MODULE_AUTHOR(LRD_AUTHOR);
 MODULE_LICENSE("GPL v2");
-MODULE_SUPPORTED_DEVICE(MWL_DEV_NAME);
+

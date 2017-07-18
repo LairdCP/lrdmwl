@@ -26,10 +26,6 @@
 #include <linux/mmc/host.h>
 
 
-#define MWL_SDIODRV_VERSION	 "10.3.0.16-20160105"
-#define MWL_SDIO_DESC        "Marvell 802.11ac Wireless SDIO Network Driver"
-
-
 #define MWL_MAX_FUNC2_REG_NUM	13
 #define MWL_TX_DATA_BUF_SIZE_4K   4096
 
