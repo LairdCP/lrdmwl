@@ -579,6 +579,12 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		goto err_thermal_register;
 	}
 
+	if (priv->host_if == MWL_IF_SDIO) {
+		/* Give SDIO interface some additional time before
+		 * sending first command */
+		msleep(1000);
+	}
+
 	rc = mwl_fwcmd_get_hw_specs(hw);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to get HW specifications\n",
