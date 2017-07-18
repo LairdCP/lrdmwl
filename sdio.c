@@ -30,6 +30,10 @@
 #include "sdio.h"
 #include "hostcmd.h"
 
+#define MWL_SDIODRV_VERSION  "10.3.0.16-20160105"
+#define LRD_SDIO_VERSION     LRD_BLD_VERSION "-" MWL_SDIODRV_VERSION
+#define LRD_SDIO_DESC        "Laird 60 Series Wireless SDIO Network Driver"
+
 #define INTF_HEADER_LEN         4
 
 #ifdef CONFIG_ARCH_BERLIN
@@ -2293,7 +2297,7 @@ static int mwl_sdio_probe(struct sdio_func *func,
 
 	if (!printed_version) {
 		pr_info("<<%s version %s>>",
-			MWL_DESC, MWL_DRV_VERSION);
+			LRD_DESC, LRD_DRV_VERSION);
 		printed_version = true;
 	}
 
@@ -2640,9 +2644,9 @@ static void __exit mwl_sdio_driver_exit(void)
 
 module_init(mwl_sdio_driver_init);
 module_exit(mwl_sdio_driver_exit);
-MODULE_DESCRIPTION(MWL_SDIO_DESC);
-MODULE_VERSION(MWL_SDIODRV_VERSION);
-MODULE_AUTHOR("Marvell Semiconductor, Inc.");
+MODULE_DESCRIPTION(LRD_SDIO_DESC);
+MODULE_VERSION(LRD_SDIO_VERSION);
+MODULE_AUTHOR(LRD_AUTHOR);
 MODULE_LICENSE("GPL v2");
 
 

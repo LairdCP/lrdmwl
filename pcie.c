@@ -18,8 +18,13 @@
 #include "tx.h"
 #include "rx.h"
 
-#define MWL_PCIE_DESC        "Marvell 802.11ac Wireless PCIE Network Driver"
-#define INTF_HEADER_LEN         0
+/*Note PCIEDRV_VERSION define was taken from SDIO since there
+ *     was no PCI version defined in reference driver */
+#define MWL_PCIEDRV_VERSION  "10.3.0.16-20160105"
+#define LRD_PCIE_VERSION     LRD_BLD_VERSION "-" MWL_PCIEDRV_VERSION
+#define LRD_PCIE_DESC        "Laird 60 Series Wireless PCIE Network Driver"
+
+#define INTF_HEADER_LEN      0
 
 #ifdef CONFIG_ARCH_BERLIN
 #define MWL_FW_ROOT     "mrvl"
@@ -1812,7 +1817,7 @@ static int mwl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	if (!printed_version) {
 		pr_info("<<%s version %s>>",
-			MWL_DESC, MWL_DRV_VERSION);
+			LRD_DESC, LRD_DRV_VERSION);
 		printed_version = true;
 	}
 
@@ -1896,8 +1901,9 @@ module_pci_driver(mwl_pci_driver);
 MODULE_DEVICE_TABLE(pci, mwl_pci_id_tbl);
 
 
-MODULE_DESCRIPTION(MWL_PCIE_DESC);
-MODULE_AUTHOR("Marvell Semiconductor, Inc.");
+MODULE_DESCRIPTION(LRD_PCIE_DESC);
+MODULE_VERSION(LRD_PCIE_VERSION);
+MODULE_AUTHOR(LRD_AUTHOR);
 MODULE_LICENSE("GPL v2");
 
 

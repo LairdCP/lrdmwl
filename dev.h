@@ -31,7 +31,10 @@
 
 #define MWL_DRV_NAME     KBUILD_MODNAME
 #define MWL_DRV_VERSION	 "P14-20170714"
-
+#define LRD_DESC         "Laird 60 Series Wireless Network Driver"
+#define LRD_AUTHOR       "Laird Technologies"
+#define LRD_BLD_VERSION  "3.5.5.0"
+#define LRD_DRV_VERSION   LRD_BLD_VERSION "-" MWL_DRV_VERSION 
 
 /* Map to 0x80000000 (Bus control) on BAR0 */
 #define MACREG_REG_H2A_INTERRUPT_EVENTS      0x00000C18 /* (From host to ARM) */
