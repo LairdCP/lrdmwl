@@ -265,6 +265,9 @@ int mwl_fwcmd_config_EDMACCtrl(struct ieee80211_hw *hw, int EDMAC_Ctrl);
 int mwl_fwcmd_set_pre_scan(struct ieee80211_hw *hw);
 int mwl_fwcmd_set_post_scan(struct ieee80211_hw *hw);
 
+int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
+				  struct mwl_region_mapping *map);
+
 void mwl_hex_dump(const void *buf, size_t len);
 
 #endif /* _FWCMD_H_ */

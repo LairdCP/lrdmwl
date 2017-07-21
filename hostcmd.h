@@ -35,8 +35,10 @@
 #define HOSTCMD_CMD_BROADCAST_SSID_ENABLE       0x0050 /* per-vif */
 #define HOSTCMD_CMD_SET_CFG                     0x008f
 
-#define HOSTCMD_CMD_SET_PRE_SCAN              0x0107
-#define HOSTCMD_CMD_SET_POST_SCAN             0x0108
+#define HOSTCMD_LRD_REGION_MAPPING              0x00ff
+
+#define HOSTCMD_CMD_SET_PRE_SCAN                0x0107
+#define HOSTCMD_CMD_SET_POST_SCAN               0x0108
 
 #define HOSTCMD_CMD_SET_RF_CHANNEL              0x010a
 #define HOSTCMD_CMD_SET_AID                     0x010d /* per-vif */
@@ -78,8 +80,8 @@
 #define HOSTCMD_CMD_GET_DEVICE_PWR_TBL_SC4      0x118B
 #define HOSTCMD_CMD_QUIET_MODE                  0x1201
 #define HOSTCMD_CMD_SET_WFD_IE                  0x1202
-#define HOSTCMD_CMD_802_11_SLOT_TIME			0x1203
-#define HOSTCMD_CMD_EDMAC_CTRL					0x1204
+#define HOSTCMD_CMD_802_11_SLOT_TIME            0x1203
+#define HOSTCMD_CMD_EDMAC_CTRL                  0x1204
 
 /* Define general result code for each command */
 #define HOSTCMD_RESULT_OK                       0x0000
@@ -1093,4 +1095,9 @@ struct hostcmd_cmd_post_scan {
 	u8 pload[0];
 } __packed;
 
+struct hostcmd_cmd_region_mapping
+{
+	struct hostcmd_header cmd_hdr;
+	u8  cc[2];
+}__packed;
 #endif /* _HOSTCMD_H_ */
