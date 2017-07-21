@@ -138,24 +138,6 @@ int wmm_turbo = 1;
 /* EDMAC Control */
 int EDMAC_Ctrl = 0x0;
 
-struct region_code_mapping {
-	const char *alpha2;
-	u32 region_code;
-};
-
-static const struct region_code_mapping regmap[] = {
-	{"US", 0x10}, /* US FCC */
-	{"CA", 0x20}, /* Canada */
-	{"FR", 0x30}, /* France */
-	{"ES", 0x31}, /* Spain  */
-	{"FR", 0x32}, /* France */
-	{"JP", 0x40}, /* Japan  */
-	{"TW", 0x80}, /* Taiwan */
-	{"AU", 0x81}, /* Australia */
-	{"CN", 0x90}, /* China (Asia) */
-	{"00", 0xFF}, /* World Mode */
-};
-
 static int mwl_init_firmware(struct mwl_priv *priv, const char *fw_name)
 {
 	int rc = 0;
@@ -425,17 +407,19 @@ void mwl_set_caps(struct mwl_priv *priv)
 
 static void mwl_regd_init(struct mwl_priv *priv)
 {
-	int i;
+	struct mwl_region_mapping map;
 
 	/* hook regulatory domain change notification */
 	priv->hw->wiphy->reg_notifier = mwl_reg_notifier;
 
-	for (i = 0; i < ARRAY_SIZE(regmap); i++) {
-		if (regmap[i].region_code == priv->fw_region_code) {
-			memcpy(priv->fw_alpha2, regmap[i].alpha2, 2);
-			break;
-		}
+	if (mwl_fwcmd_get_region_mapping(priv->hw, &map)) {
+		/* If we fail to retrieve mapping, default to WW */
+		wiphy_err(priv->hw->wiphy,
+			"failed to retrieve region mapping, using world mode\n");
+		memset(map.cc,'0', sizeof(map));
 	}
+
+	memcpy(priv->fw_alpha2, map.cc, sizeof(priv->fw_alpha2));
 
 	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
 		wiphy_debug(priv->hw->wiphy, "Setting strict regulatory");

@@ -171,6 +171,10 @@ enum {
 
 #define CMD_BUF_SIZE     0x4000
 
+struct mwl_region_mapping {
+	u8 cc[2];
+};
+
 struct mwl_chip_info {
 	const char *part_name;
 	const char *fw_image;
