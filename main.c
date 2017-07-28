@@ -136,6 +136,15 @@ static char *cal_data_cfg = cal_file_name;
 /* WMM Turbo mode */
 int wmm_turbo = 1;
 
+static bool mwl_is_world_mode(struct mwl_priv *priv)
+{
+	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
+		return true;
+	}
+
+	return false;
+}
+
 static int mwl_init_firmware(struct mwl_priv *priv, const char *fw_name)
 {
 	int rc = 0;
@@ -374,6 +383,14 @@ void mwl_set_caps(struct mwl_priv *priv)
 		priv->band_24.bitrates = priv->rates_24;
 		priv->band_24.n_bitrates = ARRAY_SIZE(mwl_rates_24);
 
+		if (mwl_is_world_mode(priv)) {
+			/* when configured for WW, firmware does not allow
+			 * channels 12-14 to be configured, remove them here
+			 * to keep ma80211 in synce with FW.
+			 * TODO:  Revisit for Summit Radio */
+			priv->band_24.n_channels -= 3;
+		}
+
 		mwl_set_ht_caps(priv, &priv->band_24);
 		mwl_set_vht_caps(priv, &priv->band_24);
 
@@ -419,7 +436,7 @@ static void mwl_regd_init(struct mwl_priv *priv)
 
 	memcpy(priv->fw_alpha2, map.cc, sizeof(priv->fw_alpha2));
 
-	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
+	if (mwl_is_world_mode(priv)) {
 		wiphy_debug(priv->hw->wiphy, "Setting strict regulatory");
 		priv->hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
 	}
