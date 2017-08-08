@@ -760,15 +760,18 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 	 * to bypass the check.
 	 */
 	if (mwl_vif->beacon_info.ie_wmm_len >
-	    (sizeof(pcmd->start_cmd.wmm_param) + 1))
+	    (sizeof(pcmd->start_cmd.wmm_param) + 1)) {
+		wiphy_err(priv->hw->wiphy,
+		          "WMM IE is longer than radio supports");
 		goto ielenerr;
-
-	if (mwl_vif->beacon_info.ie_rsn_len > sizeof(pcmd->start_cmd.rsn_ie))
-		goto ielenerr;
+	}
 
 	if (mwl_vif->beacon_info.ie_rsn48_len >
-	    sizeof(pcmd->start_cmd.rsn48_ie))
+	    sizeof(pcmd->start_cmd.rsn48_ie)) {
+		wiphy_err(priv->hw->wiphy,
+		          "RSN IE is longer than radio supports");
 		goto ielenerr;
+	}
 
 	pcmd = (struct hostcmd_cmd_ap_beacon *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
@@ -797,8 +800,63 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 	memcpy(&pcmd->start_cmd.wmm_param, mwl_vif->beacon_info.ie_wmm_ptr,
 	       mwl_vif->beacon_info.ie_wmm_len);
 
-	memcpy(&pcmd->start_cmd.rsn_ie, mwl_vif->beacon_info.ie_rsn_ptr,
-	       mwl_vif->beacon_info.ie_rsn_len);
+	if (mwl_vif->beacon_info.ie_rsn_len <= sizeof(pcmd->start_cmd.rsn_ie)) {
+		memcpy(&pcmd->start_cmd.rsn_ie, mwl_vif->beacon_info.ie_rsn_ptr,
+		       mwl_vif->beacon_info.ie_rsn_len);
+	}
+	else {
+		struct rsn_ie *rsn = (struct rsn_ie*)mwl_vif->beacon_info.ie_rsn_ptr;
+		/* assume for now AKM is propery aligned  and adjust below*/
+		u8 *akm = mwl_vif->beacon_info.ie_rsn_ptr +
+		          offsetof(struct rsn_ie, auth_key_cnt);
+		u16 cnt = 0;
+		u16 field_num  = 0;
+		u16 field_size = 0;
+
+		/* WPA IE fixed' portion */
+		memcpy(&pcmd->start_cmd.rsn_ie,
+		        mwl_vif->beacon_info.ie_rsn_ptr,
+		        offsetof(struct rsn_ie, pws_key_cnt));
+
+		/*Pairwise Key fields */
+		memcpy(&pcmd->start_cmd.rsn_ie.pws_key_cnt, rsn->pws_key_cnt,
+		       offsetof(struct rsn_ie, auth_key_cnt) -
+		       offsetof(struct rsn_ie, pws_key_cnt));
+
+		field_size= (offsetof(struct rsn_ie, auth_key_cnt) -
+		             offsetof(struct rsn_ie, pws_key_cipher_list));
+		field_num = field_size >> 2;
+
+		if ((*(u16*)(pcmd->start_cmd.rsn_ie.pws_key_cnt)) > field_num) {
+			/* Remove additional ciphers*/
+			wiphy_warn(priv->hw->wiphy,
+			    "WPA IE cipher list is longer than radio supports, " \
+			    "list will be truncated");
+			cnt = (*(u16*)rsn->pws_key_cnt) - field_num;
+			pcmd->start_cmd.rsn_ie.len -= cnt * 4;
+			akm += cnt * 4;
+			(*(u16*)pcmd->start_cmd.rsn_ie.pws_key_cnt) = field_num;
+		}
+
+		/* AKM fields */
+		memcpy(pcmd->start_cmd.rsn_ie.auth_key_cnt, akm,
+		       sizeof(struct rsn_ie) -
+		       offsetof(struct rsn_ie, auth_key_cnt));
+
+		field_size= sizeof(struct rsn_ie) -
+		            offsetof(struct rsn_ie, auth_key_list);
+		field_num = field_size >> 2;
+
+		if ((*(u16*)(pcmd->start_cmd.rsn_ie.auth_key_cnt)) > field_num) {
+			/* Remove additional AKMs*/
+			wiphy_warn(priv->hw->wiphy,
+			    "WPA IE AKM list is longer than radio supports, " \
+			    "list will be truncated");
+			cnt = (*(u16*)rsn->auth_key_cnt) - field_num;
+			pcmd->start_cmd.rsn_ie.len -= cnt * 4;
+			(*(u16*)pcmd->start_cmd.rsn_ie.auth_key_cnt) = field_num;
+		}
+	}
 
 	memcpy(&pcmd->start_cmd.rsn48_ie, mwl_vif->beacon_info.ie_rsn48_ptr,
 	       mwl_vif->beacon_info.ie_rsn48_len);
