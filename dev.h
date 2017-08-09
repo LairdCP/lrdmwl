@@ -631,6 +631,7 @@ struct mwl_vif {
 	u16 iv16;
 	u32 iv32;
 	s8 keyidx;
+	s8 tx_key_idx;               /*static WEP tx key index */
 };
 
 struct mwl_tx_info {

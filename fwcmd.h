@@ -184,6 +184,10 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif, u8 *addr,
 				 struct ieee80211_key_conf *key);
 
+int mwl_fwcmd_encryption_set_tx_key(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_key_conf *key);
+
 int mwl_fwcmd_encryption_remove_key(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif, u8 *addr,
 				    struct ieee80211_key_conf *key);

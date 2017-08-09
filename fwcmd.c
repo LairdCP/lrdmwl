@@ -194,7 +194,7 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
 			pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 		/* mwl_hex_dump((char*)cmd_hdr, cmd_hdr->len); */
-		
+
 		mwl_fwcmd_send_cmd(priv);
         if(priv->cmd_timeout) {
             return -EIO;
@@ -1002,9 +1002,14 @@ static int mwl_fwcmd_set_country_code(struct mwl_priv *priv,
 }
 
 static int mwl_fwcmd_encryption_set_cmd_info(struct hostcmd_cmd_set_key *cmd,
+					     struct ieee80211_vif *vif,
 					     u8 *addr,
 					     struct ieee80211_key_conf *key)
 {
+	struct mwl_vif *mwl_vif;
+
+	mwl_vif = mwl_dev_get_vif(vif);
+
 	cmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_UPDATE_ENCRYPTION);
 	cmd->cmd_hdr.len = cpu_to_le16(sizeof(*cmd));
 	cmd->key_param.length = cpu_to_le16(sizeof(*cmd) -
@@ -1017,9 +1022,14 @@ static int mwl_fwcmd_encryption_set_cmd_info(struct hostcmd_cmd_set_key *cmd,
 	case WLAN_CIPHER_SUITE_WEP40:
 	case WLAN_CIPHER_SUITE_WEP104:
 		cmd->key_param.key_type_id = cpu_to_le16(KEY_TYPE_ID_WEP);
-		if (key->keyidx == 0)
-			cmd->key_param.key_info =
-				cpu_to_le32(ENCR_KEY_FLAG_WEP_TXKEY);
+		if ( (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)||
+		     (key->keyidx == mwl_vif->tx_key_idx) ) {
+			cmd->key_param.key_info = cpu_to_le32(ENCR_KEY_FLAG_WEP_TXKEY);
+
+			if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
+				mwl_vif->tx_key_idx = key->keyidx;
+			}
+		}
 		break;
 	case WLAN_CIPHER_SUITE_TKIP:
 		cmd->key_param.key_type_id = cpu_to_le16(KEY_TYPE_ID_TKIP);
@@ -2646,7 +2656,7 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->cmd_hdr.macid = mwl_vif->macid;
 
-	rc = mwl_fwcmd_encryption_set_cmd_info(pcmd, addr, key);
+	rc = mwl_fwcmd_encryption_set_cmd_info(pcmd, vif, addr, key);
 	if (rc) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		if (rc != 1)
@@ -2751,7 +2761,7 @@ int mwl_fwcmd_encryption_remove_key(struct ieee80211_hw *hw,
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->cmd_hdr.macid = mwl_vif->macid;
 
-	rc = mwl_fwcmd_encryption_set_cmd_info(pcmd, addr, key);
+	rc = mwl_fwcmd_encryption_set_cmd_info(pcmd, vif, addr, key);
 	if (rc) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		if (rc != 1)
@@ -3623,5 +3633,73 @@ int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
+	return 0;
+}
+
+int mwl_fwcmd_encryption_set_tx_key(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_key_conf *key)
+{
+	struct mwl_priv *priv = hw->priv;
+	struct mwl_vif *mwl_vif;
+	struct hostcmd_cmd_set_key *pcmd;
+	struct hostcmd_cmd_update_encryption *pcmd2;
+	int rc;
+
+	if (key->cipher != WLAN_CIPHER_SUITE_WEP40 &&
+	    key->cipher != WLAN_CIPHER_SUITE_WEP104) {
+		wiphy_err(hw->wiphy, "encryption not support\n");
+		return -ENOTSUPP;
+	}
+
+	mwl_vif = mwl_dev_get_vif(vif);
+
+	pcmd = (struct hostcmd_cmd_set_key *)&priv->pcmd_buf[
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd   = cpu_to_le16(HOSTCMD_CMD_UPDATE_ENCRYPTION);
+	pcmd->cmd_hdr.len   = cpu_to_le16(sizeof(*pcmd));
+	pcmd->cmd_hdr.macid = mwl_vif->macid;
+
+	rc = mwl_fwcmd_encryption_set_cmd_info(pcmd, vif, mwl_vif->bssid, key);
+	if (rc) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		if (rc != 1)
+			wiphy_err(hw->wiphy, "encryption not support\n");
+		return rc;
+	}
+
+	memcpy((void *)&pcmd->key_param.key, key->key, key->keylen);
+	pcmd->action_type = cpu_to_le32(ENCR_ACTION_TYPE_SET_KEY);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+
+	pcmd2 = (struct hostcmd_cmd_update_encryption *)&priv->pcmd_buf[
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	memset(pcmd2, 0x00, sizeof(*pcmd2));
+	pcmd2->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_UPDATE_ENCRYPTION);
+	pcmd2->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd2->cmd_hdr.macid = mwl_vif->macid;
+
+	pcmd2->action_type = cpu_to_le32(ENCR_ACTION_ENABLE_HW_ENCR);
+	pcmd2->action_data[0] = ENCR_TYPE_WEP;
+
+	ether_addr_copy(pcmd2->mac_addr, mwl_vif->bssid);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;
 }
