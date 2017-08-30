@@ -676,27 +676,30 @@ static int mwl_check_fw_status(struct mwl_priv *priv,
 	u16 firmware_stat = 0;
 	u32 tries;
 
-	wiphy_err(priv->hw->wiphy,"poll_num = %dx\n", poll_num);
+	wiphy_info(priv->hw->wiphy,"Checking fw status %d\n", poll_num);
 
 	/* Wait for firmware initialization event */
-	for (tries = 0; tries < poll_num; tries++) {
-		wiphy_err(priv->hw->wiphy,"tries = %dx\n", tries);
-
+	for (tries = 1; tries <= poll_num; tries++) {
 		ret = mwl_sdio_read_fw_status(priv, &firmware_stat);
 		if (ret)
 		{
-			wiphy_err(priv->hw->wiphy,"ret = %dx\n", ret);
+			if(!(tries % 10) ){
+				wiphy_err(priv->hw->wiphy,"fw read failed %d\n", ret);
+			}
 			continue;
 		}
 
 		if (firmware_stat == FIRMWARE_READY_SDIO) {
 			ret = 0;
-			wiphy_err(priv->hw->wiphy,
-			    "firmware status is ready\n");
+			wiphy_info(priv->hw->wiphy,
+			    "firmware is ready %d\n", tries);
 			break;
 		} else {
-				wiphy_err(priv->hw->wiphy,
-				"firmware status = 0x%x\n", firmware_stat);
+			
+			if(!(tries % 10) ){
+				wiphy_info(priv->hw->wiphy,
+				"Waiting on fw status %d 0x%x\n", tries, firmware_stat);
+			}
 			msleep(100);
 			ret = -1;
 		}
@@ -740,9 +743,8 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -1;
 	}
 
-	wiphy_err(priv->hw->wiphy,
-		    "info: downloading FW image (%d bytes)\n",
-		    fw_len);
+	wiphy_info(priv->hw->wiphy,
+		    "downloading FW image (%d bytes)\n", fw_len);
 
 	/* Assume that the allocated buffer is 8-byte aligned */
 	fwbuf = kzalloc(MWL_UPLD_SIZE, GFP_KERNEL);
@@ -754,7 +756,6 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
 
 	if (!ret) {
-		wiphy_debug(priv->hw->wiphy, "Firmware status %X\n", firmware_status);
 		if (firmware_status == FIRMWARE_READY_SDIO) {
 			wiphy_debug(priv->hw->wiphy, "Resetting Firmware\n");
 			ret = mwl_sdio_reset_gpio(priv);
@@ -870,8 +871,8 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 
 	sdio_release_host(card->func);
 
-	wiphy_err(priv->hw->wiphy,
-		    "info: FW download over, size %d bytes\n", offset);
+	wiphy_info(priv->hw->wiphy,
+		    "FW download over, size %d bytes\n", offset);
 
 	ret = mwl_check_fw_status(priv, MAX_FIRMWARE_POLL_TRIES);
 	if (ret) {
@@ -1894,10 +1895,10 @@ static int mwl_write_data_complete(struct mwl_priv *priv,
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 		info->flags |= IEEE80211_TX_STAT_ACK;
 
-	if (ieee80211_is_data(wh->frame_control) ||
-		ieee80211_is_data_qos(wh->frame_control)) {
-//		wiphy_err(hw->wiphy, "fr_data_skb=%p\n", skb);
-}
+		if (ieee80211_is_data(wh->frame_control) ||
+			ieee80211_is_data_qos(wh->frame_control)) {
+//			wiphy_err(hw->wiphy, "fr_data_skb=%p\n", skb);
+		}
 
 		ieee80211_tx_status(hw, skb);
 	}

@@ -246,7 +246,7 @@ int mwl_fwcmd_set_slot_time(struct ieee80211_hw *hw, bool short_slot)
 	struct hostcmd_cmd_802_11_slot_time *pcmd;
 	struct mwl_priv *priv = hw->priv;
 
-	wiphy_err(priv->hw->wiphy, "%s(): short_slot_time=%d\n", __FUNCTION__, short_slot);
+//	wiphy_err(priv->hw->wiphy, "%s(): short_slot_time=%d\n", __FUNCTION__, short_slot);
 
 	pcmd = (struct hostcmd_cmd_802_11_slot_time *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
@@ -1107,7 +1107,6 @@ int mwl_fwcmd_get_hw_specs(struct ieee80211_hw *hw)
 
 	mutex_lock(&priv->fwcmd_mutex);
 
-	wiphy_debug(hw->wiphy, "pcmd = %p\n", pcmd);
 	memset(pcmd, 0x00, sizeof(*pcmd));
 	eth_broadcast_addr(pcmd->permanent_addr);
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_GET_HW_SPEC);
@@ -1123,8 +1122,6 @@ int mwl_fwcmd_get_hw_specs(struct ieee80211_hw *hw)
 		}
 
 		msleep(1000);
-		wiphy_debug(hw->wiphy,
-			    "repeat command = %p\n", pcmd);
 	}
 
 	ether_addr_copy(&priv->hw_data.mac_addr[0], pcmd->permanent_addr);
@@ -3059,7 +3056,7 @@ int mwl_fwcmd_set_optimization_level(struct ieee80211_hw *hw, u8 opt_level)
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->opt_level = opt_level;
 
-	wiphy_err(hw->wiphy, "WMM Turbo=%d\n", opt_level);
+	wiphy_info(hw->wiphy, "WMM Turbo=%d\n", opt_level);
 
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_OPTIMIZATION_LEVEL)) {
@@ -3558,7 +3555,7 @@ int mwl_fwcmd_dump_otp_data(struct ieee80211_hw *hw)
 	otp_data_len = pcmd->cmd_hdr.len - cpu_to_le16(sizeof(*pcmd));
 
 	if (otp_data_len <= MWL_OTP_BUF_SIZE) {
-		wiphy_err(hw->wiphy, "OTP data len = %d\n", otp_data_len);
+		wiphy_info(hw->wiphy, "OTP data len = %d\n", otp_data_len);
 		priv->otp_data.len = otp_data_len;
 		memcpy(priv->otp_data.buf, pcmd->pload, otp_data_len);
 //		mwl_hex_dump(priv->otp_data.buf, priv->otp_data.len);
@@ -3638,7 +3635,7 @@ int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_REGION_MAPPING) ||
 	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
+		wiphy_err(hw->wiphy, "mwl_fwcmd_get_region_mapping failed execution\n");
 		return -EIO;
 	}
 

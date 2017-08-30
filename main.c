@@ -129,7 +129,7 @@ static const struct ieee80211_iface_combination ap_if_comb = {
 				BIT(NL80211_CHAN_WIDTH_160),
 };
 
-static char cal_file_name[] = {"mwlwifi/WlanCalData_ext.conf"};
+static char cal_file_name[] = {"lrdmwl/WlanCalData_ext.conf"};
 /* CAL data config file */
 static char *cal_data_cfg = cal_file_name;
 
@@ -169,12 +169,12 @@ static int mwl_init_firmware(struct mwl_priv *priv, const char *fw_name)
 
 	if (cal_data_cfg && strncmp(cal_data_cfg, "none", strlen("none"))) {
 		
-		wiphy_err(priv->hw->wiphy, 
+		wiphy_info(priv->hw->wiphy, 
 			"Looking for cal file <%s>\n", cal_data_cfg);
 
 		if ((request_firmware((const struct firmware **)&priv->cal_data,
 		     cal_data_cfg, priv->dev)) < 0)
-			wiphy_err(priv->hw->wiphy,
+			wiphy_info(priv->hw->wiphy,
 				  "Cal data request_firmware() failed\n");
 	}
 
