@@ -112,8 +112,8 @@ const struct ieee80211_rate mwl_rates_50[] = {
 
 static const struct ieee80211_iface_limit ap_if_limits[] = {
 	{ .max = SYSADPT_NUM_OF_AP,	.types = BIT(NL80211_IFTYPE_AP) },
-	{ .max = 1,	.types = BIT(NL80211_IFTYPE_STATION) | 
-							BIT(NL80211_IFTYPE_P2P_GO) | 
+	{ .max = 1,	.types = BIT(NL80211_IFTYPE_STATION) |
+							BIT(NL80211_IFTYPE_P2P_GO) |
 							BIT(NL80211_IFTYPE_P2P_CLIENT)},
 };
 
@@ -206,8 +206,8 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 	}
 
 	if (cal_data_cfg) {
-		
-		wiphy_info(priv->hw->wiphy, 
+
+		wiphy_info(priv->hw->wiphy,
 			"Looking for cal file <%s>\n", cal_data_cfg);
 
 		if ((request_firmware((const struct firmware **)&priv->cal_data,
@@ -415,9 +415,9 @@ void mwl_set_caps(struct mwl_priv *priv)
 		priv->band_24.n_bitrates = ARRAY_SIZE(mwl_rates_24);
 
 		if (mwl_is_world_mode(priv)) {
-			/* when configured for WW, firmware does not allow 
+			/* when configured for WW, firmware does not allow
 			 * channels 12-14 to be configured, remove them here
-			 * to keep ma80211 in synce with FW.  
+			 * to keep ma80211 in synce with FW.
 			 * TODO:  Revisit for Summit Radio */
 			priv->band_24.n_channels -= 3;
 		}
@@ -445,7 +445,7 @@ void mwl_set_caps(struct mwl_priv *priv)
 		priv->band_50.n_bitrates = ARRAY_SIZE(mwl_rates_50);
 
 		wiphy_info(hw->wiphy, "%s: Antcfg = %08x(%d) %08x(%d)\n",
-		    __FUNCTION__, priv->ant_tx_bmp,  priv->ant_tx_num, 
+		    __FUNCTION__, priv->ant_tx_bmp,  priv->ant_tx_num,
 		    priv->ant_rx_bmp,  priv->ant_rx_num);
 
 		mwl_set_ht_caps(priv, &priv->band_50);
@@ -486,7 +486,7 @@ static void remain_on_channel_expire(unsigned long data)
 	if (!priv->roc.in_progress)
 		return;
 
-	if ((priv->roc.type == IEEE80211_ROC_TYPE_MGMT_TX) && 
+	if ((priv->roc.type == IEEE80211_ROC_TYPE_MGMT_TX) &&
 		(priv->roc.duration <= NL80211_MIN_REMAIN_ON_CHANNEL_TIME))
 		ieee80211_remain_on_channel_expired(hw);
 }
@@ -774,7 +774,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	priv->fw_device_pwrtbl = false;
 	priv->intf = card;
-	
+
 	priv->is_rx_defer_schedule = false;
 	priv->rx_defer_workq =
 		alloc_workqueue("mwlwifi-rx_defer_workq",
@@ -936,7 +936,8 @@ MODULE_PARM_DESC(wmm_turbo, "WMM Turbo mode 0:Disable 1:Enable");
 module_param(EDMAC_Ctrl, int, 0);
 MODULE_PARM_DESC(EDMAC_Ctrl, "EDMAC CFG: BIT0:2G_enbl, BIT1:5G_enbl, " \
                              "BIT[4:11]: 2G_Offset, BIT[12:19]:5G_offset, " \
-                             "BIT[20:27]:Queue_lock");
+                             "BIT[20:27]:Queue_lock, BIT[28]: MCBC_QLock, " \
+                             "BIT[29]: BCN_DSBL");
 
 module_param(SISO_mode, uint, 0444);
 MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
