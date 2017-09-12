@@ -272,6 +272,10 @@ int mwl_fwcmd_set_post_scan(struct ieee80211_hw *hw);
 int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
 				  struct mwl_region_mapping *map);
 
+int lrd_fwcmd_mfg_start(struct ieee80211_hw *hw, u32 *data);
+int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int len);
+int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw);
+
 void mwl_hex_dump(const void *buf, size_t len);
 
 #endif /* _FWCMD_H_ */

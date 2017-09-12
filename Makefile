@@ -6,6 +6,7 @@ lrdmwl-y			+= fwcmd.o
 lrdmwl-y			+= tx.o
 lrdmwl-y			+= rx.o
 lrdmwl-y			+= isr.o
+lrdmwl-y			+= vendor_cmd.o
 lrdmwl-$(CONFIG_THERMAL)	+= thermal.o
 lrdmwl-$(CONFIG_DEBUG_FS)	+= debugfs.o
 
