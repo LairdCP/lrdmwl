@@ -35,6 +35,7 @@
 #define HOSTCMD_CMD_BROADCAST_SSID_ENABLE       0x0050 /* per-vif */
 #define HOSTCMD_CMD_SET_CFG                     0x008f
 
+#define HOSTCMD_LRD_MFG                         0x00fe
 #define HOSTCMD_LRD_REGION_MAPPING              0x00ff
 
 #define HOSTCMD_CMD_SET_PRE_SCAN                0x0107
@@ -223,6 +224,12 @@ enum mac_type {
 	WL_MAC_TYPE_SECONDARY_CLIENT,
 	WL_MAC_TYPE_PRIMARY_AP,
 	WL_MAC_TYPE_SECONDARY_AP,
+};
+
+enum mfg_action_type {
+	MFG_TYPE_START,
+	MFG_TYPE_WRITE,
+	MFG_TYPE_END,
 };
 
 /* General host command header */
@@ -1100,4 +1107,12 @@ struct hostcmd_cmd_region_mapping
 	struct hostcmd_header cmd_hdr;
 	u8  cc[2];
 }__packed;
+
+struct hostcmd_cmd_mfg
+{
+	struct hostcmd_header cmd_hdr;
+	__le32 action;
+	u8 data[0];
+}__packed;
+
 #endif /* _HOSTCMD_H_ */

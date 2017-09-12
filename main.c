@@ -34,8 +34,7 @@
 #endif
 
 #include "main.h"
-
-
+#include "vendor_cmd.h"
 #define FILE_PATH_LEN    64
 
 static const struct ieee80211_channel mwl_channels_24[] = {
@@ -746,6 +745,8 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	hw->extra_tx_headroom = SYSADPT_TX_MIN_BYTES_HEADROOM;
 	hw->queues = SYSADPT_TX_WMM_QUEUES;
 	INIT_LIST_HEAD(&priv->sta_list);
+
+	lrd_set_vendor_commands(hw->wiphy);
 
 	priv->forbidden_setting = false;
 	priv->regulatory_set = false;

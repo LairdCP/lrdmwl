@@ -3713,3 +3713,93 @@ int mwl_fwcmd_encryption_set_tx_key(struct ieee80211_hw *hw,
 	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;
 }
+
+int lrd_fwcmd_mfg_start(struct ieee80211_hw *hw, u32 *data)
+{
+	struct hostcmd_cmd_mfg *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	pcmd = (struct hostcmd_cmd_mfg*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(u32));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_LRD_MFG);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + sizeof(u32));
+	pcmd->action      = MFG_TYPE_START;
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_MFG) ||
+	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_start failed execution %x\n", pcmd->cmd_hdr.result);
+		return -EIO;
+	}
+
+	if (data ) {
+		*data =  le32_to_cpu(*(u32*)pcmd->data);
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
+
+int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw)
+{
+	struct hostcmd_cmd_mfg *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	pcmd = (struct hostcmd_cmd_mfg*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_LRD_MFG);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + sizeof(u32));
+	pcmd->action      = MFG_TYPE_END;
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_MFG) ||
+	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed execution %x\n", pcmd->cmd_hdr.result);
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+
+	return 0;
+}
+
+int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int data_len)
+{
+	struct hostcmd_cmd_mfg *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	//Validate data is multiple of 32
+	if ((data_len % sizeof(u32))) {
+		return -EINVAL;
+	}
+
+	pcmd = (struct hostcmd_cmd_mfg*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + data_len);
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_LRD_MFG);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + data_len);
+	pcmd->action      = MFG_TYPE_WRITE;
+
+	memcpy(pcmd->data, data, data_len);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_MFG) ||
+	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_write failed execution %x\n", pcmd->cmd_hdr.result);
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
