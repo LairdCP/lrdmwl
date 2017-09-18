@@ -54,12 +54,11 @@ static const struct ieee80211_channel mwl_channels_24[] = {
 	{ .band = NL80211_BAND_2GHZ, .center_freq = 2484, .hw_value = 14, },
 };
 
-static const struct ieee80211_rate mwl_rates_24[] = {
+const struct ieee80211_rate mwl_rates_24[] = {
 	{ .bitrate = 10, .hw_value = 2, },
 	{ .bitrate = 20, .hw_value = 4, },
 	{ .bitrate = 55, .hw_value = 11, },
 	{ .bitrate = 110, .hw_value = 22, },
-	{ .bitrate = 220, .hw_value = 44, },
 	{ .bitrate = 60, .hw_value = 12, },
 	{ .bitrate = 90, .hw_value = 18, },
 	{ .bitrate = 120, .hw_value = 24, },
@@ -98,7 +97,7 @@ static const struct ieee80211_channel mwl_channels_50[] = {
 	{ .band = NL80211_BAND_5GHZ, .center_freq = 5825, .hw_value = 165, },
 };
 
-static const struct ieee80211_rate mwl_rates_50[] = {
+const struct ieee80211_rate mwl_rates_50[] = {
 	{ .bitrate = 60, .hw_value = 12, },
 	{ .bitrate = 90, .hw_value = 18, },
 	{ .bitrate = 120, .hw_value = 24, },

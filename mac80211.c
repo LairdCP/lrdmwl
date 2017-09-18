@@ -27,32 +27,8 @@
 
 #define MAX_AMPDU_ATTEMPTS  5
 
-static const struct ieee80211_rate mwl_rates_24[] = {
-	{ .bitrate = 10, .hw_value = 2, },
-	{ .bitrate = 20, .hw_value = 4, },
-	{ .bitrate = 55, .hw_value = 11, },
-	{ .bitrate = 110, .hw_value = 22, },
-	{ .bitrate = 220, .hw_value = 44, },
-	{ .bitrate = 60, .hw_value = 12, },
-	{ .bitrate = 90, .hw_value = 18, },
-	{ .bitrate = 120, .hw_value = 24, },
-	{ .bitrate = 180, .hw_value = 36, },
-	{ .bitrate = 240, .hw_value = 48, },
-	{ .bitrate = 360, .hw_value = 72, },
-	{ .bitrate = 480, .hw_value = 96, },
-	{ .bitrate = 540, .hw_value = 108, },
-};
-
-static const struct ieee80211_rate mwl_rates_50[] = {
-	{ .bitrate = 60, .hw_value = 12, },
-	{ .bitrate = 90, .hw_value = 18, },
-	{ .bitrate = 120, .hw_value = 24, },
-	{ .bitrate = 180, .hw_value = 36, },
-	{ .bitrate = 240, .hw_value = 48, },
-	{ .bitrate = 360, .hw_value = 72, },
-	{ .bitrate = 480, .hw_value = 96, },
-	{ .bitrate = 540, .hw_value = 108, },
-};
+extern struct ieee80211_rate mwl_rates_24[];
+extern struct ieee80211_rate mwl_rates_50[];
 
 static void mwl_mac80211_tx(struct ieee80211_hw *hw,
 			    struct ieee80211_tx_control *control,
