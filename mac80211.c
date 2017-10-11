@@ -164,6 +164,7 @@ static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
 	/* Setup driver private area. */
 	mwl_vif = mwl_dev_get_vif(vif);
 	memset(mwl_vif, 0, sizeof(*mwl_vif));
+	mwl_vif->vif = vif;
 	mwl_vif->macid = macid;
 	mwl_vif->seqno = 0;
 	mwl_vif->is_hw_crypto_enabled = false;
@@ -1054,10 +1055,111 @@ mwl_mac80211_set_default_uni_key (struct ieee80211_hw *hw,
 	return;
 }
 
+#ifdef CONFIG_PM
+int mwl_mac80211_suspend(struct ieee80211_hw *hw,
+					struct cfg80211_wowlan *wowlan)
+{
+	struct mwl_priv *priv = hw->priv;
+	int i=0;
+
+	if (wowlan) {
+		priv->wow.wowlanCond = 0;
+
+		if (wowlan->any) {
+			priv->wow.wowlanCond |= MWL_WOW_CND_RX_DATA;
+			priv->wow.wowlanCond |= MWL_WOW_CND_DISCONNECT;
+		}
+		else {
+			if (wowlan->disconnect) {
+				priv->wow.wowlanCond |= MWL_WOW_CND_DISCONNECT;
+			}
+
+			if (wowlan->nd_config) {
+				priv->wow.wowlanCond |= MWL_WOW_CND_AP_INRANGE;
+
+				/* channel set */
+				priv->wow.channelCnt = min(sizeof(priv->wow.channels), 
+				                           wowlan->nd_config->n_channels);
+
+				for (i=0; i < priv->wow.channelCnt; i++) {
+					priv->wow.channels[i] = wowlan->nd_config->channels[i]->hw_value;
+				}
+
+				/* ssid */
+				priv->wow.ssidListCnt = min((int)ARRAY_SIZE(priv->wow.ssidList), 
+				                            wowlan->nd_config->n_ssids);
+
+				for (i = 0; i < priv->wow.ssidListCnt; i++) {
+					priv->wow.ssidList[i].ssidLen = min(wowlan->nd_config->ssids[i].ssid_len,
+					                                    (u8)sizeof(priv->wow.ssidList[i].ssid));
+					memcpy(priv->wow.ssidList[i].ssid, wowlan->nd_config->ssids[i].ssid, 
+					       priv->wow.ssidList[i].ssidLen);
+				}
+			}
+		}
+
+		if (priv->wow.state & WOWLAN_STATE_ENABLED) {
+			/*Configure AP detect settings */
+			if (priv->wow.wowlanCond & MWL_WOW_CND_AP_INRANGE) {
+				mwl_fwcmd_wowlan_apinrange_config(priv->hw);
+			}
+
+			/* Clear results */
+			memset(&priv->wow.results, 0, sizeof(struct mwl_wowlan_result));
+
+			/* Enable the Host Sleep */
+			mwl_fwcmd_hostsleep_control(priv->hw, 1, priv->wow.wowlanCond);
+			priv->wow.state |= WOWLAN_STATE_HS_SENT;
+		}
+	}
+
+	return 0;
+}
+
+int mwl_mac80211_resume(struct ieee80211_hw *hw)
+{
+	struct mwl_priv *priv = hw->priv;
+
+	if (priv->wow.state & WOWLAN_STATE_ENABLED) {
+		/* Disable the Host Sleep */
+		mwl_fwcmd_hostsleep_control(priv->hw, 0, priv->wow.wowlanCond);
+		priv->wow.state &= ~WOWLAN_STATE_HS_SENT;
+
+		if (priv->wow.results.mwl_vif) {
+			/* wow event report before resume call */
+			lrd_report_wowlan_wakeup(priv);
+		}
+		else {
+			priv->wow.jiffies = jiffies;
+		}
+	}
+
+	return 0;
+}
+
+void mwl_mac80211_set_wakeup(struct ieee80211_hw *hw, bool enabled)
+{
+	struct mwl_priv *priv = hw->priv;
+
+	if (enabled) {
+		priv->wow.state |=  WOWLAN_STATE_ENABLED;
+	}
+	else {
+		priv->wow.state &=  ~WOWLAN_STATE_ENABLED;
+	}
+}
+
+#endif
+
 const struct ieee80211_ops mwl_mac80211_ops = {
 	.tx                         = mwl_mac80211_tx,
 	.start                      = mwl_mac80211_start,
 	.stop                       = mwl_mac80211_stop,
+#ifdef CONFIG_PM
+	.suspend                    = mwl_mac80211_suspend,
+	.resume                     = mwl_mac80211_resume,
+	.set_wakeup                 = mwl_mac80211_set_wakeup,
+#endif
 	.add_interface              = mwl_mac80211_add_interface,
 	.remove_interface           = mwl_mac80211_remove_interface,
 	.config                     = mwl_mac80211_config,

@@ -21,6 +21,7 @@
 #include "sysadpt.h"
 #include "dev.h"
 #include "rx.h"
+#include "main.h"
 
 
 #define DECRYPT_ERR_MASK        0x80
@@ -45,6 +46,7 @@
 #define RX_RATE_INFO_LONG_INTERVAL    0
 #define RX_RATE_INFO_SHORT_INTERVAL   1
 
+struct mwl_vif *mwl_find_first_sta(struct mwl_priv *priv);
 
 void mwl_rx_prepare_status(struct mwl_rx_desc *pdesc,
 					 struct ieee80211_rx_status *status)
@@ -125,13 +127,47 @@ void mwl_rx_prepare_status(struct mwl_rx_desc *pdesc,
 }
 EXPORT_SYMBOL_GPL(mwl_rx_prepare_status);
 
+static inline unsigned int lrd_elapsed_jiffies_msecs(unsigned long start)
+{
+	unsigned long end = jiffies;
+
+	if (end >= start)
+		return jiffies_to_msecs(end - start);
+
+	return jiffies_to_msecs(end + (ULONG_MAX - start) + 1);
+}
+
 void mwl_handle_rx_event(struct ieee80211_hw *hw,
 					struct mwl_rx_event_data *rx_evnt)
 {
+	struct mwl_priv *priv = hw->priv;
+
 	if (rx_evnt->event_id == MWL_RX_EVNT_RADAR_DETECT) {
 		wiphy_info(hw->wiphy, "radar detected by firmware\n");
 		ieee80211_radar_detected(hw);
 	}
+	else if (rx_evnt->event_id == MWL_RX_EVENT_LINKLOSS_DETECT) {
+		wiphy_info(hw->wiphy, "link loss detected by firmware\n");
+	}
+#ifdef CONFIG_PM
+	else if (rx_evnt->event_id == MWL_RX_EVENT_WOW_LINKLOSS_DETECT ||
+	         rx_evnt->event_id == MWL_RX_EVENT_WOW_AP_DETECT ||
+	         rx_evnt->event_id == MWL_RX_EVENT_WOW_RX_DETECT) {
+		/* WOW event */
+		priv->wow.results.reason  = rx_evnt->event_id;
+
+		/* ToDo:  Revisit when FW support returing interface */
+		priv->wow.results.mwl_vif = mwl_find_first_sta(priv);
+
+		if (priv->wow.state & WOWLAN_STATE_HS_SENT) {
+			/* report event after resume notificaiton is sent */
+		}
+		else if (priv->wow.jiffies && lrd_elapsed_jiffies_msecs(priv->wow.jiffies) < WOWLAN_JIFFIES) {
+			priv->wow.jiffies = 0;
+			lrd_report_wowlan_wakeup(priv);
+		}
+	}
+#endif
 }
 EXPORT_SYMBOL_GPL(mwl_handle_rx_event);
 
@@ -154,6 +190,23 @@ void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 }
 EXPORT_SYMBOL_GPL(mwl_rx_enable_sta_amsdu);
 
+
+struct mwl_vif *mwl_find_first_sta(struct mwl_priv *priv)
+{
+	struct mwl_vif *mwl_vif;
+
+	spin_lock_bh(&priv->vif_lock);
+		list_for_each_entry(mwl_vif, &priv->vif_list, list) {
+		if (NL80211_IFTYPE_STATION == mwl_vif->vif->type) {
+			spin_unlock_bh(&priv->vif_lock);
+			return mwl_vif;
+		}
+	}
+
+	spin_unlock_bh(&priv->vif_lock);
+
+	return NULL;
+}
 
 struct mwl_vif *mwl_rx_find_vif_bss(struct mwl_priv *priv,
 						  u8 *bssid)

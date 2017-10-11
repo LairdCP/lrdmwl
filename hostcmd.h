@@ -83,6 +83,8 @@
 #define HOSTCMD_CMD_SET_WFD_IE                  0x1202
 #define HOSTCMD_CMD_802_11_SLOT_TIME            0x1203
 #define HOSTCMD_CMD_EDMAC_CTRL                  0x1204
+#define HOSTCMD_CMD_HOSTSLEEP_CTRL              0x1205
+#define HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG       0x1206
 
 /* Define general result code for each command */
 #define HOSTCMD_RESULT_OK                       0x0000
@@ -180,8 +182,19 @@
 #define EDMAC_2G_THRESHOLD_OFFSET_SHIFT		0x4
 #define EDMAC_5G_THRESHOLD_OFFSET_MASK		0x000FF000
 #define EDMAC_5G_THRESHOLD_OFFSET_SHIFT		0xC
-#define EDMAC_QLOCK_BITMAP_MASK			0x0FF00000
+#define EDMAC_QLOCK_BITMAP_MASK			0x3FF00000
 #define EDMAC_QLOCK_BITMAP_SHIFT		0x14
+
+#define WOWLAN_WAKE_BITMAP_LINK_LOST         0x0001
+#define WOWLAN_WAKE_BITMAP_AP_INRANGE        0x0002
+#define WOWLAN_WAKE_BITMAP_RX_UCAST_DATA     0x0100
+#define WOWLAN_WAKE_BITMAP_RX_UCAST_DATA_ANY 0x0200
+#define WOWLAN_WAKE_BITMAP_PATTERN_MATCH     0x0400
+#define WOWLAN_WAKE_BITMAP_MAGIC_PACKET      0x0800
+
+#define WOWLAN_WAKEUP_GAP_CFG                  1000 /*msec*/
+#define WOWLAN_WAKEUP_SIGNAL_TYPE_HIGH          0x1
+#define WOWLAN_WAKEUP_SIGNAL_TYPE_LOW           0x0
 
 enum {
 	WL_DISABLE = 0,
@@ -425,6 +438,36 @@ struct hostcmd_cmd_802_11_rf_antenna {
 	struct hostcmd_header cmd_hdr;
 	__le16 action;
 	__le16 antenna_mode;     /* Number of antennas or 0xffff(diversity) */
+} __packed;
+
+struct wowlan_apinrange_addrIe {
+	u8 address[ETH_ALEN];
+} __packed;
+
+struct wowlan_apinrange_ssidIe {
+	u8 ssidLen;
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
+}__packed;
+
+/* HOSTCMD_CMD_HOSTSLEEP_CTRL */
+struct hostcmd_cmd_hostsleep_ctrl {
+	struct hostcmd_header cmd_hdr;
+	u8 HSActivateReq; /*1: HS activate 0: HS deactivate*/
+	u8 wakeupSignal;  /*1: active high   0: active low */
+	__le16 gap;       /* Time in ms Fw needs to wait before sending Evnts or frames */
+	__le32 wakeUpConditions;
+	__le32 options;  /* For debug purpose Only*/ 
+} __packed;
+
+/* HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG */
+struct hostcmd_cmd_wowlan_ap_inrange_cfg {
+	struct hostcmd_header cmd_hdr;
+	__le16 chanListCnt;
+	__le16 addrIeList_Len;
+	__le16 ssidIeList_Len;
+	u8 chanList[SYSADPT_MAX_NUM_CHANNELS];
+	struct wowlan_apinrange_addrIe addrIeList;
+	struct wowlan_apinrange_ssidIe ssidIeList;
 } __packed;
 
 /* HOSTCMD_CMD_802_11_PS_MODE */

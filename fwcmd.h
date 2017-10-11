@@ -276,6 +276,11 @@ int lrd_fwcmd_mfg_start(struct ieee80211_hw *hw, u32 *data);
 int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int len);
 int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw);
 
+#ifdef CONFIG_PM
+int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCond);
+int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw);
+#endif
+
 void mwl_hex_dump(const void *buf, size_t len);
 
 #endif /* _FWCMD_H_ */

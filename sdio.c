@@ -392,6 +392,9 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	int rc;
 	u8 sdio_ireg;
 	int num;
+#ifdef CONFIG_PM
+	mmc_pm_flag_t pm_flag = 0;
+#endif
 
 	priv->host_if = MWL_IF_SDIO;
 	card->priv = priv;
@@ -501,6 +504,14 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 		skb_queue_head_init(&priv->txq[num]);
 
 	mwl_sdio_init_irq(priv);
+
+#ifdef CONFIG_PM
+	//check WOW
+	pm_flag = sdio_get_host_pm_caps(func);
+	if ((pm_flag & MMC_PM_KEEP_POWER)) {
+		priv->wow.capable = true;
+	}
+#endif
 
 	return 0;
 }
@@ -953,7 +964,6 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	wiphy_info(hw->wiphy,
 		"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
 
-	mwl_hex_dump((u8 *)host_event, host_event->length);
 	switch (event_id) {
 	case SDEVENT_RADAR_DETECT:
 		ieee80211_radar_detected(hw);
@@ -2389,6 +2399,34 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	return;
 }
 
+static void lrd_sdio_host_fixups(struct sdio_func *func)
+{
+	struct mwl_sdio_card *card;
+
+	if (func) {
+		card = sdio_get_drvdata(func);
+
+		if (card && mmc_card_is_removable(func->card->host)) {
+			card->caps_fixups |= MMC_CAP_NONREMOVABLE;
+
+			func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+		}
+	}
+
+}
+static void lrd_sdio_remove_host_fixups(struct sdio_func *func)
+{
+	struct mwl_sdio_card *card;
+
+	if (func) {
+		card = sdio_get_drvdata(func);
+
+		if (card && card->caps_fixups) {
+			func->card->host->caps &= ~(card->caps_fixups);
+		}
+	}
+}
+
 static int mwl_sdio_suspend(struct device *dev)
 {
 	struct sdio_func *func = dev_to_sdio_func(dev);
@@ -2397,10 +2435,11 @@ static int mwl_sdio_suspend(struct device *dev)
 	mmc_pm_flag_t pm_flag = 0;
 	int ret = 0;
 
+
 	if (func) {
 		pm_flag = sdio_get_host_pm_caps(func);
-		pr_info("cmd: %s: suspend: PM flag = 0x%x\n",
-			 sdio_func_id(func), pm_flag);
+		pr_info("cmd: %s: suspend: PM flag = 0x%x\n", sdio_func_id(func), pm_flag);
+
 		if (!(pm_flag & MMC_PM_KEEP_POWER)) {
 			pr_err("%s: cannot remain alive while host is"\
 				" suspended\n", sdio_func_id(func));
@@ -2419,22 +2458,13 @@ static int mwl_sdio_suspend(struct device *dev)
 
 	priv = card->priv;
 
-	/* Enable the Host Sleep */
-	/*if (!mwifiex_enable_hs(adapter)) {
-		//mwifiex_dbg(adapter, ERROR,
-		//	    "cmd: failed to suspend\n");
-		wiphy_err(priv->hw->wiphy, "cmd: failed to suspend\n");
-		card->hs_enabling = false;
-		return -EFAULT;
-	}*/
-
 	wiphy_debug(priv->hw->wiphy, "cmd: suspend with MMC_PM_KEEP_POWER\n");
-
 	ret = sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+
+	lrd_sdio_host_fixups(func);
 
 	/* Indicate device suspended */
 	card->is_suspended = true;
-	card->hs_enabling = false;
 
 	return ret;
 }
@@ -2467,12 +2497,10 @@ static int mwl_sdio_resume(struct device *dev)
 		return 0;
 	}
 
+	lrd_sdio_remove_host_fixups(func);
+
 	card->is_suspended = false;
 
-	/* Disable Host Sleep */
-	/*mwifiex_cancel_hs(mwifiex_get_priv(adapter, MWIFIEX_BSS_ROLE_STA),
-			MWIFIEX_SYNC_CMD);
-	*/
 
 	return 0;
 }
