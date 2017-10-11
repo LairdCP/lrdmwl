@@ -965,14 +965,16 @@ static void mwl_mac80211_sw_scan_complete(struct ieee80211_hw *hw,
 {
 	struct mwl_priv *priv = hw->priv;
 
+
 	priv->sw_scanning = false;
 	mwl_fwcmd_set_post_scan(hw);
 
-	/* Start BA timer again */
-	setup_timer(&priv->period_timer, timer_routine, (unsigned long)priv);
-	mod_timer(&priv->period_timer, jiffies +
-		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
-
+	if (!priv->shutdown) {
+		/* Start BA timer again */
+		setup_timer(&priv->period_timer, timer_routine, (unsigned long)priv);
+		mod_timer(&priv->period_timer, jiffies +
+			msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
+	}
 }
 
 int mwl_mac80211_set_ant(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)

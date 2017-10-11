@@ -481,6 +481,7 @@ struct mwl_priv {
 	int recv_limit;
 
 	struct timer_list period_timer;
+	bool shutdown;
 
 	/*Remain on channel info*/
 	struct mwl_roc_info roc;

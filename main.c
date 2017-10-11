@@ -685,6 +685,8 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 
+	priv->shutdown = true;
+
 	del_timer_sync(&priv->period_timer);
 
 	ieee80211_unregister_hw(hw);
