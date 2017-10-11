@@ -127,6 +127,17 @@ static const struct ieee80211_iface_combination ap_if_comb = {
 				BIT(NL80211_CHAN_WIDTH_160),
 };
 
+#ifdef CONFIG_PM
+static const struct wiphy_wowlan_support lrd_wowlan_support = {
+	.flags = WIPHY_WOWLAN_ANY        |
+	         WIPHY_WOWLAN_DISCONNECT |
+	         WIPHY_WOWLAN_NET_DETECT,
+	.n_patterns = 0,
+	.pattern_min_len = 0,
+	.pattern_max_len = 0,
+};
+#endif
+
 static char cal_file_name[] = {"lrdmwl/WlanCalData_ext.conf"};
 /* CAL data config file */
 static char *cal_data_cfg = cal_file_name;
@@ -525,6 +536,14 @@ static int mwl_wl_init(struct mwl_priv *priv)
 
 	hw->wiphy->max_remain_on_channel_duration = 5000;
 
+#ifdef CONFIG_PM
+	if (priv->wow.capable) {
+		hw->wiphy->wowlan = &lrd_wowlan_support;
+		/* max number of SSIDs device can scan for */
+		hw->wiphy->max_sched_scan_ssids = 1;
+	}
+#endif
+
 	hw->vif_data_size = sizeof(struct mwl_vif);
 	hw->sta_data_size = sizeof(struct mwl_sta);
 
@@ -818,6 +837,70 @@ err_alloc_hw:
 	return rc;
 }
 EXPORT_SYMBOL_GPL(mwl_add_card);
+
+#ifdef CONFIG_PM
+void lrd_report_wowlan_wakeup(struct mwl_priv *priv)
+{
+	int x = 0;
+	struct ieee80211_vif *vif;
+	struct ieee80211_hw *hw = priv->hw;
+	struct cfg80211_wowlan_wakeup    wakeup;
+	struct cfg80211_wowlan_nd_info  *nd_info  = NULL;
+	struct cfg80211_wowlan_nd_match *nd_match = NULL;;
+
+	memset(&wakeup, 0, sizeof(wakeup));
+	wakeup.pattern_idx = -1;
+
+	switch( priv->wow.results.reason) {
+		case MWL_RX_EVENT_WOW_LINKLOSS_DETECT:
+			wiphy_info(hw->wiphy, "WOW link loss detected\n");
+			wakeup.disconnect = true;
+		break;
+
+		case MWL_RX_EVENT_WOW_AP_DETECT:
+			nd_info = kzalloc(sizeof(struct cfg80211_wowlan_nd_info)    +
+			                  sizeof(struct cfg80211_wowlan_nd_match *) +
+			                  sizeof(struct cfg80211_wowlan_nd_match)   +
+			                  sizeof(u32) * priv->wow.results.n_channels,
+			                  GFP_KERNEL);
+
+			wiphy_info(hw->wiphy, "WOW AP in range detected\n");
+
+			/* Fill in nd_info */
+			nd_info->n_matches = 1;
+			nd_match =  (struct cfg80211_wowlan_nd_match*)((u8*)nd_info->matches + sizeof(struct cfg80211_wowlan_nd_info*));
+			nd_info->matches[0] = nd_match;
+
+			/* nd_match -> ssid*/
+			nd_match->ssid.ssid_len = min(priv->wow.ssidList[0].ssidLen, (u8)sizeof(nd_match->ssid.ssid));
+			memcpy(nd_match->ssid.ssid, priv->wow.ssidList[0].ssid, nd_match->ssid.ssid_len);
+
+			/* nd_match->channels */
+			nd_match->n_channels = priv->wow.results.n_channels;
+			for (x = 0; x < nd_match->n_channels; x++) {
+				nd_match->channels[x] = priv->wow.results.channels[x];
+			}
+
+			wakeup.net_detect = nd_info;
+		break;
+
+		case MWL_RX_EVENT_WOW_RX_DETECT:
+			/* We are treating the packet as a flag, rather than data */
+			wiphy_info(hw->wiphy, "WOW rx packet detected\n");
+			wakeup.packet = (void*)true;
+			wakeup.packet_80211 = true;
+			wakeup.packet_present_len = 0;
+		break;
+	}
+
+	vif = priv->wow.results.mwl_vif->vif;
+	ieee80211_report_wowlan_wakeup(vif, &wakeup, GFP_KERNEL);
+
+	if (nd_info) {
+		kfree(nd_info);
+	}
+}
+#endif
 
 module_param(cal_data_cfg, charp, 0);
 MODULE_PARM_DESC(cal_data_cfg, "Calibration data file name");

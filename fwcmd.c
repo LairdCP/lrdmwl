@@ -112,6 +112,8 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_DUMP_OTP_DATA)
 		ENTRY(HOSTCMD_CMD_SET_PRE_SCAN)
 		ENTRY(HOSTCMD_CMD_SET_POST_SCAN)
+		ENTRY(HOSTCMD_CMD_HOSTSLEEP_CTRL)
+		ENTRY(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)
 		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
 		default:
@@ -177,9 +179,12 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	}
 
 	if (priv->cmd_timeout) {
-		wiphy_debug(priv->hw->wiphy,
-		"Skip CMD(%04xh, %s) - due to prev cmd_timeout\n",
-		cmd, mwl_fwcmd_get_cmd_string(cmd));
+		if (log) {
+			log--;
+			wiphy_debug(priv->hw->wiphy,
+			"Skip CMD(%04xh, %s) - due to prev cmd_timeout\n",
+			cmd, mwl_fwcmd_get_cmd_string(cmd));
+		}
 		return -EIO;
 	}
 
@@ -1614,6 +1619,85 @@ int mwl_fwcmd_powersave_EnblDsbl(struct ieee80211_hw *hw,
 
 	return 0;
 }
+
+#ifdef CONFIG_PM
+int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCond)
+{
+	struct mwl_priv *priv = hw->priv;
+	struct hostcmd_cmd_hostsleep_ctrl *pcmd;
+
+ 	pcmd = (struct hostcmd_cmd_hostsleep_ctrl *)&priv->pcmd_buf[
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_HOSTSLEEP_CTRL);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->HSActivateReq = enbl;
+	pcmd->gap = cpu_to_le16(WOWLAN_WAKEUP_GAP_CFG);
+	pcmd->wakeupSignal = priv->wow.wakeSigType;
+	pcmd->wakeUpConditions = cpu_to_le32(wakeupCond);
+	//Enable below code only for debug purpose.
+	//It allows FW to unconditionally upload Rxed beacons.
+	//pcmd->options = cpu_to_le32(0x1);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_HOSTSLEEP_CTRL)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_PM
+int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw)
+{
+	struct mwl_priv *priv = hw->priv;
+	struct hostcmd_cmd_wowlan_ap_inrange_cfg *pcmd;
+
+	pcmd = (struct hostcmd_cmd_wowlan_ap_inrange_cfg *)&priv->pcmd_buf[
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0, sizeof(*pcmd));
+
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+
+	if (priv->wow.addrListCnt) {
+		/* Fill in BSSID */
+		pcmd->addrIeList_Len = cpu_to_le16(priv->wow.addrListCnt * sizeof(struct wowlan_apinrange_addrIe));
+		memcpy(&pcmd->addrIeList, priv->wow.addrList, sizeof(struct wowlan_apinrange_addrIe));
+	}
+
+	if (priv->wow.ssidListCnt) {
+		/* Fill in SSID */
+		pcmd->ssidIeList_Len = cpu_to_le16(priv->wow.ssidListCnt * sizeof(struct wowlan_apinrange_ssidIe));
+		memcpy(&pcmd->ssidIeList, priv->wow.ssidList, sizeof(struct wowlan_apinrange_ssidIe));
+	}
+
+	/* Fill in the list of channels to scan */
+	pcmd->chanListCnt = cpu_to_le16(min(priv->wow.channelCnt, (u16)sizeof(pcmd->chanList)));
+	memcpy(pcmd->chanList, priv->wow.channels, le16_to_cpu(pcmd->chanListCnt));
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+
+	return 0;
+} 
+#endif
 
 int mwl_fwcmd_set_roc_channel(struct ieee80211_hw *hw,
 					struct ieee80211_channel *channel)

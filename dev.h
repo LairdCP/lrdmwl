@@ -303,7 +303,13 @@ struct mwl_rx_hndl {
 	struct mwl_rx_hndl *pnext;
 };
 
-#define MWL_RX_EVNT_RADAR_DETECT      0x2
+#define MWL_RX_EVNT_RADAR_DETECT         0x2
+#define MWL_RX_EVENT_LINKLOSS_DETECT     0x3
+
+#define MWL_RX_EVENT_WOW_LINKLOSS_DETECT 0x4
+#define MWL_RX_EVENT_WOW_AP_DETECT       0x5
+#define MWL_RX_EVENT_WOW_RX_DETECT       0x6
+
 
 struct mwl_rx_event_data {
 	u16 event_id;
@@ -353,6 +359,55 @@ struct mwl_roc_info {
 	u32 chan;
 	struct timer_list roc_timer;
 };
+
+#ifdef CONFIG_PM
+/* Wakeup conditions */
+#define MWL_WOW_CND_DISCONNECT   0x0001
+#define MWL_WOW_CND_AP_INRANGE   0x0002
+#define MWL_WOW_CND_RX_DATA      0x0100
+
+struct mwl_wowlan_apinrange_addrIe {
+	u8 address[ETH_ALEN];
+};
+
+struct mwl_wowlan_apinrange_ssidIe {
+	u8 ssidLen;
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
+};
+
+/* WOW states */
+#define WOWLAN_STATE_ENABLED     0x01
+#define WOWLAN_STATE_HS_SENT     0x80
+
+#define WOWLAN_JIFFIES           1000 /* msec */
+
+struct mwl_wowlan_result {
+	u32 reason;               /* reason for waking */
+	struct mwl_vif *mwl_vif;  /* interface which generated wakeup*/
+	u16 n_channels;
+	u32 channels[SYSADPT_MAX_NUM_CHANNELS];
+};
+
+struct mwl_wowlan_cfg {
+	u8  capable;           /* Indicates host controller is capable of 
+	                          supporting wow */
+	u8  state;             /* indicates state of wow */
+	u8  wakeSigType;       /* Data sheet indicate this is to be active low */
+	u32 wowlanCond;        /* Conditions to wake for */
+	unsigned long jiffies; /* time resume called */
+
+	/* Configuration data */
+	u16 addrListCnt;
+	u16 ssidListCnt;
+	u16 channelCnt;
+	u8  channels[SYSADPT_MAX_NUM_CHANNELS];
+	struct mwl_wowlan_apinrange_addrIe addrList[1];
+	struct mwl_wowlan_apinrange_ssidIe ssidList[1];
+
+	/* Result data */
+	struct mwl_wowlan_result results;
+};
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 #define MWL_ACCESS_MAC                1
@@ -483,6 +538,9 @@ struct mwl_priv {
 	struct timer_list period_timer;
 	bool shutdown;
 
+#ifdef CONFIG_PM
+	struct mwl_wowlan_cfg wow;
+#endif
 	/*Remain on channel info*/
 	struct mwl_roc_info roc;
 
@@ -617,6 +675,7 @@ struct beacon_info {
 
 struct mwl_vif {
 	struct list_head list;
+	struct ieee80211_vif *vif;
 	int macid;       /* Firmware macid for this vif.  */
 	u16 seqno;       /* Non AMPDU sequence number assigned by driver.  */
 	struct {         /* Saved WEP keys */
