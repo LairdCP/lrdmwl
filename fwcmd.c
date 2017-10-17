@@ -304,7 +304,8 @@ static int mwl_fwcmd_802_11_radio_control(struct mwl_priv *priv,
 	return 0;
 }
 
-static int mwl_fwcmd_get_tx_powers(struct mwl_priv *priv, u16 *powlist, 
+#if 0
+static int mwl_fwcmd_get_tx_powers(struct mwl_priv *priv, u16 *powlist,
 				   u8 action, u16 ch, u16 band, u16 width, u16 sub_ch)
 {
 	struct hostcmd_cmd_802_11_tx_power *pcmd;
@@ -337,6 +338,7 @@ static int mwl_fwcmd_get_tx_powers(struct mwl_priv *priv, u16 *powlist,
 
 	return 0;
 }
+#endif
 
 static int mwl_fwcmd_set_tx_powers(struct mwl_priv *priv, u16 txpow[],
 				   u8 action, u16 ch, u16 band,
