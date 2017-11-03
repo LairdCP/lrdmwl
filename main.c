@@ -138,9 +138,8 @@ static const struct wiphy_wowlan_support lrd_wowlan_support = {
 };
 #endif
 
-static char cal_file_name[] = {"lrdmwl/WlanCalData_ext.conf"};
 /* CAL data config file */
-static char *cal_data_cfg = cal_file_name;
+static char *cal_data_cfg;
 
 /* WMM Turbo mode */
 int wmm_turbo = 1;
@@ -154,29 +153,50 @@ static bool mwl_is_world_mode(struct mwl_priv *priv)
 	return false;
 }
 
-static int mwl_init_firmware(struct mwl_priv *priv, const char *fw_name)
+bool mfg_mode = false;
+
+static int mwl_init_firmware(struct mwl_priv *priv)
 {
 	int rc = 0;
+        const char *fw_name;
 
-	rc = request_firmware((const struct firmware **)&priv->fw_ucode,
-			      fw_name, priv->dev);
+        fw_name = priv->if_ops.mwl_chip_tbl.mfg_image;
+
+	rc = request_firmware_direct((const struct firmware **)&priv->fw_ucode,
+				      fw_name, priv->dev);
 
 	if (rc) {
-		wiphy_err(priv->hw->wiphy,
-			  "%s: cannot find firmware image <%s>\n",
+		rc = 0;
+
+		fw_name = priv->if_ops.mwl_chip_tbl.fw_image;
+
+		rc = request_firmware((const struct firmware **)&priv->fw_ucode,
+				       fw_name, priv->dev);
+
+		if (rc) {
+			wiphy_err(priv->hw->wiphy,
+				  "%s: cannot find firmware image <%s>\n",
 				  MWL_DRV_NAME, fw_name);
-		goto err_load_fw;
+
+			goto err_load_fw;
+		}
+
+	} else {
+		mfg_mode = true;
 	}
+
+	wiphy_info(priv->hw->wiphy, "%s: found firmware image <%s>\n",
+		   MWL_DRV_NAME, fw_name);
 
 	rc = priv->if_ops.prog_fw(priv);
 	if (rc) {
 		wiphy_err(priv->hw->wiphy,
-			  "%s: cannot download firmware image <%s>\n",
-			  MWL_DRV_NAME, fw_name);
+			  "%s: cannot download firmware image <%s> %x\n",
+			  MWL_DRV_NAME, fw_name, rc);
 		goto err_download_fw;
 	}
 
-	if (cal_data_cfg && strncmp(cal_data_cfg, "none", strlen("none"))) {
+	if (cal_data_cfg) {
 		
 		wiphy_info(priv->hw->wiphy, 
 			"Looking for cal file <%s>\n", cal_data_cfg);
@@ -727,7 +747,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 {
 	struct ieee80211_hw *hw;
 	struct mwl_priv *priv;
-	const char *fw_name;
 	int rc = 0;
 	int tx_num = 4, rx_num = 4;
 
@@ -777,9 +796,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	SET_IEEE80211_DEV(hw, priv->dev);
 
-	fw_name = if_ops->mwl_chip_tbl.fw_image;
-
-	rc = mwl_init_firmware(priv, fw_name);
+	rc = mwl_init_firmware(priv);
 
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to initialize firmware\n",
