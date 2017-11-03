@@ -178,6 +178,7 @@ struct mwl_region_mapping {
 struct mwl_chip_info {
 	const char *part_name;
 	const char *fw_image;
+	const char *mfg_image;
 	int antenna_tx;
 	int antenna_rx;
 };

@@ -54,6 +54,7 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8997] = {
 		.part_name	= "88W8997",
 		.fw_image	= MWL_FW_ROOT"/88W8997_pcie.bin",
+		.mfg_image	= MWL_FW_ROOT"/88W8997_pcie_mfg.bin",
 		.antenna_tx	= ANTENNA_TX_2,
 		.antenna_rx	= ANTENNA_RX_2,
 	},

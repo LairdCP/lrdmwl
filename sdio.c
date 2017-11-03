@@ -57,6 +57,7 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8997] = {
 		.part_name	= "88W8997",
 		.fw_image	= MWL_FW_ROOT"/88W8997_sdio.bin",
+		.mfg_image	= MWL_FW_ROOT"/88W8997_sdio_mfg.bin",
 		.antenna_tx	= ANTENNA_TX_2,
 		.antenna_rx	= ANTENNA_RX_2,
 	},
@@ -759,8 +760,11 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 
 	/* Assume that the allocated buffer is 8-byte aligned */
 	fwbuf = kzalloc(MWL_UPLD_SIZE, GFP_KERNEL);
-	if (!fwbuf)
+	if (!fwbuf) {
+                wiphy_err(priv->hw->wiphy,
+                            "buffer allocation failed\n");
 		return -ENOMEM;
+	}
 
 	sdio_claim_host(card->func);
 
