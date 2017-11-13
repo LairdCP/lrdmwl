@@ -1504,47 +1504,42 @@ int mwl_fwcmd_tx_power(struct ieee80211_hw *hw,
 	return rc;
 }
 
-int mwl_fwcmd_rf_antenna(struct ieee80211_hw *hw, int dir, int antenna)
+int mwl_fwcmd_rf_antenna(struct ieee80211_hw *hw, int ant_tx_bmp,
+		int ant_rx_bmp)
 {
 	struct mwl_priv *priv = hw->priv;
-	struct hostcmd_cmd_802_11_rf_antenna *pcmd;
+	struct hostcmd_cmd_802_11_rf_antenna_v2 *pcmd;
+	int retval = 0;
 
-	pcmd = (struct hostcmd_cmd_802_11_rf_antenna *)&priv->pcmd_buf[
+	pcmd = (struct hostcmd_cmd_802_11_rf_antenna_v2 *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
 
 	memset(pcmd, 0x00, sizeof(*pcmd));
-	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_802_11_RF_ANTENNA);
+	pcmd->cmd_hdr.cmd =
+		cpu_to_le16(HOSTCMD_CMD_802_11_RF_ANTENNA_V2);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 
-	pcmd->action = cpu_to_le16(dir);
+	pcmd->action = 0;
 
-	if (dir == WL_ANTENNATYPE_RX) {
-		u8 rx_antenna = 4; /* if auto, set 4 rx antennas in SC2 */
+	pcmd->ant_tx_bmp = cpu_to_le16(ant_tx_bmp);
+	pcmd->ant_rx_bmp = cpu_to_le16(ant_rx_bmp);
 
-		if (antenna != 0)
-			pcmd->antenna_mode = cpu_to_le16(antenna);
-		else
-			pcmd->antenna_mode = cpu_to_le16(rx_antenna);
-	} else {
-		u8 tx_antenna = 0xf; /* if auto, set 4 tx antennas in SC2 */
-
-		if (antenna != 0)
-			pcmd->antenna_mode = cpu_to_le16(antenna);
-		else
-			pcmd->antenna_mode = cpu_to_le16(tx_antenna);
-	}
-
-	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_RF_ANTENNA)) {
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_RF_ANTENNA_V2)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
+	if (pcmd->cmd_hdr.result != 0) {
+		wiphy_err(hw->wiphy, "Command Rejected by FW\n");
+		retval = -EINVAL;
+	}
+
 	mutex_unlock(&priv->fwcmd_mutex);
 
-	return 0;
+	return retval;
 }
 
 int mwl_fwcmd_broadcast_ssid_enable(struct ieee80211_hw *hw,

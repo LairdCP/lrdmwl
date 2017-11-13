@@ -1,6 +1,13 @@
 #ifndef _MAIN_H_
 #define _MAIN_H_
 
+#define MWL_TXANT_BMP_TO_NUM(bmp)	\
+(((bmp & MWL_8997_DEF_TX_ANT_BMP) == MWL_8997_DEF_TX_ANT_BMP)? 2 : 1)
+
+#define MWL_RXANT_BMP_TO_NUM(bmp)	\
+(((bmp & MWL_8997_DEF_RX_ANT_BMP) == MWL_8997_DEF_RX_ANT_BMP)? 2 : 1)
+
+
 /* WMM Turbo mode */
 extern int wmm_turbo;
 

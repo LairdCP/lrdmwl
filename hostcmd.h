@@ -32,6 +32,7 @@
 #define HOSTCMD_CMD_802_11_TX_POWER             0x001f
 #define HOSTCMD_CMD_802_11_RF_ANTENNA           0x0020
 #define HOSTCMD_CMD_802_11_PS_MODE              0x0021
+#define HOSTCMD_CMD_802_11_RF_ANTENNA_V2        0x0022
 #define HOSTCMD_CMD_BROADCAST_SSID_ENABLE       0x0050 /* per-vif */
 #define HOSTCMD_CMD_SET_CFG                     0x008f
 
@@ -434,10 +435,11 @@ struct hostcmd_cmd_802_11_tx_power {
 } __packed;
 
 /* HOSTCMD_CMD_802_11_RF_ANTENNA */
-struct hostcmd_cmd_802_11_rf_antenna {
+struct hostcmd_cmd_802_11_rf_antenna_v2 {
 	struct hostcmd_header cmd_hdr;
 	__le16 action;
-	__le16 antenna_mode;     /* Number of antennas or 0xffff(diversity) */
+	__le16 ant_tx_bmp;     /* Number of antennas or 0xffff(diversity) */
+	__le16 ant_rx_bmp;     /* Number of antennas or 0xffff(diversity) */
 } __packed;
 
 struct wowlan_apinrange_addrIe {
