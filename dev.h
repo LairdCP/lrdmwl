@@ -120,8 +120,8 @@
 #define ANTENNA_TX_3                        7
 #define ANTENNA_RX_4_AUTO                   0
 #define ANTENNA_RX_1                        1
-#define ANTENNA_RX_2                        2
-#define ANTENNA_RX_3                        3
+#define ANTENNA_RX_2                        3
+#define ANTENNA_RX_3                        7
 
 /* Band related constants */
 #define BAND_24_CHANNEL_NUM                 14
@@ -490,8 +490,12 @@ struct mwl_priv {
 	struct device_node *pwr_node;
 	bool disable_2g;
 	bool disable_5g;
-	int antenna_tx;
-	int antenna_rx;
+
+	int ant_tx_bmp;
+	int ant_tx_num; // Num of ant in use
+
+	int ant_rx_bmp;
+	int ant_rx_num;	// Num of ant in use
 
 	struct mwl_tx_pwr_tbl tx_pwr_tbl[SYSADPT_MAX_NUM_CHANNELS];
 	bool cdd;
