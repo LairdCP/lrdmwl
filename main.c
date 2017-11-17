@@ -37,6 +37,8 @@
 #include "vendor_cmd.h"
 #define FILE_PATH_LEN    64
 
+#define NOT_LRD_HW  0x214C5244
+
 static const struct ieee80211_channel mwl_channels_24[] = {
 	{ .band = NL80211_BAND_2GHZ, .center_freq = 2412, .hw_value = 1, },
 	{ .band = NL80211_BAND_2GHZ, .center_freq = 2417, .hw_value = 2, },
@@ -158,9 +160,9 @@ bool mfg_mode = false;
 static int mwl_init_firmware(struct mwl_priv *priv)
 {
 	int rc = 0;
-        const char *fw_name;
+	const char *fw_name;
 
-        fw_name = priv->if_ops.mwl_chip_tbl.mfg_image;
+	fw_name = priv->if_ops.mwl_chip_tbl.mfg_image;
 
 	rc = request_firmware_direct((const struct firmware **)&priv->fw_ucode,
 				      fw_name, priv->dev);
@@ -435,8 +437,9 @@ void mwl_set_caps(struct mwl_priv *priv)
 		priv->band_50.bitrates = priv->rates_50;
 		priv->band_50.n_bitrates = ARRAY_SIZE(mwl_rates_50);
 
-		wiphy_err(hw->wiphy, "%s: Antcfg = %08x(%d) %08x(%d)\n", __FUNCTION__, priv->ant_tx_bmp,  priv->ant_tx_num, 
-priv->ant_rx_bmp,  priv->ant_rx_num);
+		wiphy_info(hw->wiphy, "%s: Antcfg = %08x(%d) %08x(%d)\n",
+		    __FUNCTION__, priv->ant_tx_bmp,  priv->ant_tx_num, 
+		    priv->ant_rx_bmp,  priv->ant_rx_num);
 
 		mwl_set_ht_caps(priv, &priv->band_50);
 		mwl_set_vht_caps(priv, &priv->band_50);
@@ -622,6 +625,18 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			  MWL_DRV_NAME);
 		goto err_wl_init;
 	}
+	else {
+		if (priv->hw_data.fw_release_num == NOT_LRD_HW) {
+			wiphy_err(hw->wiphy,
+			     "Detected non Laird hardware: 0x%x\n", priv->hw_data.fw_release_num);
+			rc = -ENODEV;
+			goto err_wl_init;
+		}
+		else {
+			wiphy_info(hw->wiphy,
+			     "firmware version: 0x%x\n", priv->hw_data.fw_release_num);
+		}
+	}
 
 	if (priv->if_ops.register_dev)
 		rc = priv->if_ops.register_dev(priv);
@@ -643,9 +658,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 
 	SET_IEEE80211_PERM_ADDR(hw, priv->hw_data.mac_addr);
 
-	wiphy_info(hw->wiphy,
-		   "firmware version: 0x%x\n", priv->hw_data.fw_release_num);
-
 	rc = mwl_fwcmd_set_cfg_data(hw, cpu_to_le16(2));
 
 	if(rc) {
@@ -653,7 +665,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			MWL_DRV_NAME);
 //		goto err_wl_init;
 	}
-
 
 	if (priv->chip_type == MWL8964)
 		rc = mwl_fwcmd_get_fw_region_code_sc4(hw,
@@ -709,7 +720,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 err_wl_init:
 err_thermal_register:
 
-	wiphy_err(hw->wiphy, "init fail\n");
+	wiphy_err(hw->wiphy, "init fail %x\n", rc);
 
 	return rc;
 }

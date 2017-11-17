@@ -318,7 +318,7 @@ static int mwl_init_sdio_ioport(struct mwl_priv *priv)
 	card->ioport |= ((reg & 0xff) << 16);
 
 cont:
-	wiphy_err(priv->hw->wiphy, "%s: SDIO FUNC1 IO port: %#x\n",
+	wiphy_info(priv->hw->wiphy, "%s: SDIO FUNC1 IO port: %#x\n",
 		MWL_DRV_NAME, card->ioport);
 
 	/* Set Host interrupt reset to read to clear */
@@ -761,8 +761,7 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 	/* Assume that the allocated buffer is 8-byte aligned */
 	fwbuf = kzalloc(MWL_UPLD_SIZE, GFP_KERNEL);
 	if (!fwbuf) {
-                wiphy_err(priv->hw->wiphy,
-                            "buffer allocation failed\n");
+		wiphy_err(priv->hw->wiphy,"buffer allocation failed\n");
 		return -ENOMEM;
 	}
 
