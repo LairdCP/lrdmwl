@@ -3406,7 +3406,7 @@ int mwl_fwcmd_reg_cau(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 }
 EXPORT_SYMBOL_GPL(mwl_fwcmd_reg_cau);
 
-int mwl_fwcmd_get_temp(struct ieee80211_hw *hw, u32 *temp)
+int mwl_fwcmd_get_temp(struct ieee80211_hw *hw, s32 *temp)
 {
 	struct mwl_priv *priv = hw->priv;
 	struct hostcmd_cmd_get_temp *pcmd;

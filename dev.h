@@ -605,7 +605,7 @@ struct mwl_priv {
 	struct thermal_cooling_device *cdev;
 	u32 throttle_state;
 	u32 quiet_period;
-	int temperature;
+	s32 temperature;
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_phy;

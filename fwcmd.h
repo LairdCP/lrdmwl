@@ -237,7 +237,7 @@ int mwl_fwcmd_set_cdd(struct ieee80211_hw *hw);
 
 int mwl_fwcmd_reg_cau(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val);
 
-int mwl_fwcmd_get_temp(struct ieee80211_hw *hw, u32 *temp);
+int mwl_fwcmd_get_temp(struct ieee80211_hw *hw, s32 *temp);
 
 int mwl_fwcmd_get_fw_region_code(struct ieee80211_hw *hw,
 				 u32 *fw_region_code);
