@@ -146,6 +146,8 @@ static char *cal_data_cfg;
 /* WMM Turbo mode */
 int wmm_turbo = 1;
 
+int SISO_mode = 0;
+
 static bool mwl_is_world_mode(struct mwl_priv *priv)
 {
 	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
@@ -795,9 +797,17 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	priv->regulatory_set = false;
 	priv->disable_2g = false;
 	priv->disable_5g = false;
-	priv->ant_tx_bmp = if_ops->mwl_chip_tbl.antenna_tx;
+
+	if (!SISO_mode)
+		priv->ant_tx_bmp = if_ops->mwl_chip_tbl.antenna_tx;
+	else
+		priv->ant_tx_bmp = SISO_mode & MWL_8997_DEF_TX_ANT_BMP;
 	priv->ant_tx_num = MWL_TXANT_BMP_TO_NUM(priv->ant_tx_bmp);
-	priv->ant_rx_bmp = if_ops->mwl_chip_tbl.antenna_rx;
+
+	if (!SISO_mode)
+		priv->ant_rx_bmp = if_ops->mwl_chip_tbl.antenna_rx;
+	else
+		priv->ant_rx_bmp = SISO_mode & MWL_8997_DEF_RX_ANT_BMP;
 	priv->ant_rx_num = MWL_RXANT_BMP_TO_NUM(priv->ant_rx_bmp);
 
 	SET_IEEE80211_DEV(hw, priv->dev);
@@ -917,6 +927,9 @@ MODULE_PARM_DESC(cal_data_cfg, "Calibration data file name");
 
 module_param(wmm_turbo, int, 0);
 MODULE_PARM_DESC(wmm_turbo, "WMM Turbo mode 0:Disable 1:Enable");
+
+module_param(SISO_mode, uint, 0444);
+MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);
