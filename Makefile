@@ -17,4 +17,7 @@ lrdmwl_pcie-y += pfu.o
 obj-$(CONFIG_LRDMWL_SDIO) += lrdmwl_sdio.o
 lrdmwl_sdio-y += sdio.o
 
+obj-$(CONFIG_LRDMWL_USB) += lrdmwl_usb.o
+lrdmwl_usb-y += usb.o
+
 ccflags-y += -D__CHECK_ENDIAN__
