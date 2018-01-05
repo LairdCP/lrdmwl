@@ -3991,7 +3991,7 @@ int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
     memset(pcmd, 0x00, sizeof(*pcmd));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_MONITOR_MODE);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
-    pcmd->enableFlag[0] = enable;
+    pcmd->enableFlag = enable;
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MONITOR_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
