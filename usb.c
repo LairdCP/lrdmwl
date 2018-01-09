@@ -26,11 +26,13 @@
 #include "rx.h"
 #include <linux/module.h>
 
-#define USB_VERSION	"1.0"
+#define MWL_USBDRV_VERSION  "1.0-20171201"
+#define LRD_USB_VERSION     LRD_BLD_VERSION "-" MWL_USBDRV_VERSION
+#define LRD_USB_DESC        "Laird 60 Series Wireless USB Network Driver"
 
 static struct mwl_if_ops usb_ops1;
 #define INTF_HEADER_LEN	4
-#define MWL_FW_ROOT     "mwlwifi"
+#define MWL_FW_ROOT     "lrdmwl"
 
 
 
@@ -291,7 +293,7 @@ static void mwl_usb_disconnect(struct usb_interface *intf)
 }
 
 static struct usb_driver mwl_usb_driver = {
-	.name = "mwl_usb",
+	.name = MWL_DRV_NAME,
 	.probe = mwl_usb_probe,
 	.disconnect = mwl_usb_disconnect,
 	.id_table = mwl_usb_table,
@@ -1446,8 +1448,7 @@ static struct mwl_if_ops usb_ops1 = {
 
 module_usb_driver(mwl_usb_driver);
 
-MODULE_AUTHOR("Marvell International Ltd.");
-MODULE_DESCRIPTION("Marvell MWL USB Driver version" USB_VERSION);
-MODULE_VERSION(USB_VERSION);
+MODULE_AUTHOR(LRD_AUTHOR);
+MODULE_DESCRIPTION(LRD_USB_DESC);
+MODULE_VERSION(LRD_USB_VERSION);
 MODULE_LICENSE("GPL v2");
-MODULE_FIRMWARE(USB8997_DEFAULT_FW_NAME);
