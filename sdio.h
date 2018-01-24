@@ -217,7 +217,7 @@ struct mwl_sdio_card_reg {
 	u8 io_port_0_reg;
 	u8 io_port_1_reg;
 	u8 io_port_2_reg;
-	u8 max_mp_regs;
+	u16 max_mp_regs;
 	u8 rd_bitmap_l;
 	u8 rd_bitmap_u;
 	u8 rd_bitmap_1l;
@@ -318,7 +318,7 @@ static const struct mwl_sdio_card_reg mwl_reg_sd8997 = {
 	.io_port_0_reg = 0xE4,
 	.io_port_1_reg = 0xE5,
 	.io_port_2_reg = 0xE6,
-	.max_mp_regs = 196,
+	.max_mp_regs = 256,
 	.rd_bitmap_l = 0x10,
 	.rd_bitmap_u = 0x11,
 	.rd_bitmap_1l = 0x12,
