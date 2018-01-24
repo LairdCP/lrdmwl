@@ -1015,7 +1015,7 @@ static void mwl_sdio_interrupt_status(struct mwl_priv *priv)
 
 	if (mwl_read_data_sync(priv, card->mp_regs,
 				   card->reg->max_mp_regs,
-				   REG_PORT | MWL_SDIO_BYTE_MODE_MASK, 0)) {
+				   REG_PORT, 0)) {
 		wiphy_err(priv->hw->wiphy, "read mp_regs failed\n");
 		return;
 	}
@@ -1135,7 +1135,7 @@ static void mwl_deaggr_sdio_pkt(struct mwl_priv *priv,
 			break;
 		}
 		skb_deaggr = mwl_alloc_dma_align_buf(pkt_len,
-							 GFP_KERNEL | GFP_DMA);
+							 GFP_KERNEL);
 		if (!skb_deaggr)
 			break;
 		skb_put(skb_deaggr, pkt_len);
@@ -1313,8 +1313,7 @@ static int mwl_sdio_card_to_host_mp_aggr(struct mwl_priv *priv,
 
 			/* copy pkt to deaggr buf */
 			skb_deaggr = mwl_alloc_dma_align_buf(len_arr[pind],
-								 GFP_KERNEL |
-								 GFP_DMA);
+								 GFP_KERNEL);
 			if (!skb_deaggr) {
 				wiphy_err(priv->hw->wiphy,
 					"skb allocation failure\t"\
@@ -1356,7 +1355,7 @@ static int mwl_sdio_card_to_host_mp_aggr(struct mwl_priv *priv,
 
 rx_curr_single:
 	if (f_do_rx_cur) {
-		skb = mwl_alloc_dma_align_buf(rx_len, GFP_KERNEL | GFP_DMA);
+		skb = mwl_alloc_dma_align_buf(rx_len, GFP_KERNEL);
 		if (!skb) {
 			wiphy_err(priv->hw->wiphy,
 				    "single skb allocated fail,\t"
