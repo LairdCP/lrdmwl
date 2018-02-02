@@ -101,6 +101,91 @@ lrd_vendor_cmd_mfg_stop(struct wiphy *wiphy, struct wireless_dev *wdev,
 	return rc;
 }
 
+static int
+lrd_vendor_cmd_lru_start(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const void *data, int data_len)
+{
+	struct sk_buff     *msg = NULL;
+	int rc = 0;
+
+	//Respond
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t));
+
+	if (msg) {
+		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
+		rc = cfg80211_vendor_cmd_reply(msg);
+	}
+	else {
+		rc = -ENOMEM;
+	}
+
+	return rc;
+
+}
+
+static int
+lrd_vendor_cmd_lru_end(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const void *data, int data_len)
+{
+	struct sk_buff  *msg = NULL;
+	int rc = 0;
+
+	//Respond
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t));
+
+	if (msg) {
+		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
+		rc = cfg80211_vendor_cmd_reply(msg);
+	}
+	else {
+		rc = -ENOMEM;
+	}
+
+	return rc;
+}
+
+
+static int
+lrd_vendor_cmd_lru(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const void *data, int data_len)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct sk_buff    *msg = NULL;
+	struct cmd_header *rsp = NULL;
+	int       rc = -ENOSYS;
+
+	//Send
+	rc = lrd_fwcmd_lru(hw, (void*)data, data_len, (void*)&rsp);
+
+	if (rc < 0 ) {
+		goto fail;
+	}
+
+	//Respond
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t) + (rsp ? rsp->len:0));
+
+	if (msg) {
+		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
+
+		if (rsp) {
+			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct cmd_header), ((u8*)rsp) + sizeof(struct cmd_header) );
+		}
+
+		rc = cfg80211_vendor_cmd_reply(msg);
+	}
+	else {
+		rc = -ENOMEM;
+		goto fail;
+	}
+
+fail:
+	if (rsp) {
+		kfree(rsp);
+	}
+
+	return rc;
+}
+
 static const struct wiphy_vendor_command lrd_vendor_commands[] = {
 	{
 		.info = {
@@ -126,6 +211,33 @@ static const struct wiphy_vendor_command lrd_vendor_commands[] = {
 		.flags = 0,
 		.doit  = lrd_vendor_cmd_mfg_stop,
 	},
+	{
+		.info = {
+			.vendor_id = LRD_OUI,
+			.subcmd    = LRD_VENDOR_CMD_LRU_START,
+		},
+		.flags = 0,
+		.doit  = lrd_vendor_cmd_lru_start,
+	},
+
+	{
+		.info = {
+			.vendor_id = LRD_OUI,
+			.subcmd    = LRD_VENDOR_CMD_LRU_WRITE,
+		},
+		.flags = 0,
+		.doit  = lrd_vendor_cmd_lru,
+	},
+
+	{
+		.info = {
+			.vendor_id = LRD_OUI,
+			.subcmd    = LRD_VENDOR_CMD_LRU_STOP,
+		},
+		.flags = 0,
+		.doit  = lrd_vendor_cmd_lru_end,
+	},
+
 };
 
 
