@@ -804,7 +804,7 @@ static ssize_t mwl_debugfs_regrdwr_read(struct file *file, char __user *ubuf,
 	else
 		len += scnprintf(p + len, size - len,
 				 "error: %lu(%u 0x%08x 0x%08x)\n",
-				 ret, priv->reg_type, priv->reg_offset,
+				 (long unsigned int)ret, priv->reg_type, priv->reg_offset,
 				 priv->reg_value);
 
 	ret = simple_read_from_buffer(ubuf, count, ppos, p, len);

@@ -34,6 +34,7 @@
 #define HOSTCMD_CMD_802_11_PS_MODE              0x0021
 #define HOSTCMD_CMD_802_11_RF_ANTENNA_V2        0x0022
 #define HOSTCMD_CMD_BROADCAST_SSID_ENABLE       0x0050 /* per-vif */
+#define HOSTCMD_CMD_MFG                         0x0089
 #define HOSTCMD_CMD_SET_CFG                     0x008f
 
 #define HOSTCMD_LRD_MFG                         0x00fe
@@ -1157,6 +1158,23 @@ struct hostcmd_cmd_mfg
 {
 	struct hostcmd_header cmd_hdr;
 	__le32 action;
+	u8 data[0];
+}__packed;
+
+struct hostcmd_mfgfw_header {
+	__le16 cmd;
+	__le16 len;
+	__le16 seq;
+	__le16 result;
+} __packed;
+
+struct hostcmd_cmd_lru
+{
+	struct hostcmd_mfgfw_header cmd_hdr;
+	__le32 cmd;
+	__le16 action;
+	__le16 id;
+	__le32 error;
 	u8 data[0];
 }__packed;
 

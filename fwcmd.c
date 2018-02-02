@@ -68,7 +68,13 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_MEM_ADDR_ACCESS)
 		ENTRY(HOSTCMD_CMD_802_11_TX_POWER)
 		ENTRY(HOSTCMD_CMD_802_11_RF_ANTENNA)
+		ENTRY(HOSTCMD_CMD_802_11_PS_MODE)
+		ENTRY(HOSTCMD_CMD_802_11_RF_ANTENNA_V2)
 		ENTRY(HOSTCMD_CMD_BROADCAST_SSID_ENABLE)
+		ENTRY(HOSTCMD_CMD_MFG)
+		ENTRY(HOSTCMD_CMD_SET_CFG)
+		ENTRY(HOSTCMD_CMD_SET_PRE_SCAN)
+		ENTRY(HOSTCMD_CMD_SET_POST_SCAN)
 		ENTRY(HOSTCMD_CMD_SET_RF_CHANNEL)
 		ENTRY(HOSTCMD_CMD_SET_AID)
 		ENTRY(HOSTCMD_CMD_SET_INFRA_MODE)
@@ -110,14 +116,13 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_802_11_SLOT_TIME)
 		ENTRY(HOSTCMD_CMD_EDMAC_CTRL)
 		ENTRY(HOSTCMD_CMD_DUMP_OTP_DATA)
-		ENTRY(HOSTCMD_CMD_SET_PRE_SCAN)
-		ENTRY(HOSTCMD_CMD_SET_POST_SCAN)
 		ENTRY(HOSTCMD_CMD_HOSTSLEEP_CTRL)
 		ENTRY(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)
+		ENTRY(HOSTCMD_LRD_MFG)
 		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
 		default:
-			sprintf(buf, "02%x", cmd);
+			sprintf(buf, "0x%02x", cmd);
 		break;
 	}
 
@@ -196,9 +201,14 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		pcmd->seq_num = priv->cmd_seq_num;
 
 		priv->in_send_cmd = true;
-//		wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
-//			pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
-		/* mwl_hex_dump((char*)cmd_hdr, cmd_hdr->len); */
+
+#if 0
+		if (log) {
+			wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
+				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+			mwl_hex_dump((char*)pcmd, pcmd->len);
+		}
+#endif
 
 		mwl_fwcmd_send_cmd(priv);
 		if(priv->cmd_timeout) {
@@ -231,9 +241,14 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		}
 		presp = (struct hostcmd_header *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
-//		wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
-//			presp->seq_num, presp->cmd);
-		/* mwl_hex_dump((char*)cmd_hdr, cmd_hdr->len); */
+
+#if 0
+		if (log) {
+			wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
+				presp->seq_num, presp->cmd);
+				/*mwl_hex_dump((char*)pcmd, pcmd->len);*/
+		}
+#endif
 	} else {
 		wiphy_warn(priv->hw->wiphy,
 			   "previous command is still running\n");
@@ -3882,5 +3897,52 @@ int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int data_len)
 	}
 
 	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
+
+int lrd_fwcmd_lru(struct ieee80211_hw *hw, void *data, int len, void **rsp)
+{
+	struct hostcmd_mfgfw_header *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	pcmd = (struct hostcmd_mfgfw_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd = cpu_to_le16(HOSTCMD_CMD_MFG);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + len);
+
+	memcpy(((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header), data, len);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MFG) ||
+	    pcmd->result != HOSTCMD_RESULT_OK) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed execution %x\n", pcmd->result);
+		return -EIO;
+	}
+
+	if (pcmd->len) {
+		/* To keep structures somewhat encapsulated we are going to squash 
+		 * part of the hostcmd_mfgfw_header so that we are left only with
+		 * cmd_header and data response
+		 */
+		u16 len =  pcmd->len - sizeof(struct hostcmd_mfgfw_header) + sizeof(struct cmd_header);
+
+		*rsp = kzalloc(len, GFP_KERNEL);
+		if (!*rsp) {
+			mutex_unlock(&priv->fwcmd_mutex);
+			wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed allocation lru response %d\n", pcmd->len);
+			return -EIO;
+		}
+
+		((struct cmd_header*)*rsp)->command = pcmd->cmd;
+		((struct cmd_header*)*rsp)->len     = len;
+		memcpy(((u8*)*rsp) + (u8)sizeof(struct cmd_header), ((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header) , len - sizeof(struct cmd_header));
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+
 	return 0;
 }
