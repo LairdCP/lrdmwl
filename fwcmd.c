@@ -32,7 +32,7 @@
 #define MAX_WAIT_FW_COMPLETE_ITERATIONS         2000
 #define MAX_WAIT_GET_HW_SPECS_ITERATONS         3
 
-static int log = 5;
+extern int lrd_debug;
 
 static bool mwl_fwcmd_chk_adapter(struct mwl_priv *priv)
 {
@@ -184,8 +184,8 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	}
 
 	if (priv->cmd_timeout) {
-		if (log) {
-			log--;
+		if (lrd_debug) {
+			lrd_debug--;
 			wiphy_debug(priv->hw->wiphy,
 			"Skip CMD(%04xh, %s) - due to prev cmd_timeout\n",
 			cmd, mwl_fwcmd_get_cmd_string(cmd));
@@ -202,18 +202,16 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 		priv->in_send_cmd = true;
 
-#if 0
-		if (log) {
+		if (lrd_debug) {
 			wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
 				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 			mwl_hex_dump((char*)pcmd, pcmd->len);
 		}
-#endif
 
 		mwl_fwcmd_send_cmd(priv);
 		if(priv->cmd_timeout) {
-			if (log) {
-				log--;
+			if (lrd_debug) {
+				lrd_debug--;
 				wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s) timeout\n",
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
@@ -227,8 +225,8 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		}
 
 		if (rc != 0) {
-			if (log) {
-				log--;
+			if (lrd_debug) {
+				lrd_debug--;
 				wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n", 
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
@@ -242,13 +240,12 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		presp = (struct hostcmd_header *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
-#if 0
-		if (log) {
+		if (lrd_debug) {
 			wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
 				presp->seq_num, presp->cmd);
-				/*mwl_hex_dump((char*)pcmd, pcmd->len);*/
+				mwl_hex_dump((char*)pcmd, pcmd->len);
 		}
-#endif
+
 	} else {
 		wiphy_warn(priv->hw->wiphy,
 			   "previous command is still running\n");
