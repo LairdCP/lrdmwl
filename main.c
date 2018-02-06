@@ -148,6 +148,8 @@ int wmm_turbo = 1;
 
 int SISO_mode = 0;
 
+int lrd_debug = 0;
+
 static bool mwl_is_world_mode(struct mwl_priv *priv)
 {
 	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
@@ -930,6 +932,9 @@ MODULE_PARM_DESC(wmm_turbo, "WMM Turbo mode 0:Disable 1:Enable");
 
 module_param(SISO_mode, uint, 0444);
 MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
+
+module_param(lrd_debug, uint, 0644);
+MODULE_PARM_DESC(lrd_debug, "Debug mode 0:Disable 1:Enable");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);
