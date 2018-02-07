@@ -558,6 +558,7 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
 	int rc;
 	__le16 *pbuf = (__le16 *)priv->pcmd_buf;
     int status;
+    unsigned long flags;
 
     /* Wait till the card informs CMD_DNLD_RDY interrupt except
      * for get HW spec command */
@@ -572,7 +573,9 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
             return;
         }
         else {
-            card->int_status &= ~DN_LD_CMD_PORT_HOST_INT_STATUS;
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~DN_LD_CMD_PORT_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
         }
     }
 
@@ -1445,7 +1448,11 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 	if (sdio_ireg & UP_LD_CMD_PORT_HOST_INT_STATUS) {
 		struct cmd_header *cmd_hdr = (struct cmd_header *)
 			&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)];
-	    card->int_status &= ~UP_LD_CMD_PORT_HOST_INT_STATUS;
+
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~UP_LD_CMD_PORT_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
+
 		/* read the len of control packet */
 		rx_len = card->mp_regs[reg->cmd_rd_len_1] << 8;
 		rx_len |= (u16)card->mp_regs[reg->cmd_rd_len_0];
@@ -1483,7 +1490,10 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 		bitmap |= ((u32) card->mp_regs[reg->wr_bitmap_1l]) << 16;
 		bitmap |= ((u32) card->mp_regs[reg->wr_bitmap_1u]) << 24;
 
-	    card->int_status &= ~DN_LD_HOST_INT_STATUS;
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~DN_LD_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
+
 		card->mp_wr_bitmap = bitmap;
 
 		if (card->data_sent &&
@@ -1510,7 +1520,10 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 		bitmap |= ((u32) card->mp_regs[reg->rd_bitmap_1u]) << 24;
 		card->mp_rd_bitmap = bitmap;
 
-	    card->int_status &= ~UP_LD_HOST_INT_STATUS;
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~UP_LD_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
+
 		while (true) {
 			ret = mwl_get_rd_port(priv, &port);
 			if (ret)
