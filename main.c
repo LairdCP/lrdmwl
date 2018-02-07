@@ -146,6 +146,9 @@ static char *cal_data_cfg;
 /* WMM Turbo mode */
 int wmm_turbo = 1;
 
+/* EDMAC Control */
+int EDMAC_Ctrl = 0x0;
+
 int SISO_mode = 0;
 
 int lrd_debug = 0;
@@ -929,6 +932,11 @@ MODULE_PARM_DESC(cal_data_cfg, "Calibration data file name");
 
 module_param(wmm_turbo, int, 0);
 MODULE_PARM_DESC(wmm_turbo, "WMM Turbo mode 0:Disable 1:Enable");
+
+module_param(EDMAC_Ctrl, int, 0);
+MODULE_PARM_DESC(EDMAC_Ctrl, "EDMAC CFG: BIT0:2G_enbl, BIT1:5G_enbl, " \
+                             "BIT[4:11]: 2G_Offset, BIT[12:19]:5G_offset, " \
+                             "BIT[20:27]:Queue_lock");
 
 module_param(SISO_mode, uint, 0444);
 MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
