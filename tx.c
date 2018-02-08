@@ -62,7 +62,7 @@ static inline void mwl_tx_add_dma_header(struct mwl_priv *priv,
 	int reqd_hdrlen, dma_hdr_len;
 	__le16 *tr_fwlen_ptr;
 
- 	dma_hdr_len = (((priv->host_if == MWL_IF_PCIE) && 
+ 	dma_hdr_len = (((priv->host_if == MWL_IF_PCIE) &&
 		IS_PFU_ENABLED(priv->chip_type)) ?
 		sizeof(struct mwl_tx_pfu_dma_data) :
 		sizeof(struct mwl_dma_data));
@@ -90,7 +90,7 @@ static inline void mwl_tx_add_dma_header(struct mwl_priv *priv,
 			hdrlen -= IEEE80211_HT_CTL_LEN;
 	}
 
-	if (((priv->host_if == MWL_IF_PCIE) && 
+	if (((priv->host_if == MWL_IF_PCIE) &&
 		IS_PFU_ENABLED(priv->chip_type))) {
 		struct mwl_tx_pfu_dma_data *tr =
 			(struct mwl_tx_pfu_dma_data *)skb->data;
@@ -307,7 +307,7 @@ inline void mwl_tx_skb(struct mwl_priv *priv, int desc_num,
 	mwl_tx_encapsulate_frame(priv, tx_skb, k_conf, &ccmp);
 
 
-	if (((priv->host_if == MWL_IF_PCIE) && 
+	if (((priv->host_if == MWL_IF_PCIE) &&
 		IS_PFU_ENABLED(priv->chip_type))) {
 		struct mwl_tx_pfu_dma_data *dma_data =
 			(struct mwl_tx_pfu_dma_data *)tx_skb->data;
@@ -658,11 +658,13 @@ void wmm_init_tc_to_txq_mapping(struct mwl_priv *priv)
 		priv->tc_2_txq_map[bkoff[i].tc] = (SYSADPT_TX_WMM_QUEUES - i - 1);
 	}
 
+#if 0
 	wiphy_err(priv->hw->wiphy, "tc_2_txq_map = [ %d %d %d %d ]\n",
 		 priv->tc_2_txq_map[0],
 		 priv->tc_2_txq_map[1],
 		 priv->tc_2_txq_map[2],
 		 priv->tc_2_txq_map[3]);
+#endif
 
 }
 
@@ -773,7 +775,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 					       skb);
 
 		/* XXX: WAR - Currently it's not clear where/how to inform to
-		** to upper layer to set 20/40 coex capability. Set it in 
+		** to upper layer to set 20/40 coex capability. Set it in
 		** driver for now
 		*/
 		if (unlikely((ieee80211_is_assoc_req(wh->frame_control) ||
@@ -1109,7 +1111,7 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
                          * its usage or interpretation varies for different
                          * HIDs.
                          */
-						mwl_tx_skb(priv, 
+						mwl_tx_skb(priv,
 								((priv->host_if == MWL_IF_SDIO)? 0: num),
 								sta_info->amsdu_ctrl.frag[num].skb);
 						spin_lock_bh(&priv->tx_desc_lock);
