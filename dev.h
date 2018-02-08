@@ -519,6 +519,7 @@ struct mwl_priv {
 	bool cmd_timeout;
 	int irq;
 	struct mwl_hw_data hw_data;  /* Adapter HW specific info     */
+	u8 tc_2_txq_map[SYSADPT_TX_WMM_QUEUES];
 
 	/* various descriptor data */
 	/* for tx descriptor data  */
@@ -584,6 +585,8 @@ struct mwl_priv {
 	bool radio_on;
 	bool radio_short_preamble;
 	bool wmm_enabled;
+
+	/* 0=BK, 1=BE, 2=VI, 3=VO */
 	struct ieee80211_tx_queue_params wmm_params[SYSADPT_TX_WMM_QUEUES];
 
 	/* ampdu stream information */

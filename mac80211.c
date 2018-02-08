@@ -272,8 +272,8 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
 		int rate = 0;
 
-//		wiphy_debug(hw->wiphy, "config: c=%x fl=%x pw=%d rd=%d ch=%d\n", 
-//				changed, conf->flags, conf->power_level, 
+//		wiphy_debug(hw->wiphy, "config: c=%x fl=%x pw=%d rd=%d ch=%d\n",
+//				changed, conf->flags, conf->power_level,
 //				conf->radar_enabled, conf->chandef.chan->hw_value);
 
 		if (conf->chandef.chan->band == NL80211_BAND_2GHZ) {
@@ -608,12 +608,13 @@ static int mwl_mac80211_conf_tx(struct ieee80211_hw *hw,
 {
 	struct mwl_priv *priv = hw->priv;
 	int rc = 0;
+	int q;
 
 	if (WARN_ON(queue > SYSADPT_TX_WMM_QUEUES - 1))
 		return -EINVAL;
 
-
-	memcpy(&priv->wmm_params[queue], params, sizeof(*params));
+	q = SYSADPT_TX_WMM_QUEUES - 1 - queue;
+	memcpy(&priv->wmm_params[q], params, sizeof(*params));
 
 	if (!priv->wmm_enabled) {
 		rc = mwl_fwcmd_set_wmm_mode(hw, true);
@@ -621,7 +622,6 @@ static int mwl_mac80211_conf_tx(struct ieee80211_hw *hw,
 	}
 
 	if (!rc) {
-		int q = SYSADPT_TX_WMM_QUEUES - 1 - queue;
 
 
 //		wiphy_info(hw->wiphy, "WMM Params[Q %d]: cwmin=%d cwmax=%d aifs=%d txop=%d\n", q, params->cw_min, params->cw_max, params->aifs, params->txop);
@@ -629,6 +629,11 @@ static int mwl_mac80211_conf_tx(struct ieee80211_hw *hw,
 		rc = mwl_fwcmd_set_edca_params(hw, q,
 					       params->cw_min, params->cw_max,
 					       params->aifs, params->txop);
+	}
+
+	if (queue == IEEE80211_AC_BK){
+		/* All WMM config received, create tc=>txq mapping */
+		wmm_init_tc_to_txq_mapping(priv);
 	}
 
 	return rc;
@@ -938,7 +943,7 @@ static int mwl_mac80211_remain_on_channel(struct ieee80211_hw *hw,
 static int mwl_mac80211_cancel_remain_on_channel(struct ieee80211_hw *hw)
 {
 	int rc = 0;
-    
+
 	rc = mwl_config_remain_on_channel(hw, 0, false, 0, 0);
 
 	return rc;
@@ -1045,7 +1050,7 @@ int mwl_mac80211_get_ant(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
 }
 
 void
-mwl_mac80211_set_default_uni_key (struct ieee80211_hw *hw, 
+mwl_mac80211_set_default_uni_key (struct ieee80211_hw *hw,
 					struct ieee80211_vif *vif,
 					int idx)
 {
@@ -1096,7 +1101,7 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 				priv->wow.wowlanCond |= MWL_WOW_CND_AP_INRANGE;
 
 				/* channel set */
-				priv->wow.channelCnt = min(sizeof(priv->wow.channels), 
+				priv->wow.channelCnt = min(sizeof(priv->wow.channels),
 				                           wowlan->nd_config->n_channels);
 
 				for (i=0; i < priv->wow.channelCnt; i++) {
@@ -1104,13 +1109,13 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 				}
 
 				/* ssid */
-				priv->wow.ssidListCnt = min((int)ARRAY_SIZE(priv->wow.ssidList), 
+				priv->wow.ssidListCnt = min((int)ARRAY_SIZE(priv->wow.ssidList),
 				                            wowlan->nd_config->n_ssids);
 
 				for (i = 0; i < priv->wow.ssidListCnt; i++) {
 					priv->wow.ssidList[i].ssidLen = min(wowlan->nd_config->ssids[i].ssid_len,
 					                                    (u8)sizeof(priv->wow.ssidList[i].ssid));
-					memcpy(priv->wow.ssidList[i].ssid, wowlan->nd_config->ssids[i].ssid, 
+					memcpy(priv->wow.ssidList[i].ssid, wowlan->nd_config->ssids[i].ssid,
 					       priv->wow.ssidList[i].ssidLen);
 				}
 			}
