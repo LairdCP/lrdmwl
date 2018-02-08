@@ -302,16 +302,16 @@ int mwl_fwcmd_config_EDMACCtrl(struct ieee80211_hw *hw, int EDMAC_Ctrl)
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_EDMAC_CTRL);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->action = cpu_to_le16(WL_SET);
-	pcmd->ed_ctrl_2g = cpu_to_le16((EDMAC_Ctrl & EDMAC_2G_ENABLE_MASK)
+	pcmd->ed_ctrl_2g = ((EDMAC_Ctrl & EDMAC_2G_ENABLE_MASK)
 						>> EDMAC_2G_ENABLE_SHIFT);
-	pcmd->ed_ctrl_5g = cpu_to_le16((EDMAC_Ctrl & EDMAC_5G_ENABLE_MASK)
+	pcmd->ed_ctrl_5g = ((EDMAC_Ctrl & EDMAC_5G_ENABLE_MASK)
 						>> EDMAC_5G_ENABLE_SHIFT);
-	pcmd->ed_offset_2g = cpu_to_le16((EDMAC_Ctrl & EDMAC_2G_THRESHOLD_OFFSET_MASK)
+	pcmd->ed_offset_2g = (s8)((EDMAC_Ctrl & EDMAC_2G_THRESHOLD_OFFSET_MASK) 
 						>> EDMAC_2G_THRESHOLD_OFFSET_SHIFT);
-	pcmd->ed_offset_5g = cpu_to_le16((EDMAC_Ctrl & EDMAC_5G_THRESHOLD_OFFSET_MASK)
+	pcmd->ed_offset_5g = (s8)((EDMAC_Ctrl & EDMAC_5G_THRESHOLD_OFFSET_MASK)
 						>> EDMAC_5G_THRESHOLD_OFFSET_SHIFT);
 	pcmd->ed_bitmap_txq_lock = cpu_to_le16((EDMAC_Ctrl & EDMAC_QLOCK_BITMAP_MASK)
-						>> EDMAC_QLOCK_BITMAP_SHIFT);
+								>> EDMAC_QLOCK_BITMAP_SHIFT);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_EDMAC_CTRL)) {
 		mutex_unlock(&priv->fwcmd_mutex);

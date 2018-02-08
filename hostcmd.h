@@ -409,10 +409,10 @@ struct hostcmd_cmd_802_11_slot_time {
 struct hostcmd_cmd_edmac_ctrl {
 	struct hostcmd_header cmd_hdr;
 	__le16 action;
-	__le16 ed_ctrl_2g;
-	__le16 ed_offset_2g;
-	__le16 ed_ctrl_5g;
-	__le16 ed_offset_5g;
+	u8 ed_ctrl_2g;
+	s8 ed_offset_2g;
+	u8 ed_ctrl_5g;
+	s8 ed_offset_5g;
 	__le16 ed_bitmap_txq_lock;
 } __packed;
 
