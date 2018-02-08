@@ -87,6 +87,7 @@
 #define HOSTCMD_CMD_EDMAC_CTRL                  0x1204
 #define HOSTCMD_CMD_HOSTSLEEP_CTRL              0x1205
 #define HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG       0x1206
+#define HOSTCMD_CMD_MONITOR_MODE                0x1207
 
 /* Define general result code for each command */
 #define HOSTCMD_RESULT_OK                       0x0000
@@ -368,7 +369,7 @@ struct hostcmd_cmd_mac_reg_access {
     __le16 offset;
     u32 value;
 } __packed;
- 
+
 /* HOSTCMD_CMD_BBP_REG_ACCESS */
 struct hostcmd_cmd_bbp_reg_access {
 	struct hostcmd_header cmd_hdr;
@@ -443,10 +444,12 @@ struct hostcmd_cmd_802_11_rf_antenna_v2 {
 	__le16 ant_rx_bmp;     /* Number of antennas or 0xffff(diversity) */
 } __packed;
 
+//Note this structure is packed mwl_wowlan equivalent is not
 struct wowlan_apinrange_addrIe {
 	u8 address[ETH_ALEN];
 } __packed;
 
+//Note This structure is packed mwl_wowlan_ equivalent is not
 struct wowlan_apinrange_ssidIe {
 	u8 ssidLen;
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
@@ -459,7 +462,7 @@ struct hostcmd_cmd_hostsleep_ctrl {
 	u8 wakeupSignal;  /*1: active high   0: active low */
 	__le16 gap;       /* Time in ms Fw needs to wait before sending Evnts or frames */
 	__le32 wakeUpConditions;
-	__le32 options;  /* For debug purpose Only*/ 
+	__le32 options;  /* For debug purpose Only*/
 } __packed;
 
 /* HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG */
@@ -484,10 +487,10 @@ struct hostcmd_cmd_802_11_ps_mode {
 struct hostcmd_cmd_broadcast_ssid_enable {
 	struct hostcmd_header cmd_hdr;
 	__le32 enable;
-	/* Hidden SSID Options- 
+	/* Hidden SSID Options-
 	** 0: Do not Hide
 	** 1: Hide SSID by using zero len SSID element
-	** 2: Hide SSID by using correct len in SSID element but zero out complete SSID 
+	** 2: Hide SSID by using correct len in SSID element but zero out complete SSID
 	*/
 	 __le32 hidden_ssid_info;
 } __packed;
@@ -1146,6 +1149,11 @@ struct hostcmd_cmd_pre_scan {
 struct hostcmd_cmd_post_scan {
 	struct hostcmd_header cmd_hdr;
 	u8 pload[0];
+} __packed;
+
+struct hostcmd_cmd_monitor_mode {
+    struct hostcmd_header cmd_hdr;
+    u8 enableFlag[1];
 } __packed;
 
 struct hostcmd_cmd_region_mapping

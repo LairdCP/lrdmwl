@@ -118,6 +118,7 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_DUMP_OTP_DATA)
 		ENTRY(HOSTCMD_CMD_HOSTSLEEP_CTRL)
 		ENTRY(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)
+		ENTRY(HOSTCMD_CMD_MONITOR_MODE)
 		ENTRY(HOSTCMD_LRD_MFG)
 		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
@@ -227,7 +228,7 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		if (rc != 0) {
 			if (lrd_debug) {
 				lrd_debug--;
-				wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n", 
+				wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
 			}
@@ -305,7 +306,7 @@ int mwl_fwcmd_config_EDMACCtrl(struct ieee80211_hw *hw, int EDMAC_Ctrl)
 						>> EDMAC_2G_ENABLE_SHIFT);
 	pcmd->ed_ctrl_5g = cpu_to_le16((EDMAC_Ctrl & EDMAC_5G_ENABLE_MASK)
 						>> EDMAC_5G_ENABLE_SHIFT);
-	pcmd->ed_offset_2g = cpu_to_le16((EDMAC_Ctrl & EDMAC_2G_THRESHOLD_OFFSET_MASK) 
+	pcmd->ed_offset_2g = cpu_to_le16((EDMAC_Ctrl & EDMAC_2G_THRESHOLD_OFFSET_MASK)
 						>> EDMAC_2G_THRESHOLD_OFFSET_SHIFT);
 	pcmd->ed_offset_5g = cpu_to_le16((EDMAC_Ctrl & EDMAC_5G_THRESHOLD_OFFSET_MASK)
 						>> EDMAC_5G_THRESHOLD_OFFSET_SHIFT);
@@ -1231,7 +1232,7 @@ int mwl_fwcmd_set_hw_specs(struct ieee80211_hw *hw)
 		for (i = 1; i < SYSADPT_TOTAL_TX_QUEUES; i++)
 			pcmd->wcb_base[i] =
 				cpu_to_le32(priv->desc_data[i].pphys_tx_ring);
-		pcmd->tx_wcb_num_per_queue = 
+		pcmd->tx_wcb_num_per_queue =
 			cpu_to_le32(SYSADPT_MAX_NUM_TX_DESC);
 		pcmd->num_tx_queues = cpu_to_le32(SYSADPT_NUM_OF_DESC_DATA);
 
@@ -1296,10 +1297,10 @@ int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, __le16 type)
 
 	memset(pcmd, 0x00, sizeof(*pcmd));
 
-	pcmd->data_len = wlan_parse_cal_cfg(priv->cal_data->data, 
+	pcmd->data_len = wlan_parse_cal_cfg(priv->cal_data->data,
 		priv->cal_data->size, pcmd->data);
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_CFG);
-	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + 
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) +
 		le16_to_cpu(pcmd->data_len) - sizeof(pcmd->data));
 	pcmd->action = cpu_to_le16(HOSTCMD_ACT_GEN_SET);
 	pcmd->type = type;
@@ -1318,7 +1319,7 @@ int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, __le16 type)
 	priv->cal_data = NULL;
 
 	return 0;
-	
+
 }
 
 int mwl_fwcmd_get_stat(struct ieee80211_hw *hw,
@@ -1377,7 +1378,7 @@ int mwl_fwcmd_reg_mac(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
         mutex_unlock(&priv->fwcmd_mutex);
         wiphy_err(hw->wiphy, "failed execution\n");
         return -EIO;
-    }    
+    }
 
     *val = pcmd->value;
 
@@ -1642,7 +1643,7 @@ int mwl_fwcmd_powersave_EnblDsbl(struct ieee80211_hw *hw,
 
 	pcmd = (struct hostcmd_cmd_802_11_ps_mode *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
-	
+
 
 	mutex_lock(&priv->fwcmd_mutex);
 
@@ -1739,7 +1740,7 @@ int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw)
 	mutex_unlock(&priv->fwcmd_mutex);
 
 	return 0;
-} 
+}
 #endif
 
 int mwl_fwcmd_set_roc_channel(struct ieee80211_hw *hw,
@@ -1766,7 +1767,7 @@ int mwl_fwcmd_set_roc_channel(struct ieee80211_hw *hw,
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
-    
+
 	memset(pcmd, 0x00, sizeof(*pcmd));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_RF_CHANNEL);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
@@ -1791,7 +1792,7 @@ int mwl_fwcmd_set_roc_channel(struct ieee80211_hw *hw,
 }
 
 int mwl_config_remain_on_channel(struct ieee80211_hw *hw,
-					struct ieee80211_channel *channel, 
+					struct ieee80211_channel *channel,
 					bool remain_on_channel, int duration,
 					enum ieee80211_roc_type type)
 {
@@ -2752,7 +2753,7 @@ int mwl_fwcmd_update_encryption_enable(struct ieee80211_hw *hw,
 		return -EIO;
 	}
 
-	if ((vif->type == NL80211_IFTYPE_STATION) || 
+	if ((vif->type == NL80211_IFTYPE_STATION) ||
 		(vif->type == NL80211_IFTYPE_P2P_CLIENT)) {
 		if (ether_addr_equal(mwl_vif->bssid, addr))
 			ether_addr_copy(pcmd->mac_addr, mwl_vif->sta_mac);
@@ -2858,7 +2859,7 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 		return -EIO;
 	}
 
-	if ((vif->type == NL80211_IFTYPE_STATION) || 
+	if ((vif->type == NL80211_IFTYPE_STATION) ||
 		(vif->type == NL80211_IFTYPE_P2P_CLIENT)) {
 		if (ether_addr_equal(mwl_vif->bssid, addr))
 			ether_addr_copy(pcmd->key_param.mac_addr,
@@ -3745,8 +3746,7 @@ int mwl_fwcmd_set_post_scan(struct ieee80211_hw *hw)
 	return 0;
 }
 
-
-int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw, 
+int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
 			struct mwl_region_mapping *map)
 {
 	struct hostcmd_cmd_region_mapping *pcmd;
@@ -3957,7 +3957,7 @@ int lrd_fwcmd_lru(struct ieee80211_hw *hw, void *data, int len, void **rsp)
 	}
 
 	if (pcmd->len) {
-		/* To keep structures somewhat encapsulated we are going to squash 
+		/* To keep structures somewhat encapsulated we are going to squash
 		 * part of the hostcmd_mfgfw_header so that we are left only with
 		 * cmd_header and data response
 		 */
@@ -3978,4 +3978,26 @@ int lrd_fwcmd_lru(struct ieee80211_hw *hw, void *data, int len, void **rsp)
 	mutex_unlock(&priv->fwcmd_mutex);
 
 	return 0;
+}
+
+int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
+{
+    struct hostcmd_cmd_monitor_mode *pcmd;
+	struct mwl_priv *priv = hw->priv;
+    pcmd = (struct hostcmd_cmd_monitor_mode*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+	mutex_lock(&priv->fwcmd_mutex);
+
+    memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_MONITOR_MODE);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+    pcmd->enableFlag[0] = enable;
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MONITOR_MODE)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+	mutex_unlock(&priv->fwcmd_mutex);
+    return 0;
 }
