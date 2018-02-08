@@ -255,6 +255,14 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	if (rc)
 		goto out;
 
+	if(changed & IEEE80211_CONF_CHANGE_MONITOR) {
+		if(conf->flags & IEEE80211_CONF_MONITOR)
+			rc = mwl_fwcmd_set_monitor_mode (hw,1);
+		else
+			rc = mwl_fwcmd_set_monitor_mode (hw,0);
+		if (rc)
+			goto out;
+	}
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
 		rc = mwl_fwcmd_powersave_EnblDsbl(hw, conf);
 		if (rc)
@@ -446,10 +454,9 @@ static void mwl_mac80211_configure_filter(struct ieee80211_hw *hw,
 					  unsigned int *total_flags,
 					  u64 multicast)
 {
-	/* AP firmware doesn't allow fine-grained control over
-	 * the receive filter.
-	 */
-	*total_flags &= FIF_ALLMULTI | FIF_BCN_PRBRESP_PROMISC;
+	*total_flags &= FIF_CONTROL | FIF_OTHER_BSS |
+					FIF_ALLMULTI | FIF_BCN_PRBRESP_PROMISC |
+					FIF_PROBE_REQ;
 }
 
 static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
@@ -604,6 +611,7 @@ static int mwl_mac80211_conf_tx(struct ieee80211_hw *hw,
 
 	if (WARN_ON(queue > SYSADPT_TX_WMM_QUEUES - 1))
 		return -EINVAL;
+
 
 	memcpy(&priv->wmm_params[queue], params, sizeof(*params));
 

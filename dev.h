@@ -234,7 +234,7 @@ struct mwl_hw_data {
 #define TX_RATE_INFO_SHORT_GI         1
 
 
-#define MWL_TX_WCB_FLAGS_DONT_ENCRYPT 0x00000001 
+#define MWL_TX_WCB_FLAGS_DONT_ENCRYPT 0x00000001
 #define MWL_TX_WCB_FLAGS_NO_CCK_RATE  0x00000002
 
 struct mwl_tx_desc {
@@ -376,6 +376,7 @@ struct mwl_wowlan_apinrange_ssidIe {
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
 };
 
+
 /* WOW states */
 #define WOWLAN_STATE_ENABLED     0x01
 #define WOWLAN_STATE_HS_SENT     0x80
@@ -390,7 +391,7 @@ struct mwl_wowlan_result {
 };
 
 struct mwl_wowlan_cfg {
-	u8  capable;           /* Indicates host controller is capable of 
+	u8  capable;           /* Indicates host controller is capable of
 	                          supporting wow */
 	u8  state;             /* indicates state of wow */
 	u8  wakeSigType;       /* Data sheet indicate this is to be active low */

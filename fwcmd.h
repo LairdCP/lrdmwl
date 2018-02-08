@@ -285,4 +285,6 @@ int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw);
 
 void mwl_hex_dump(const void *buf, size_t len);
 
+int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable);
+
 #endif /* _FWCMD_H_ */
