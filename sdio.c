@@ -707,7 +707,7 @@ static int mwl_check_fw_status(struct mwl_priv *priv,
 			    "firmware is ready %d\n", tries);
 			break;
 		} else {
-			
+
 			if(!(tries % 10) ){
 				wiphy_info(priv->hw->wiphy,
 				"Waiting on fw status %d 0x%x\n", tries, firmware_stat);
@@ -962,11 +962,12 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	struct ieee80211_hw *hw = priv->hw;
 	struct mwl_hostevent *host_event = (struct mwl_hostevent *)(
 		&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)]);
-	u16	event_id = host_event->mac_event.event_id;	
+	u16	event_id = host_event->mac_event.event_id;
 
 	wiphy_info(hw->wiphy,
 		"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
 
+	mwl_hex_dump((u8 *)host_event, host_event->length);
 	switch (event_id) {
 	case SDEVENT_RADAR_DETECT:
 		ieee80211_radar_detected(hw);
@@ -982,7 +983,7 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	default:
 		wiphy_info(hw->wiphy,"Unknown event, id=%04xh\n", event_id);
 	}
-	
+
 
 	wiphy_info(hw->wiphy,
 		"<= %s()\n", __func__);
@@ -1134,8 +1135,7 @@ static void mwl_deaggr_sdio_pkt(struct mwl_priv *priv,
 				__func__, pkt_len, blk_size);
 			break;
 		}
-		skb_deaggr = mwl_alloc_dma_align_buf(pkt_len,
-							 GFP_KERNEL);
+		skb_deaggr = mwl_alloc_dma_align_buf(pkt_len, GFP_KERNEL);
 		if (!skb_deaggr)
 			break;
 		skb_put(skb_deaggr, pkt_len);
@@ -1626,7 +1626,7 @@ static char *mwl_pktstrn(char* pkt)
 			break;
 		}
 	}
-	
+
 	if (pkt_type == 1) {    //ctrl pkt
 		switch (pkt_subtype) {
 		case 0xb:
@@ -1648,7 +1648,7 @@ static char *mwl_pktstrn(char* pkt)
 			break;
 		}
 	}
-	
+
 	if (pkt_type == 2) {    //data pkt
 		char* pllc;
 		switch (pkt_subtype) {
@@ -1670,7 +1670,7 @@ static char *mwl_pktstrn(char* pkt)
 		} else if (pkt_subtype == 0x8) {
 			pllc = &pkt[26];
 		}
-		
+
 		if ((pllc[0] == '\xaa') && (pllc[1]='\xaa') && (pllc[2]=='\x03')) {
 			if ((pllc[6]=='\x08')&&(pllc[7]=='\x06')) {
 				strcat(msg, " - ARP");
@@ -1734,7 +1734,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	}
 
 	if ((pdesc->channel != hw->conf.chandef.chan->hw_value) &&
-		!(priv->roc.tmr_running && priv->roc.in_progress && 
+		!(priv->roc.tmr_running && priv->roc.in_progress &&
 			(pdesc->channel == priv->roc.chan))) {
 		dev_kfree_skb_any(prx_skb);
 //		wiphy_debug(priv->hw->wiphy,
