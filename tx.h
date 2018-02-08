@@ -55,4 +55,6 @@ void mwl_tx_ack_amsdu_pkts(struct ieee80211_hw *hw, u32 rate,
 void mwl_tx_prepare_info(struct ieee80211_hw *hw, u32 rate,
 				       struct ieee80211_tx_info *info);
 
+void wmm_init_tc_to_txq_mapping(struct mwl_priv *priv);
+
 #endif /* _TX_H_ */

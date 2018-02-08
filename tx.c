@@ -608,12 +608,71 @@ inline void mwl_tx_ack_amsdu_pkts(struct ieee80211_hw *hw, u32 rate,
 }
 EXPORT_SYMBOL_GPL(mwl_tx_ack_amsdu_pkts);
 
+unsigned int wmm_find_txq_for_tc(struct mwl_priv *priv,
+		unsigned int hw_tc)
+{
+	if (hw_tc > SYSADPT_TX_WMM_QUEUES){
+		hw_tc = SYSADPT_TX_WMM_QUEUES;
+	}
+
+	return priv->tc_2_txq_map[hw_tc];
+}
+
+void wmm_init_tc_to_txq_mapping(struct mwl_priv *priv)
+{
+	int tc, i, j;
+	struct ieee80211_tx_queue_params *params;
+
+	struct {
+		int avg_bkoff;
+		int tc;
+	} bkoff[SYSADPT_TX_WMM_QUEUES], tmp;
+
+	for (tc=0; tc<SYSADPT_TX_WMM_QUEUES; tc++){
+		params = &priv->wmm_params[tc];
+		bkoff[tc].tc = tc;
+		bkoff[tc].avg_bkoff =
+			(params->cw_min >> 1) + params->aifs;
+	}
+
+	for(i=0; i<SYSADPT_TX_WMM_QUEUES; i++){
+		for(j=1; j<SYSADPT_TX_WMM_QUEUES - i; j++){
+			if ((bkoff[j-1].avg_bkoff > bkoff[j].avg_bkoff) ||
+			((bkoff[j-1].avg_bkoff == bkoff[j].avg_bkoff) &&
+			(bkoff[j-1].tc < bkoff[j].tc))) {
+
+				memcpy(&tmp, &bkoff[j-1], sizeof(tmp));
+				memcpy(&bkoff[j-1], &bkoff[j], sizeof(tmp));
+				memcpy(&bkoff[j], &tmp, sizeof(tmp));
+			}
+		}
+	}
+
+#if 0
+	for(i=0; i<SYSADPT_TX_WMM_QUEUES; i++){
+		wiphy_err(priv->hw->wiphy, "prio_idx=%d bkoff=%d tc=%d\n", i, bkoff[i].avg_bkoff, bkoff[i].tc);
+}
+#endif
+
+	for(i=0; i<SYSADPT_TX_WMM_QUEUES; i++){
+		priv->tc_2_txq_map[bkoff[i].tc] = (SYSADPT_TX_WMM_QUEUES - i - 1);
+	}
+
+	wiphy_err(priv->hw->wiphy, "tc_2_txq_map = [ %d %d %d %d ]\n",
+		 priv->tc_2_txq_map[0],
+		 priv->tc_2_txq_map[1],
+		 priv->tc_2_txq_map[2],
+		 priv->tc_2_txq_map[3]);
+
+}
+
 void mwl_tx_xmit(struct ieee80211_hw *hw,
 		 struct ieee80211_tx_control *control,
 		 struct sk_buff *skb)
 {
 	struct mwl_priv *priv = hw->priv;
-	int index;
+	int txq_idx;
+	int mac80211_tc, hw_tc;
 	struct ieee80211_sta *sta;
 	struct ieee80211_tx_info *tx_info;
 	struct mwl_vif *mwl_vif;
@@ -630,7 +689,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 	struct mwl_tx_ctrl *tx_ctrl;
 	struct ieee80211_key_conf *k_conf = NULL;
 
-	index = skb_get_queue_mapping(skb);
+	mac80211_tc = skb_get_queue_mapping(skb);
 	sta = control->sta;
 
 	wh = (struct ieee80211_hdr *)skb->data;
@@ -641,7 +700,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 		qos = 0;
 
 	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
-		index = IEEE80211_AC_VO;
+		mac80211_tc = IEEE80211_AC_VO;
 		eapol_frame = true;
 	}
 
@@ -706,7 +765,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 			     WLAN_ACTION_ADDBA_REQ)) {
 			capab = le16_to_cpu(mgmt->u.action.u.addba_req.capab);
 			tid = (capab & IEEE80211_ADDBA_PARAM_TID_MASK) >> 2;
-			index = mwl_tx_tid_queue_mapping(tid);
+			mac80211_tc = mwl_tx_tid_queue_mapping(tid);
 		}
 
 		if (unlikely(ieee80211_is_assoc_req(wh->frame_control)))
@@ -725,8 +784,10 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 		}
 	}
 
-	index = SYSADPT_TX_WMM_QUEUES - index - 1;
-	txpriority = index;
+	hw_tc = SYSADPT_TX_WMM_QUEUES - mac80211_tc - 1;
+	txpriority = hw_tc;
+
+	txq_idx = wmm_find_txq_for_tc(priv, hw_tc);
 
 	if (sta && sta->ht_cap.ht_supported && !eapol_frame &&
 	    ieee80211_is_data_qos(wh->frame_control)) {
@@ -800,12 +861,12 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 	tx_ctrl->qos_ctrl = qos;
 	tx_ctrl->xmit_control = xmitcontrol;
 
-	if (skb_queue_len(&priv->txq[index]) > priv->txq_limit){
-		wiphy_err(priv->hw->wiphy, "[SQ%d]\n", SYSADPT_TX_WMM_QUEUES - index - 1);
-		ieee80211_stop_queue(hw, SYSADPT_TX_WMM_QUEUES - index - 1);
+	if (skb_queue_len(&priv->txq[txq_idx]) > priv->txq_limit){
+		wiphy_err(priv->hw->wiphy, "[SQ%d]\n", mac80211_tc);
+		ieee80211_stop_queue(hw, mac80211_tc);
 	}
 
-	skb_queue_tail(&priv->txq[index], skb);
+	skb_queue_tail(&priv->txq[txq_idx], skb);
 
 	if (priv->if_ops.ptx_work != NULL) {
 		/* SDIO interface is using this path */
