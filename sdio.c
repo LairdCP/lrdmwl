@@ -132,6 +132,16 @@ mwl_write_reg(struct mwl_priv *priv, u32 reg, u8 data)
 	return rc;
 }
 
+
+static void mwl_free_sdio_mpa_buffers(struct mwl_priv *priv)
+{
+	struct mwl_sdio_card *card = priv->intf;
+	kfree(card->mpa_tx.buf);
+	kfree(card->mpa_rx.buf);
+	kfree(card->tx_align_buf);
+}
+
+
 /*
  * This function allocates the MPA Tx and Rx buffers.
  */
@@ -159,6 +169,14 @@ static int mwl_alloc_sdio_mpa_buffers(struct mwl_priv *priv,
 	}
 
 	card->mpa_rx.buf_size = rx_buf_size;
+
+	card->tx_align_buf = kzalloc(8192, GFP_KERNEL);
+	if (!card->tx_align_buf) {
+		ret = -1;
+		wiphy_err(priv->hw->wiphy," %s : memory allocation for tx_align buf failed\n", __func__);
+		goto error;
+	}
+	card->tx_align_war_count = 0;
 
 error:
 	if (ret) {
@@ -616,6 +634,7 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 
 	/* Free Rx bufs */
 	skb_queue_purge(&card->rx_data_q);
+	mwl_free_sdio_mpa_buffers(priv);
 	return;
 }
 
@@ -653,6 +672,11 @@ mwl_write_data_sync(struct mwl_priv *priv,
 	sdio_claim_host(card->func);
 	ret = sdio_writesb(card->func, ioport, buffer, blk_cnt * blk_size);
 	sdio_release_host(card->func);
+
+	if (ret) {
+		wiphy_err(priv->hw->wiphy," %s : sdio_writesb failed,buffer ptr = 0x%p ioport = 0x%x,"
+				" size = %d, error = %d\n", __func__, buffer, ioport, blk_cnt * blk_size,ret);
+	}
 
 	return ret;
 }
@@ -934,6 +958,10 @@ static int mwl_read_data_sync(struct mwl_priv *priv, u8 *buffer,
 	if (claim)
 		sdio_release_host(card->func);
 
+	if (ret)
+		wiphy_err(priv->hw->wiphy," %s : sdio_readsb buffer ptr = 0x%p ioport: 0x%x"
+				" for size %d failed with error %d\n",
+				__func__, buffer, ioport,blk_cnt * blk_size, ret);
 	return ret;
 }
 
@@ -2049,6 +2077,16 @@ static int mwl_host_to_card_mp_aggr(struct mwl_priv *priv,
 	}
 
 	if (f_send_cur_buf != 0) {
+
+/* Alignment WAR */
+#if 1
+		if(((int)payload) & 0x3) {
+			card->tx_align_war_count++;
+			memcpy(card->tx_align_buf, payload, pkt_len);
+			ret = mwl_write_data_to_card(priv, card->tx_align_buf, pkt_len,
+						 card->ioport + port);
+		} else
+#endif
 		ret = mwl_write_data_to_card(priv, payload, pkt_len,
 						 card->ioport + port);
 	}
