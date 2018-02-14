@@ -25,6 +25,7 @@
 #include "debugfs.h"
 
 #include "pcie.h"
+#include "sdio.h"
 
 #define MWLWIFI_DEBUGFS_ADD_FILE(name) do { \
 	if (!debugfs_create_file(#name, 0644, priv->debugfs_phy, \
@@ -194,6 +195,13 @@ static ssize_t mwl_debugfs_info_read(struct file *file, char __user *ubuf,
 			"TCQ%d : cwmin=%d cwmax=%d txop=%d aifsn=%d\n",
 			i, cwmin, cwmax, txop, aifsn);
 	}
+
+	 if (priv->host_if == MWL_IF_SDIO) {
+
+                struct mwl_sdio_card *card = priv->intf;
+                len += scnprintf(p + len, size - len,
+                         "tx_align_war_count: %d\n",card->tx_align_war_count);
+        }
 
 	len += scnprintf(p + len, size - len, "\n");
 
