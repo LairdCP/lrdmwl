@@ -437,8 +437,9 @@ struct mwl_sdio_card {
 	u8 *mp_regs;
 	struct mwifiex_sdio_mpa_tx mpa_tx;
 	struct mwifiex_sdio_mpa_rx mpa_rx;
-	u8 * tx_align_buf;
-	int tx_align_war_count;
+
+	int tx_pkt_unaligned_cnt;
+
 	u16 sdio_rx_block_size;
 	u8 data_sent;
 	u8 data_received;
