@@ -66,23 +66,23 @@ void mwl_rx_prepare_status(struct mwl_rx_desc *pdesc,
 
 	switch (format) {
 	case RX_RATE_INFO_FORMAT_11N:
-		status->flag |= RX_FLAG_HT;
+		status->encoding = RX_ENC_HT;
 		if (bw == RX_RATE_INFO_HT40)
-			status->flag |= RX_FLAG_40MHZ;
+			status->bw |= RATE_INFO_BW_40;
 		if (gi == RX_RATE_INFO_SHORT_INTERVAL)
-			status->flag |= RX_FLAG_SHORT_GI;
+			status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
 		break;
 	case RX_RATE_INFO_FORMAT_11AC:
-		status->flag |= RX_FLAG_VHT;
+		status->encoding |= RX_ENC_VHT;
 		if (bw == RX_RATE_INFO_HT40)
-			status->flag |= RX_FLAG_40MHZ;
+			status->bw |= RATE_INFO_BW_40;
 		if (bw == RX_RATE_INFO_HT80)
-			status->vht_flag |= RX_VHT_FLAG_80MHZ;
+			status->bw |= RATE_INFO_BW_80;
 		if (bw == RX_RATE_INFO_HT160)
-			status->vht_flag |= RX_VHT_FLAG_160MHZ;
+			status->bw |= RATE_INFO_BW_160;
 		if (gi == RX_RATE_INFO_SHORT_INTERVAL)
-			status->flag |= RX_FLAG_SHORT_GI;
-		status->vht_nss = (nss + 1);
+			status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
+		status->nss = (nss + 1);
 		break;
 	}
 
@@ -90,16 +90,16 @@ void mwl_rx_prepare_status(struct mwl_rx_desc *pdesc,
 
 	if (pdesc->channel > BAND_24_CHANNEL_NUM) {
 		status->band = NL80211_BAND_5GHZ;
-		if ((!(status->flag & RX_FLAG_HT)) &&
-		    (!(status->flag & RX_FLAG_VHT))) {
+		if ((!(status->enc_flags & RX_ENC_FLAG_HT_GF)) &&
+		    (!(status->encoding & RX_ENC_VHT))) {
 			status->rate_idx -= 5;
 			if (status->rate_idx >= BAND_50_RATE_NUM)
 				status->rate_idx = BAND_50_RATE_NUM - 1;
 		}
 	} else {
 		status->band = NL80211_BAND_2GHZ;
-		if ((!(status->flag & RX_FLAG_HT)) &&
-		    (!(status->flag & RX_FLAG_VHT))) {
+		if ((!(status->flag & RX_ENC_FLAG_HT_GF)) &&
+		    (!(status->encoding & RX_ENC_VHT))) {
 			if (status->rate_idx >= BAND_24_RATE_NUM)
 				status->rate_idx = BAND_24_RATE_NUM - 1;
 		}
@@ -179,8 +179,8 @@ void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 
 	spin_lock_bh(&priv->sta_lock);
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
-		sta = container_of((char *)sta_info, struct ieee80211_sta,
-				   drv_priv[0]);
+		sta = container_of((void *)sta_info, struct ieee80211_sta,
+				   drv_priv);
 		if (ether_addr_equal(sta->addr, sta_addr)) {
 			sta_info->is_amsdu_allowed = true;
 			break;
