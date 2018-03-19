@@ -33,7 +33,7 @@
 #define HOSTCMD_STA_FWRDY_SIGNATURE     0xF0F1F2F4
 #define HOSTCMD_SOFTAP_FWRDY_SIGNATURE  0xF1F2F4A5
 
-#define HOSTCMD_RESP_BIT				0x8000
+#define HOSTCMD_RESP_BIT                0x8000
 
 #define GUARD_INTERVAL_STANDARD         1
 #define GUARD_INTERVAL_SHORT            2
@@ -301,4 +301,6 @@ void mwl_hex_dump(const void *buf, size_t len);
 
 int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable);
 
+int mwl_fwcmd_enter_deepsleep (struct ieee80211_hw *hw);
+int mwl_fwcmd_exit_deepsleep (struct ieee80211_hw *hw);
 #endif /* _FWCMD_H_ */

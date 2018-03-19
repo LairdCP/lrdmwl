@@ -156,6 +156,8 @@ int EDMAC_Ctrl = 0x0;
 /* Tx AMSDU control*/
 int tx_amsdu_enable = 0;
 
+int ds_enable = 1;
+
 int SISO_mode = 0;
 
 int lrd_debug = 0;
@@ -480,8 +482,7 @@ void timer_routine(struct timer_list *t)
 
 			if ((jiffies - tx_stats->start_time > HZ) &&
 			    (tx_stats->pkts < SYSADPT_AMPDU_PACKET_THRESHOLD)) {
-				ieee80211_stop_tx_ba_session(stream->sta,
-							     stream->tid);
+				ieee80211_stop_tx_ba_session(stream->sta, stream->tid);
 			}
 
 			if (jiffies - tx_stats->start_time > HZ) {
@@ -494,6 +495,22 @@ void timer_routine(struct timer_list *t)
 
 	mod_timer(&priv->period_timer, jiffies +
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
+}
+
+void ds_routine(struct timer_list *t)
+{
+	struct mwl_priv *priv = from_timer(priv, t, ds_timer);
+	struct ieee80211_hw *hw = priv->hw;
+	struct ieee80211_conf *conf = &hw->conf;
+
+	if(!priv->ds_enable)
+		return;
+
+	if (conf->flags & IEEE80211_CONF_IDLE) {
+		priv->ds_state = DS_SLEEP;
+		queue_work(priv->ds_workq, &priv->ds_work);
+		return;
+	}
 }
 
 static int mwl_wl_init(struct mwl_priv *priv)
@@ -739,11 +756,70 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	skb_queue_purge(&priv->rx_defer_skb_q);
 
 	mwl_fwcmd_reset(hw);
+
+	cancel_work_sync(&priv->ds_work);
+	destroy_workqueue(priv->ds_workq);
+
 #ifdef CONFIG_SYSFS
 	lrd_sysfs_remove(hw);
 #endif
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
+
+
+static void mwl_ds_workq(struct work_struct *work)
+{
+	struct mwl_priv  *priv = container_of(work,
+                        struct mwl_priv, ds_work);
+
+	mwl_fwcmd_enter_deepsleep(priv->hw);
+	priv->if_ops.enter_deepsleep(priv);
+}
+
+
+void mwl_restart_ds_timer(struct mwl_priv *priv, bool force)
+{
+	struct ieee80211_conf *conf = &priv->hw->conf;
+
+	if(!priv->ds_enable)
+		return;
+
+	if ((conf->flags & IEEE80211_CONF_IDLE) || force) {
+		mod_timer(&priv->ds_timer, jiffies + msecs_to_jiffies(1000));
+	}
+}
+EXPORT_SYMBOL_GPL(mwl_restart_ds_timer);
+
+void mwl_delete_ds_timer(struct mwl_priv *priv)
+{
+	del_timer_sync(&priv->ds_timer);
+}
+EXPORT_SYMBOL_GPL(mwl_delete_ds_timer);
+
+void mwl_enable_ds(struct mwl_priv * priv)
+{
+	if (priv->ds_enable)
+		return;
+
+	priv->ds_enable = true;
+	mwl_restart_ds_timer(priv,false);
+	wiphy_err(priv->hw->wiphy, "Enabled DS\n");
+}
+EXPORT_SYMBOL_GPL(mwl_enable_ds);
+
+void mwl_disable_ds(struct mwl_priv * priv)
+{
+	if(!priv->ds_enable)
+		return;
+
+	mwl_delete_ds_timer(priv);
+
+	if(priv->ds_state == DS_SLEEP)
+		priv->if_ops.wakeup_card(priv);
+
+	priv->ds_enable = 0;
+}
+EXPORT_SYMBOL_GPL(mwl_disable_ds);
 
 void lrd_radio_recovery(struct mwl_priv *priv)
 {
@@ -761,7 +837,7 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 
 	if (!priv->if_ops.hardware_reset)
 	{
-		wiphy_info(hw->wiphy, "%s: Radio recovery requested but no reset handler configured!\n", 
+		wiphy_info(hw->wiphy, "%s: Radio recovery requested but no reset handler configured!\n",
 			MWL_DRV_NAME);
 		return;
 	}
@@ -808,6 +884,10 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
 	skb_queue_head_init(&priv->rx_defer_skb_q);
 
+	priv->ds_workq = alloc_workqueue("mwlwifi-ds_workq",
+	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&priv->ds_work, mwl_ds_workq);
+
 	/* Save interface specific operations in adapter */
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
 
@@ -853,6 +933,11 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
+
+	priv->ds_enable = ds_enable;
+
+	timer_setup(&priv->ds_timer, ds_routine, 0);
+	mwl_restart_ds_timer(priv, true);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
@@ -973,6 +1058,9 @@ MODULE_PARM_DESC(tx_amsdu_enable, "Tx AMSDU enable/disable");
 
 module_param(SISO_mode, uint, 0444);
 MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
+
+module_param(ds_enable, int, 0);
+MODULE_PARM_DESC(ds_enable, "Deepsleep enable/disable");
 
 module_param(lrd_debug, uint, 0644);
 MODULE_PARM_DESC(lrd_debug, "Debug mode 0:Disable 1:Enable");

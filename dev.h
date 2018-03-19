@@ -30,7 +30,8 @@
 #include "pfu.h"
 
 #define MWL_DRV_NAME     KBUILD_MODNAME
-#define MWL_DRV_VERSION	 "P22.2-20180509"
+#define MWL_DRV_VERSION	 "P25-20180330"
+
 #define LRD_DESC         "Laird 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Technologies"
 #define LRD_BLD_VERSION  "3.5.5.0"
@@ -222,8 +223,8 @@ struct mwl_hw_data {
 #define MWL_TX_RATE_SHORTGI_SHIFT     6
 #define MWL_TX_RATE_RATEIDMCS_MASK    0x00007F00
 #define MWL_TX_RATE_RATEIDMCS_SHIFT   8
-#define MWL_TX_RATE_NSS_MASK    0x00030000
-#define MWL_TX_RATE_NSS_SHIFT   16
+#define MWL_TX_RATE_NSS_MASK          0x00030000
+#define MWL_TX_RATE_NSS_SHIFT         16
 
 /* Transmit rate information constants */
 #define TX_RATE_FORMAT_LEGACY         0
@@ -450,7 +451,8 @@ struct mwl_if_ops {
 	int (*host_to_card) (struct mwl_priv *, int, struct sk_buff *);
 	int (*cmd_resp_wait_completed) (struct mwl_priv *, unsigned short);
 	int (*wakeup) (struct mwl_priv *);
-	int (*wakeup_complete) (struct mwl_priv *);
+	void (*wakeup_complete) (struct mwl_priv *);
+	void (*enter_deepsleep) (struct mwl_priv *);
 	void (*flush_amsdu)(unsigned long);
 	int (*dbg_info)(struct mwl_priv *, char*, int, int);
 	int (*dbg_reg_access)(struct mwl_priv *, bool);
@@ -472,6 +474,8 @@ struct mwl_if_ops {
 	void (*deaggr_pkt)(struct mwl_priv *, struct sk_buff *);
 	void (*multi_port_resync)(struct mwl_priv *);
 	int (*hardware_reset)(struct mwl_priv *);
+	int (*wakeup_card)(struct mwl_priv *);
+	int (*is_deepsleep)(struct mwl_priv *);
 };
 
 #define MWL_OTP_BUF_SIZE	(256*8)		//258 lines * 8 bytes
@@ -480,6 +484,9 @@ struct otp_data {
 	u8 buf[MWL_OTP_BUF_SIZE];
 	u32 len;	// Actual size of data in buf[]
 };
+
+#define DS_SLEEP 1
+#define DS_AWAKE 0
 
 //Laird radio capability bits
 #define LRD_CAP_SU60 BIT(0)
@@ -553,6 +560,10 @@ struct mwl_priv {
 
 	struct timer_list period_timer;
 	bool shutdown;
+
+	struct timer_list ds_timer;
+	bool ds_state;
+	bool ds_enable;
 
 #ifdef CONFIG_PM
 	struct mwl_wowlan_cfg wow;
@@ -657,6 +668,8 @@ struct mwl_priv {
 
 	struct workqueue_struct *rx_defer_workq;
 	struct work_struct rx_defer_work;
+	struct workqueue_struct *ds_workq;
+	struct work_struct ds_work;
 	struct sk_buff_head rx_defer_skb_q;
 	bool is_rx_defer_schedule;
 
@@ -788,6 +801,8 @@ static inline struct mwl_sta *mwl_dev_get_sta(const struct ieee80211_sta *sta)
 	return (struct mwl_sta *)&sta->drv_priv;
 }
 
+void mwl_enable_ds(struct mwl_priv *);
+void mwl_disable_ds(struct mwl_priv *);
 /* Defined in mac80211.c. */
 extern const struct ieee80211_ops mwl_mac80211_ops;
 
