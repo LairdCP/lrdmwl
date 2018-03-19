@@ -45,10 +45,10 @@ enum sdio_pkt_type {
 	MWL_TYPE_BEACON = 0x0c,
 };
 
-#define MWL_DMA_ALIGN_SZ         4
+#define MWL_DMA_ALIGN_SZ        4
 #define MWL_RX_HEADROOM         64
-#define MAX_TXPD_SZ		          32
-#define INTF_HDR_ALIGN		       4
+#define MAX_TXPD_SZ             32
+#define INTF_HDR_ALIGN          4
 
 #define MWL_MIN_DATA_HEADER_LEN (MWL_DMA_ALIGN_SZ + INTF_HDR_ALIGN + \
 				     MAX_TXPD_SZ)
@@ -99,21 +99,21 @@ enum sdio_pkt_type {
 
 
 #define MWL_MP_AGGR_BUF_SIZE_MAX    (65280)
-#define MWL_MP_AGGR_BUF_SIZE_32K	  (32768)
+#define MWL_MP_AGGR_BUF_SIZE_32K    (32768)
 #define SDIO_MAX_AGGR_BUF_SIZE      (256 * 256)
 #define MWL_SDIO_BLOCK_SIZE         256
 
-#define BLOCK_MODE	1
-#define BYTE_MODE	0
+#define BLOCK_MODE  1
+#define BYTE_MODE   0
 
 #define MWL_UPLD_SIZE               (2312)
-#define MAX_POLL_TRIES               100
-#define MAX_WRITE_IOMEM_RETRY        2
-#define MAX_FIRMWARE_POLL_TRIES      100
+#define MAX_POLL_TRIES              100
+#define MAX_WRITE_IOMEM_RETRY       2
+#define MAX_FIRMWARE_POLL_TRIES     100
 #define FIRMWARE_READY_SDIO         0xfedc
 #define MWL_SDIO_BYTE_MODE_MASK     0x80000000
 #define MWL_SDIO_IO_PORT_MASK       0xfffff
-#define SDIO_MPA_ADDR_BASE		      0x1000
+#define SDIO_MPA_ADDR_BASE          0x1000
 #define BLOCK_NUMBER_OFFSET         15
 #define SDIO_HEADER_OFFSET          28
 
@@ -381,19 +381,18 @@ struct mwifiex_sdio_mpa_rx {
 };
 
 /* 16 bit SDIO event code */
-#define SDEVENT_RADAR_DETECT				0x0001
-#define SDEVENT_CHNL_SWITCH					0x0002
-#define SDEVENT_BA_WATCHDOG					0x0003
+#define SDEVENT_RADAR_DETECT    0x0001
+#define SDEVENT_CHNL_SWITCH     0x0002
+#define SDEVENT_BA_WATCHDOG     0x0003
+#define SDEVENT_WAKEUP          0x0005
 
 struct mwl_host_event_mac_t {
 	u16	event_id;
 };
 
 struct mwl_hostevent {
-	u32 next;		/* Used in firmware only */
-	u32 callback;		/* Used in firmware only */
-	u16 type;
 	u16 length;
+	u16 type;
 	union {
 		struct mwl_host_event_mac_t mac_event;
 	};
@@ -417,18 +416,18 @@ struct mwl_sdio_card {
 	struct workqueue_struct *tx_workq;
 	struct work_struct tx_work;
 	/*
-	 *	Variables for data path
+	 * Variables for data path
 	 */
-	u8 max_ports;			/* max port on card. = 32 for KF */
-	u8 mp_agg_pkt_limit;		/* max aggregated pkts, = 16 for KF*/
-	u16 tx_buf_size;		/* tx buffer size = 4k for KF */
-	u32 mp_tx_agg_buf_size;		/* = 65280 for KF? */
-	u32 mp_rx_agg_buf_size;		/* = 65280 for KF? */
+	u8 max_ports;              /* max port on card. = 32 for KF */
+	u8 mp_agg_pkt_limit;       /* max aggregated pkts, = 16 for KF*/
+	u16 tx_buf_size;           /* tx buffer size = 4k for KF */
+	u32 mp_tx_agg_buf_size;    /* = 65280 for KF? */
+	u32 mp_rx_agg_buf_size;    /* = 65280 for KF? */
 
-	u32 mp_rd_bitmap;	/* =[rd_bitmap_1u ~ rd_bitmap_l] from reg*/
-	u32 mp_wr_bitmap;	/* =[wr_bitmap_1u ~ reg->wr_bitmap_l] */
+	u32 mp_rd_bitmap;    /* =[rd_bitmap_1u ~ rd_bitmap_l] from reg*/
+	u32 mp_wr_bitmap;    /* =[wr_bitmap_1u ~ reg->wr_bitmap_l] */
 
-	u16 mp_end_port;		/* = 0x0020 for KF */
+	u16 mp_end_port;     /* = 0x0020 for KF */
 	u32 mp_data_port_mask;
 
 	u8 curr_rd_port;
@@ -463,6 +462,8 @@ struct mwl_sdio_card {
 	u32 rate_info;
 	/* needed for card reset */
 	const struct sdio_device_id *dev_id;
+	wait_queue_head_t wait_deepsleep;
+	bool is_deepsleep;
 
 	/* Host capabilities fixups */
 	u32 caps_fixups;
