@@ -871,6 +871,8 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 
 	skb_queue_tail(&priv->txq[txq_idx], skb);
 
+	mwl_restart_ds_timer(priv, false);
+
 	if (priv->if_ops.ptx_work != NULL) {
 		/* SDIO interface is using this path */
 		if (!priv->is_tx_done_schedule) {
@@ -1107,10 +1109,10 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 						spin_unlock(&priv->sta_lock);
 						spin_unlock_bh(&priv->tx_desc_lock);
 						//	wiphy_err(priv->hw->wiphy, "[call mwl_tx_skb2]\n");
-                        /* Passing 0 or num as argument is HID specific since
-                         * its usage or interpretation varies for different
-                         * HIDs.
-                         */
+						/* Passing 0 or num as argument is HID specific since
+						 * its usage or interpretation varies for different
+						 * HIDs.
+						 */
 						mwl_tx_skb(priv,
 								((priv->host_if == MWL_IF_SDIO)? 0: num),
 								sta_info->amsdu_ctrl.frag[num].skb);

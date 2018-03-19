@@ -484,6 +484,7 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	card->cmd_wait_q.status = 0;
 	card->cmd_sent = false;
 	card->data_sent = false;
+	init_waitqueue_head(&card->wait_deepsleep);
 
 	sdio_claim_host(card->func);
 
@@ -568,30 +569,30 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
 	u32 port;
 	int rc;
 	__le16 *pbuf = (__le16 *)priv->pcmd_buf;
-    int status;
-    unsigned long flags;
+	int status;
+	unsigned long flags;
 
-    /* Wait till the card informs CMD_DNLD_RDY interrupt except
-     * for get HW spec command */
-    if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
-        status = wait_event_timeout(card->cmd_wait_q.wait,
-                        (card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
-                        (12 * HZ));
-        if(status <= 0) {
-            wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
-            priv->in_send_cmd = false;
-            priv->cmd_timeout = true;
-            return;
-        }
-        else {
-		spin_lock_irqsave(&card->int_lock, flags);
-		card->int_status &= ~DN_LD_CMD_PORT_HOST_INT_STATUS;
-		spin_unlock_irqrestore(&card->int_lock, flags);
-        }
-    }
+	/* Wait till the card informs CMD_DNLD_RDY interrupt except
+	 * for get HW spec command */
+	if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
+		status = wait_event_timeout(card->cmd_wait_q.wait,
+		                (card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
+		                (12 * HZ));
+		if(status <= 0) {
+			wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
+			priv->in_send_cmd = false;
+			priv->cmd_timeout = true;
+			return;
+		}
+		else {
+			spin_lock_irqsave(&card->int_lock, flags);
+			card->int_status &= ~DN_LD_CMD_PORT_HOST_INT_STATUS;
+			spin_unlock_irqrestore(&card->int_lock, flags);
+		}
+	}
 
 	len = le16_to_cpu(cmd_hdr->len) +
-		INTF_CMDHEADER_LEN(INTF_HEADER_LEN)*sizeof(unsigned short);
+	    INTF_CMDHEADER_LEN(INTF_HEADER_LEN)*sizeof(unsigned short);
 	port = CMD_PORT_SLCT;
 	blk_size = MWL_SDIO_BLOCK_SIZE;
 	buf_block_len = (len + blk_size - 1) / blk_size;
@@ -785,6 +786,8 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -ENOMEM;
 	}
 
+	mwl_sdio_enable_int(priv);
+
 	sdio_claim_host(card->func);
 
 	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
@@ -917,10 +920,6 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy,
 			"FW status is not ready\n");
 	}
-	/* Enabling interrupt after firmware is ready.
-	 * Otherwise there may be abnormal interrupt DN_LD_HOST_INT_MASK
-	 */
-	mwl_sdio_enable_int(priv);
 	kfree(fwbuf);
 
 	return ret;
@@ -972,8 +971,9 @@ static char *mwl_sdio_event_strn(u16 event_id)
 		char *id_string;
 	} events[] = {
 		{ SDEVENT_RADAR_DETECT, "SDEVENT_RADAR_DETECT" },
-		{ SDEVENT_CHNL_SWITCH, "SDEVENT_CHNL_SWITCH" },
-		{ SDEVENT_BA_WATCHDOG, "SDEVENT_BA_WATCHDOG" },
+		{ SDEVENT_CHNL_SWITCH,  "SDEVENT_CHNL_SWITCH" },
+		{ SDEVENT_BA_WATCHDOG,  "SDEVENT_BA_WATCHDOG" },
+        {SDEVENT_WAKEUP,        "SDEVENT_WAKEUP" },
 	};
 
 	max_entries = ARRAY_SIZE(events);
@@ -985,17 +985,68 @@ static char *mwl_sdio_event_strn(u16 event_id)
 	return "unknown";
 }
 
+int mwl_sdio_wakeup_card(struct mwl_priv *priv)
+{
+	int status;
+	struct mwl_sdio_card *card = priv->intf;
+	u8 cr;
+
+	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
+		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
+
+	wiphy_err(priv->hw->wiphy,"Initiate Card wakeup\n");
+
+	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x2))) {
+		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
+		return -EIO;
+	}
+
+	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
+		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
+
+	status = wait_event_timeout(card->wait_deepsleep,(
+					card->is_deepsleep == 0), 12 * HZ);
+	if(status <= 0) {
+		wiphy_err(priv->hw->wiphy, "info: Card Wakeup failed\n");
+		return -EIO;
+	}
+
+	priv->ds_state = DS_AWAKE;
+
+	mwl_restart_ds_timer(priv, false);
+
+	wiphy_err(priv->hw->wiphy, "info: Card Wakeup complete\n");
+	return 0;
+}
+
+void mwl_sdio_wakeup_complete(struct mwl_priv *priv)
+{
+	struct mwl_sdio_card *card = priv->intf;
+	if (mwl_write_reg(priv, CONFIGURATION_REG, 0))
+		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
+
+	card->is_deepsleep = 0;
+	wake_up_interruptible(&card->wait_deepsleep);
+}
+
 static int mwl_sdio_event(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
+#if 0
 	struct mwl_hostevent *host_event = (struct mwl_hostevent *)(
 		&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)]);
+#else
+	struct mwl_hostevent *host_event = (struct mwl_hostevent *)(
+		&priv->pcmd_buf[0]);
+#endif
 	u16	event_id = host_event->mac_event.event_id;
+
+	// Remove SDIO Header
+	host_event->length -= INTF_HEADER_LEN;
 
 	wiphy_info(hw->wiphy,
 		"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
 
-	mwl_hex_dump((u8 *)host_event, host_event->length);
 	switch (event_id) {
 	case SDEVENT_RADAR_DETECT:
 		ieee80211_radar_detected(hw);
@@ -1006,13 +1057,13 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	case SDEVENT_BA_WATCHDOG:
 		ieee80211_queue_work(hw, &priv->watchdog_ba_handle);
 		break;
+	case SDEVENT_WAKEUP:
+		mwl_sdio_wakeup_complete(priv);
+		break;
 	default:
 		wiphy_info(hw->wiphy,"Unknown event, id=%04xh\n", event_id);
 	}
 
-
-	wiphy_info(hw->wiphy,
-		"<= %s()\n", __func__);
 	return 0;
 }
 
@@ -1041,8 +1092,8 @@ static void mwl_sdio_interrupt_status(struct mwl_priv *priv)
 	unsigned long flags;
 
 	if (mwl_read_data_sync(priv, card->mp_regs,
-				   card->reg->max_mp_regs,
-				   REG_PORT, 0)) {
+	               card->reg->max_mp_regs,
+	               REG_PORT, 0)) {
 		wiphy_err(priv->hw->wiphy, "read mp_regs failed\n");
 		return;
 	}
@@ -1073,7 +1124,7 @@ static int mwl_sdio_card_to_host(struct mwl_priv *priv, u32 *type,
 
 	if (!buffer) {
 		wiphy_err(priv->hw->wiphy,
-			    "%s: buffer is NULL\n", __func__);
+		        "%s: buffer is NULL\n", __func__);
 		return -1;
 	}
 
@@ -1101,7 +1152,6 @@ static int mwl_get_rd_port(struct mwl_priv *priv, u8 *port)
 
 	if (!(rd_bitmap & reg->data_port_mask))
 		return -1;
-
 
 	if (!(card->mp_rd_bitmap & (1 << card->curr_rd_port)))
 		return -1;
@@ -1887,12 +1937,16 @@ static void mwl_sdio_rx_recv(unsigned long data)
 	struct sk_buff *prx_skb = NULL;
 	int work_done = 0;
 
+	mwl_restart_ds_timer(priv, false);
+
 	while (work_done < priv->recv_limit) {
 		prx_skb = skb_dequeue(&card->rx_data_q);
 		if (prx_skb == NULL) {
 			break;
 		}
+
 		rx_info = MWL_SKB_RXCB(prx_skb);
+
 
 		if (rx_info->buf_type == MWL_TYPE_AGGR_DATA)
 			mwl_deaggr_sdio_pkt(priv, prx_skb);
@@ -2341,19 +2395,37 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 	}
 }
 
+static void mwl_sdio_enter_deepsleep(struct mwl_priv * priv)
+{
+
+	struct mwl_sdio_card *card = priv->intf;
+	card->is_deepsleep = 1;
+}
+
+static int mwl_sdio_is_deepsleep(struct mwl_priv * priv)
+{
+
+	struct mwl_sdio_card *card = priv->intf;
+	return card->is_deepsleep ;
+}
+
 static struct mwl_if_ops sdio_ops = {
-	.inttf_head_len = INTF_HEADER_LEN,
-	.init_if =            mwl_sdio_init,
-	.cleanup_if =         mwl_sdio_cleanup,
-	.check_card_status =  mwl_sdio_check_card_status,
-	.prog_fw =            mwl_sdio_program_firmware,
-	.register_dev =       mwl_sdio_register_dev,
-	.unregister_dev =     mwl_sdio_unregister_dev,
-	.send_cmd =           mwl_sdio_send_command,
+	.inttf_head_len          = INTF_HEADER_LEN,
+	.init_if                 = mwl_sdio_init,
+	.cleanup_if              = mwl_sdio_cleanup,
+	.check_card_status       = mwl_sdio_check_card_status,
+	.prog_fw                 = mwl_sdio_program_firmware,
+	.register_dev            = mwl_sdio_register_dev,
+	.unregister_dev          = mwl_sdio_unregister_dev,
+	.send_cmd                = mwl_sdio_send_command,
 	.cmd_resp_wait_completed = mwl_sdio_cmd_resp_wait_completed,
-	.host_to_card =       mwl_sdio_host_to_card,
-	.is_tx_available =    mwl_sdio_is_tx_available,
-	.flush_amsdu =        mwl_sdio_flush_amsdu,
+	.host_to_card            = mwl_sdio_host_to_card,
+	.is_tx_available         = mwl_sdio_is_tx_available,
+	.flush_amsdu             = mwl_sdio_flush_amsdu,
+	.enter_deepsleep         = mwl_sdio_enter_deepsleep,
+	.wakeup_card             = mwl_sdio_wakeup_card,
+	.is_deepsleep            = mwl_sdio_is_deepsleep,
+	.wakeup_complete         = mwl_sdio_wakeup_complete,
 };
 
 static int mwl_sdio_probe(struct sdio_func *func,
@@ -2383,13 +2455,14 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	card->dev_id = id;
 
 	if ((id->driver_data == MWL8897) || (id->driver_data == MWL8997)){
-	if (id->driver_data == MWL8897) {
-		card->reg = &mwl_reg_sd8897;
-		card->chip_type = MWL8897;
-	} else {
-		card->reg = &mwl_reg_sd8997;
-		card->chip_type = MWL8997;
-        }
+		if (id->driver_data == MWL8897) {
+			card->reg = &mwl_reg_sd8897;
+			card->chip_type = MWL8897;
+		} else {
+			card->reg = &mwl_reg_sd8997;
+			card->chip_type = MWL8997;
+		}
+
 		card->max_ports = 32;
 		card->mp_agg_pkt_limit = 16;
 		card->tx_buf_size = MWL_TX_DATA_BUF_SIZE_4K;
@@ -2455,6 +2528,8 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	mwl_sdio_cleanup(priv);
 	mwl_sdio_unregister_dev(priv);
 
+    mwl_delete_ds_timer(priv);
+
 	// If there are issues with the SDIO interface the mmc host code
 	// triggers a card removal sequence which causes the client driver to
 	// be unloaded.  This typically occurs before recovery logic kicks in
@@ -2504,7 +2579,6 @@ static int mwl_sdio_suspend(struct device *dev)
 	struct mwl_sdio_card *card;
 	mmc_pm_flag_t pm_flag = 0;
 	int ret = 0;
-
 
 	if (func) {
 		pm_flag = sdio_get_host_pm_caps(func);
@@ -2668,7 +2742,7 @@ static int mwl_sdio_init_gpio(void)
 		pr_info("lrdmwl: Reset GPIO %d configured\n", reset_pwd_gpio);
 
 		/* Request the reset GPIO in de-asserted state
-		 * It is the responsibility of device tree to ensure module is 
+		 * It is the responsibility of device tree to ensure module is
 		 * reset up to this point if necessary
 		 * Guarantee minimum of 50ms assertion
 		 */
@@ -2678,7 +2752,7 @@ static int mwl_sdio_init_gpio(void)
 				       GPIOF_EXPORT_DIR_FIXED,
 				       "WIFI_RESET");
 
-		/* Only return failure code if GPIO is configured but 
+		/* Only return failure code if GPIO is configured but
 		 * request fails
 		 */
 		if (ret) {
