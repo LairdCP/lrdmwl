@@ -384,16 +384,15 @@ struct mwifiex_sdio_mpa_rx {
 #define SDEVENT_RADAR_DETECT				0x0001
 #define SDEVENT_CHNL_SWITCH					0x0002
 #define SDEVENT_BA_WATCHDOG					0x0003
+#define SDEVENT_WAKEUP						0x0005
 
 struct mwl_host_event_mac_t {
 	u16	event_id;
 };
 
 struct mwl_hostevent {
-	u32 next;		/* Used in firmware only */
-	u32 callback;		/* Used in firmware only */
-	u16 type;
 	u16 length;
+	u16 type;
 	union {
 		struct mwl_host_event_mac_t mac_event;
 	};
@@ -463,6 +462,8 @@ struct mwl_sdio_card {
 	u32 rate_info;
 	/* needed for card reset */
 	const struct sdio_device_id *dev_id;
+	wait_queue_head_t wait_deepsleep;
+	bool is_deepsleep;
 
 	/* Host capabilities fixups */
 	u32 caps_fixups;

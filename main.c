@@ -149,8 +149,10 @@ int wmm_turbo = 1;
 /* EDMAC Control */
 int EDMAC_Ctrl = 0x0;
 
-int SISO_mode = 0;
+int ds_enable = 1;
 
+/*Laird additions */
+int SISO_mode = 0;
 int lrd_debug = 0;
 
 static bool mwl_is_world_mode(struct mwl_priv *priv)
@@ -525,6 +527,22 @@ void timer_routine(unsigned long data)
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 }
 
+void ds_routine(unsigned long data)
+{
+	struct mwl_priv *priv = (struct mwl_priv *)data;
+	struct ieee80211_hw *hw = priv->hw;
+	struct ieee80211_conf *conf = &hw->conf;
+
+	if(!priv->ds_enable || priv->shutdown)
+		return;
+
+	if (conf->flags & IEEE80211_CONF_IDLE) {
+		priv->ds_state = DS_SLEEP;
+		queue_work(priv->ds_workq, &priv->ds_work);
+		return;
+	}
+}
+
 static int mwl_wl_init(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw;
@@ -752,8 +770,62 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 
 	mwl_fwcmd_reset(hw);
 
+	cancel_work_sync(&priv->ds_work);
+	destroy_workqueue(priv->ds_workq);
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
+
+
+static void mwl_ds_workq(struct work_struct *work)
+{
+	struct mwl_priv  *priv = container_of(work,
+                        struct mwl_priv, ds_work);
+	mwl_fwcmd_enter_deepsleep(priv->hw);
+	priv->if_ops.enter_deepsleep(priv);
+}
+
+
+void mwl_restart_ds_timer(struct mwl_priv *priv, bool force)
+{
+	struct ieee80211_conf *conf = &priv->hw->conf;
+
+	if(!priv->ds_enable)
+		return;
+
+	if ((conf->flags & IEEE80211_CONF_IDLE) || force) {
+		mod_timer(&priv->ds_timer, jiffies + msecs_to_jiffies(1000));
+	}
+}
+EXPORT_SYMBOL_GPL(mwl_restart_ds_timer);
+
+void mwl_delete_ds_timer(struct mwl_priv *priv)
+{
+	del_timer_sync(&priv->ds_timer);
+}
+EXPORT_SYMBOL_GPL(mwl_delete_ds_timer);
+
+void mwl_enable_ds(struct mwl_priv * priv)
+{
+	if (priv->ds_enable)
+		return;
+
+	priv->ds_enable = true;
+	mwl_restart_ds_timer(priv,false);
+	wiphy_err(priv->hw->wiphy, "Enabled DS\n");
+}
+EXPORT_SYMBOL_GPL(mwl_enable_ds);
+
+void mwl_disable_ds(struct mwl_priv * priv)
+{
+	if(!priv->ds_enable)
+		return;
+
+	mwl_delete_ds_timer(priv);
+	if(priv->ds_state == DS_SLEEP)
+		priv->if_ops.wakeup_card(priv);
+	priv->ds_enable = 0;
+}
+EXPORT_SYMBOL_GPL(mwl_disable_ds);
 
 int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 {
@@ -763,8 +835,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	hw = ieee80211_alloc_hw(sizeof(*priv), &mwl_mac80211_ops);
 	if (!hw) {
-		pr_err("%s: ieee80211 alloc failed\n",
-		       MWL_DRV_NAME);
+		pr_err("%s: ieee80211 alloc failed\n", MWL_DRV_NAME);
 		rc = -ENOMEM;
 		goto err_alloc_hw;
 	}
@@ -781,6 +852,11 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
 	skb_queue_head_init(&priv->rx_defer_skb_q);
+
+	priv->ds_workq = alloc_workqueue("mwlwifi-ds_workq",
+                WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&priv->ds_work, mwl_ds_workq);
+
 
 	/* Save interface specific operations in adapter */
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
@@ -829,6 +905,10 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	release_firmware(priv->fw_ucode);
 
 	mwl_process_of_dts(priv);
+
+	priv->ds_enable = ds_enable;
+	setup_timer(&priv->ds_timer, ds_routine, (unsigned long)priv);
+	mwl_restart_ds_timer(priv, true);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {

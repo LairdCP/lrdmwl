@@ -287,4 +287,6 @@ void mwl_hex_dump(const void *buf, size_t len);
 
 int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable);
 
+int mwl_fwcmd_enter_deepsleep (struct ieee80211_hw *hw);
+int mwl_fwcmd_exit_deepsleep (struct ieee80211_hw *hw);
 #endif /* _FWCMD_H_ */
