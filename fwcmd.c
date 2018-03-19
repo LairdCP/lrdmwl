@@ -119,6 +119,7 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_HOSTSLEEP_CTRL)
 		ENTRY(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)
 		ENTRY(HOSTCMD_CMD_MONITOR_MODE)
+		ENTRY(HOSTCMD_CMD_DEEPSLEEP)
 		ENTRY(HOSTCMD_LRD_MFG)
 		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
@@ -182,6 +183,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	// Don't attempt to access it
 	if (priv->recovery_in_progress)
 		return -EIO;
+
+	if (priv->ds_state == DS_SLEEP && cmd != HOSTCMD_CMD_DEEPSLEEP)
+		priv->if_ops.wakeup_card(priv);
 
 	if (!mwl_fwcmd_chk_adapter(priv)) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
@@ -266,6 +270,8 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	if (!busy)
 		priv->in_send_cmd = false;
 
+	if(cmd != HOSTCMD_CMD_DEEPSLEEP)
+		mwl_restart_ds_timer(priv, false);
 	return 0;
 }
 
@@ -295,6 +301,45 @@ int mwl_fwcmd_set_slot_time(struct ieee80211_hw *hw, bool short_slot)
 	mutex_unlock(&priv->fwcmd_mutex);
 
 	return 0;
+}
+
+int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
+{
+	struct hostcmd_cmd_deepsleep *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	if(priv->if_ops.is_deepsleep(priv))
+		return 0;
+	pcmd = (struct hostcmd_cmd_deepsleep *)&priv->pcmd_buf[
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_DEEPSLEEP);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->enableFlag = 1;
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_DEEPSLEEP)) {
+			mutex_unlock(&priv->fwcmd_mutex);
+			wiphy_err(priv->hw->wiphy, "failed execution\n");
+			return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+
+	wiphy_err(priv->hw->wiphy, "Entered deepsleep\n");
+	return 0;
+}
+
+int mwl_fwcmd_exit_deepsleep(struct ieee80211_hw *hw)
+{
+	int ret;
+	struct mwl_priv *priv = hw->priv;
+
+	ret = priv->if_ops.wakeup_card(priv);
+
+	return ret;
 }
 
 int mwl_fwcmd_config_EDMACCtrl(struct ieee80211_hw *hw, int EDMAC_Ctrl)
@@ -1356,30 +1401,30 @@ int mwl_fwcmd_get_stat(struct ieee80211_hw *hw,
 
 int mwl_fwcmd_reg_mac(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 {
-    struct mwl_priv *priv = hw->priv;
-    struct hostcmd_cmd_mac_reg_access *pcmd;
+	struct mwl_priv *priv = hw->priv;
+	struct hostcmd_cmd_mac_reg_access *pcmd;
 
-    pcmd = (struct hostcmd_cmd_mac_reg_access *)&priv->pcmd_buf[
-                INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+	pcmd = (struct hostcmd_cmd_mac_reg_access *)&priv->pcmd_buf[
+				INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
-    mutex_lock(&priv->fwcmd_mutex);
+	mutex_lock(&priv->fwcmd_mutex);
 
-    memset(pcmd, 0x00, sizeof(*pcmd));
-    pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_MAC_REG_ACCESS);
-    pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
-    pcmd->offset = cpu_to_le16(reg);
-    pcmd->action = cpu_to_le16(flag);
-    pcmd->value = *val;
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_MAC_REG_ACCESS);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->offset = cpu_to_le16(reg);
+	pcmd->action = cpu_to_le16(flag);
+	pcmd->value = *val;
 
     if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MAC_REG_ACCESS)) {
         mutex_unlock(&priv->fwcmd_mutex);
         return -EIO;
     }
 
-    *val = pcmd->value;
+	*val = pcmd->value;
 
-    mutex_unlock(&priv->fwcmd_mutex);
-    return 0;
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(mwl_fwcmd_reg_mac);
 
@@ -1902,25 +1947,25 @@ int mwl_fwcmd_set_rf_channel(struct ieee80211_hw *hw,
 		return 0;
 
 	if (priv->sw_scanning && priv->cur_survey_info.filled) {
-        int i;
-        for (i = 0; i < priv->survey_info_idx; i++) {
-            if (priv->cur_survey_info.channel.hw_value
+		int i;
+		for (i = 0; i < priv->survey_info_idx; i++) {
+			if (priv->cur_survey_info.channel.hw_value
 					== priv->survey_info[i].channel.hw_value) {
-                break;
-            }
-        }
+				break;
+			}
+		}
 		memcpy(&priv->survey_info[i], &priv->cur_survey_info,
 			   sizeof(struct mwl_survey_info));
-        if (i == priv->survey_info_idx)
+		if (i == priv->survey_info_idx)
 			priv->survey_info_idx++;
 	}
 
 	memset(&priv->cur_survey_info, 0x0, sizeof(struct mwl_survey_info));
 	memcpy(&priv->cur_survey_info.channel, conf->chandef.chan,
 		   sizeof(struct ieee80211_channel));
-    priv->cur_survey_valid = true;
+	priv->cur_survey_valid = true;
 
-    if(mwl_fwcmd_get_survey(hw, 1)) {
+	if(mwl_fwcmd_get_survey(hw, 1)) {
 		return -EIO;
 	}
 
@@ -3691,7 +3736,7 @@ int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
 	struct mwl_priv *priv = hw->priv;
 
 	pcmd = (struct hostcmd_cmd_region_mapping*)&priv->pcmd_buf[
-		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
 
@@ -3785,7 +3830,7 @@ int lrd_fwcmd_mfg_start(struct ieee80211_hw *hw, u32 *data)
 	struct mwl_priv *priv = hw->priv;
 
 	pcmd = (struct hostcmd_cmd_mfg*)&priv->pcmd_buf[
-		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
 
@@ -3815,7 +3860,7 @@ int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw)
 	struct mwl_priv *priv = hw->priv;
 
 	pcmd = (struct hostcmd_cmd_mfg*)&priv->pcmd_buf[
-		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
 
@@ -3847,7 +3892,7 @@ int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int data_len)
 	}
 
 	pcmd = (struct hostcmd_cmd_mfg*)&priv->pcmd_buf[
-		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
 
@@ -3875,7 +3920,7 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 	struct mwl_priv *priv = hw->priv;
 
 	pcmd = (struct hostcmd_mfgfw_header*)&priv->pcmd_buf[
-		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
 
@@ -3965,21 +4010,23 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 
 int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
 {
-    struct hostcmd_cmd_monitor_mode *pcmd;
+	struct hostcmd_cmd_monitor_mode *pcmd;
 	struct mwl_priv *priv = hw->priv;
-    pcmd = (struct hostcmd_cmd_monitor_mode*)&priv->pcmd_buf[
+	pcmd = (struct hostcmd_cmd_monitor_mode*)&priv->pcmd_buf[
 		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
 	mutex_lock(&priv->fwcmd_mutex);
 
-    memset(pcmd, 0x00, sizeof(*pcmd));
+	memset(pcmd, 0x00, sizeof(*pcmd));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_MONITOR_MODE);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
-    pcmd->enableFlag = enable;
+	pcmd->enableFlag = enable;
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MONITOR_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
+
 	mutex_unlock(&priv->fwcmd_mutex);
-    return 0;
+	return 0;
 }

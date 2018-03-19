@@ -89,6 +89,8 @@
 #define HOSTCMD_CMD_HOSTSLEEP_CTRL              0x1205
 #define HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG       0x1206
 #define HOSTCMD_CMD_MONITOR_MODE                0x1207
+#define HOSTCMD_CMD_DEEPSLEEP                   0x1209
+
 
 /* Define general result code for each command */
 #define HOSTCMD_RESULT_OK                       0x0000
@@ -178,16 +180,16 @@
 
 #define HW_SET_PARMS_FEATURES_HOST_PROBE_RESP   0x00000020
 
-#define EDMAC_2G_ENABLE_MASK			0x00000001
-#define EDMAC_2G_ENABLE_SHIFT			0x0
-#define EDMAC_5G_ENABLE_MASK			0x00000002
-#define EDMAC_5G_ENABLE_SHIFT			0x1
-#define EDMAC_2G_THRESHOLD_OFFSET_MASK		0x00000FF0
-#define EDMAC_2G_THRESHOLD_OFFSET_SHIFT		0x4
-#define EDMAC_5G_THRESHOLD_OFFSET_MASK		0x000FF000
-#define EDMAC_5G_THRESHOLD_OFFSET_SHIFT		0xC
-#define EDMAC_QLOCK_BITMAP_MASK			0x3FF00000
-#define EDMAC_QLOCK_BITMAP_SHIFT		0x14
+#define EDMAC_2G_ENABLE_MASK            0x00000001
+#define EDMAC_2G_ENABLE_SHIFT           0x0
+#define EDMAC_5G_ENABLE_MASK            0x00000002
+#define EDMAC_5G_ENABLE_SHIFT           0x1
+#define EDMAC_2G_THRESHOLD_OFFSET_MASK  0x00000FF0
+#define EDMAC_2G_THRESHOLD_OFFSET_SHIFT 0x4
+#define EDMAC_5G_THRESHOLD_OFFSET_MASK  0x000FF000
+#define EDMAC_5G_THRESHOLD_OFFSET_SHIFT 0xC
+#define EDMAC_QLOCK_BITMAP_MASK         0x3FF00000
+#define EDMAC_QLOCK_BITMAP_SHIFT        0x14
 
 #define WOWLAN_WAKE_BITMAP_LINK_LOST         0x0001
 #define WOWLAN_WAKE_BITMAP_AP_INRANGE        0x0002
@@ -213,9 +215,9 @@ enum {
 };
 
 enum {
-	WL_LONG_PREAMBLE = 1,
+	WL_LONG_PREAMBLE  = 1,
 	WL_SHORT_PREAMBLE = 3,
-	WL_AUTO_PREAMBLE = 5,
+	WL_AUTO_PREAMBLE  = 5,
 };
 
 enum encr_action_type {
@@ -365,10 +367,10 @@ struct hostcmd_cmd_802_11_get_stat {
 
 /* HOSTCMD_CMD_MAC_REG_ACCESS */
 struct hostcmd_cmd_mac_reg_access {
-    struct hostcmd_header cmd_hdr;
-    __le16 action;
-    __le16 offset;
-    u32 value;
+	struct hostcmd_header cmd_hdr;
+	__le16 action;
+	__le16 offset;
+	u32 value;
 } __packed;
 
 /* HOSTCMD_CMD_BBP_REG_ACCESS */
@@ -1200,5 +1202,10 @@ struct lrdcmd_cmd_cap
 	__le16 capability;
 	__le16 num_mac_addr;
 }__packed;
+
+struct hostcmd_cmd_deepsleep {
+    struct hostcmd_header cmd_hdr;
+    u8 enableFlag;
+} __packed;
 
 #endif /* _HOSTCMD_H_ */
