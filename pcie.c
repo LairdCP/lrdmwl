@@ -493,9 +493,18 @@ void mwl_pcie_rx_recv(unsigned long data)
 				}
 
 				if (!ieee80211_is_auth(wh->frame_control))
+#if 0
 					status.flag |= RX_FLAG_IV_STRIPPED |
 						       RX_FLAG_DECRYPTED |
 						       RX_FLAG_MMIC_STRIPPED;
+#else
+					/* For WPA2 frames, AES header/MIC are
+					** present to enable mac80211 to check
+					** for replay attacks
+					 */
+					status.flag |= RX_FLAG_DECRYPTED |
+						       RX_FLAG_MMIC_STRIPPED;
+#endif
 			}
 		}
 
