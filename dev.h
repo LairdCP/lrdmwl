@@ -478,8 +478,17 @@ struct otp_data {
 	u32 len;	// Actual size of data in buf[]
 };
 
-#define DS_SLEEP 1
-#define DS_AWAKE 0
+enum DS_STATES
+{
+	DS_AWAKE   = 0,
+	DS_AWAKEN  = 1,
+	DS_PENDING = 2,
+	DS_SLEEP   = 4,
+};
+
+#define DS_ENABLE_OFF      0
+#define DS_ENABLE_ON       1
+
 struct mwl_priv {
 	struct ieee80211_hw *hw;
 	struct firmware *fw_ucode;
@@ -549,8 +558,8 @@ struct mwl_priv {
 
 	struct timer_list period_timer;
 	struct timer_list ds_timer;
-	bool ds_state;
-	bool ds_enable;
+	enum DS_STATES ds_state;
+	int            ds_enable;
 
 	bool shutdown;
 
