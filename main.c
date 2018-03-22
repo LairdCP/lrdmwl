@@ -149,7 +149,7 @@ int wmm_turbo = 1;
 /* EDMAC Control */
 int EDMAC_Ctrl = 0x0;
 
-int ds_enable = 1;
+int ds_enable = DS_ENABLE_ON;
 
 /*Laird additions */
 int SISO_mode = 0;
@@ -537,7 +537,7 @@ void ds_routine(unsigned long data)
 		return;
 
 	if (conf->flags & IEEE80211_CONF_IDLE) {
-		priv->ds_state = DS_SLEEP;
+		priv->ds_state  = DS_PENDING;
 		queue_work(priv->ds_workq, &priv->ds_work);
 		return;
 	}
@@ -740,6 +740,8 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	mod_timer(&priv->period_timer, jiffies +
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 
+	mwl_restart_ds_timer(priv, true);
+
 	return rc;
 
 err_wl_init:
@@ -780,8 +782,12 @@ static void mwl_ds_workq(struct work_struct *work)
 {
 	struct mwl_priv  *priv = container_of(work,
                         struct mwl_priv, ds_work);
-	mwl_fwcmd_enter_deepsleep(priv->hw);
-	priv->if_ops.enter_deepsleep(priv);
+
+	if (priv->ds_state == DS_PENDING) {
+		mwl_fwcmd_enter_deepsleep(priv->hw);
+		priv->if_ops.enter_deepsleep(priv);
+		priv->ds_state = DS_SLEEP;
+	}
 }
 
 
@@ -809,7 +815,7 @@ void mwl_enable_ds(struct mwl_priv * priv)
 	if (priv->ds_enable)
 		return;
 
-	priv->ds_enable = true;
+	priv->ds_enable = DS_ENABLE_ON;
 	mwl_restart_ds_timer(priv,false);
 	wiphy_err(priv->hw->wiphy, "Enabled DS\n");
 }
@@ -821,9 +827,20 @@ void mwl_disable_ds(struct mwl_priv * priv)
 		return;
 
 	mwl_delete_ds_timer(priv);
-	if(priv->ds_state == DS_SLEEP)
+
+	if (priv->ds_state == DS_PENDING) {
+		cancel_work_sync(&priv->ds_work);
+
+		if (priv->ds_state == DS_PENDING) {
+			priv->ds_state = DS_AWAKE;
+		}
+	}
+
+	if(priv->ds_state == DS_SLEEP) {
 		priv->if_ops.wakeup_card(priv);
-	priv->ds_enable = 0;
+	}
+
+	priv->ds_enable = DS_ENABLE_OFF;
 }
 EXPORT_SYMBOL_GPL(mwl_disable_ds);
 
@@ -908,7 +925,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	priv->ds_enable = ds_enable;
 	setup_timer(&priv->ds_timer, ds_routine, (unsigned long)priv);
-	mwl_restart_ds_timer(priv, true);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
