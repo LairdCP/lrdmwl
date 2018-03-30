@@ -200,7 +200,7 @@ static ssize_t mwl_debugfs_info_read(struct file *file, char __user *ubuf,
 
                 struct mwl_sdio_card *card = priv->intf;
                 len += scnprintf(p + len, size - len,
-                         "tx_pkt_unaligned_cnt: %d\n",card->tx_pkt_unaligned_cnt);
+                         "tx_align_war_count: %d\n",card->tx_align_war_count);
         }
 
 	len += scnprintf(p + len, size - len, "\n");
