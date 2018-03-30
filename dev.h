@@ -30,7 +30,7 @@
 #include "pfu.h"
 
 #define MWL_DRV_NAME     KBUILD_MODNAME
-#define MWL_DRV_VERSION	 "P24-20180320"
+#define MWL_DRV_VERSION	 "P25-20180330"
 #define LRD_DESC         "Laird 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Technologies"
 #define LRD_BLD_VERSION  "3.5.6.14"
