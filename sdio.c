@@ -138,7 +138,6 @@ static void mwl_free_sdio_mpa_buffers(struct mwl_priv *priv)
 	struct mwl_sdio_card *card = priv->intf;
 	kfree(card->mpa_tx.buf);
 	kfree(card->mpa_rx.buf);
-	kfree(card->tx_align_buf);
 }
 
 
@@ -170,13 +169,7 @@ static int mwl_alloc_sdio_mpa_buffers(struct mwl_priv *priv,
 
 	card->mpa_rx.buf_size = rx_buf_size;
 
-	card->tx_align_buf = kzalloc(8192, GFP_KERNEL);
-	if (!card->tx_align_buf) {
-		ret = -1;
-		wiphy_err(priv->hw->wiphy," %s : memory allocation for tx_align buf failed\n", __func__);
-		goto error;
-	}
-	card->tx_align_war_count = 0;
+	card->tx_pkt_unaligned_cnt = 0;
 
 error:
 	if (ret) {
@@ -1985,11 +1978,14 @@ static int mwl_write_data_complete(struct mwl_priv *priv,
 	struct ieee80211_hdr *wh;
 	u8 *data = skb->data;
 	u32 rate;
+	struct mwl_tx_desc *tx_wcb;
 
 	if (skb == NULL)
 		return 0;
-	dma_data = (struct mwl_dma_data *)
-		&data[INTF_HEADER_LEN + sizeof(struct mwl_tx_desc)];
+
+	tx_wcb = (struct mwl_tx_desc *) &data[INTF_HEADER_LEN];
+	dma_data = (struct mwl_dma_data *) &data[tx_wcb->pkt_ptr];
+
 	wh = &dma_data->wh;
 	info = IEEE80211_SKB_CB(skb);
 
@@ -2143,16 +2139,6 @@ static int mwl_host_to_card_mp_aggr(struct mwl_priv *priv,
 	}
 
 	if (f_send_cur_buf != 0) {
-
-/* Alignment WAR */
-#if 1
-		if(((int)payload) & 0x3) {
-			card->tx_align_war_count++;
-			memcpy(card->tx_align_buf, payload, pkt_len);
-			ret = mwl_write_data_to_card(priv, card->tx_align_buf, pkt_len,
-						 card->ioport + port);
-		} else
-#endif
 		ret = mwl_write_data_to_card(priv, payload, pkt_len,
 						 card->ioport + port);
 	}
@@ -2223,13 +2209,22 @@ mwl_process_txdesc(struct mwl_priv *priv,
 	struct mwl_tx_ctrl *tx_ctrl;
 	struct ieee80211_tx_info *tx_info;
 	u8 *ptr;
-	int headroom = INTF_HEADER_LEN;
+	int headroom = INTF_HEADER_LEN, align_pad;
+	struct mwl_sdio_card *card = priv->intf;
 
 	tx_info = IEEE80211_SKB_CB(skb);
 	tx_ctrl = (struct mwl_tx_ctrl *)&IEEE80211_SKB_CB(skb)->status;
 	ptr = (u8 *)skb->data;
 
-	skb_push(skb, sizeof(struct mwl_tx_desc));
+	align_pad = ((void *)skb->data - (sizeof(struct mwl_tx_desc) + headroom)-
+			NULL) & (MWL_DMA_ALIGN_SZ - 1);
+
+	if (align_pad)
+	{
+		card->tx_pkt_unaligned_cnt++;
+	}
+
+	skb_push(skb, sizeof(struct mwl_tx_desc)+align_pad);
 	tx_desc = (struct mwl_tx_desc *) skb->data;
 	memset(tx_desc, 0, sizeof(struct mwl_tx_desc));
 
@@ -2251,8 +2246,9 @@ mwl_process_txdesc(struct mwl_priv *priv,
 	tx_desc->type = tx_ctrl->type;
 	tx_desc->xmit_control = tx_ctrl->xmit_control;
 	tx_desc->sap_pkt_info = 0;
-	tx_desc->pkt_ptr = cpu_to_le32((u8 *)skb->data - ptr);
+	tx_desc->pkt_ptr = cpu_to_le32(ptr - (u8 *)skb->data);
 	tx_desc->status = 0;
+
 	return;
 }
 
