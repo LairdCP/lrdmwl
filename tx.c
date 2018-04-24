@@ -874,8 +874,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 		/* SDIO interface is using this path */
 		if (!priv->is_tx_done_schedule) {
 			priv->is_tx_done_schedule = true;
-			queue_work(priv->if_ops.ptx_workq,
-				priv->if_ops.ptx_work);
+			queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
 		}
 	} else {
 		/* PCIE interface is using this path */

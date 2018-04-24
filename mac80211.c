@@ -359,8 +359,7 @@ void mwl_mac80211_sta_rc_update(struct ieee80211_hw *hw,
 		struct mwl_sta *sta_info;
 		sta_info = mwl_dev_get_sta(sta);
 
-		queue_work(priv->rx_defer_workq,
-			&sta_info->rc_update_work);
+		queue_work(priv->rx_defer_workq, &sta_info->rc_update_work);
 	}
 	/* TODO: VHT OpMode notification related handling here */
 }
