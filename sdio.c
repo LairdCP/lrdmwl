@@ -1001,12 +1001,10 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 		ieee80211_radar_detected(hw);
 		break;
 	case SDEVENT_CHNL_SWITCH:
-		ieee80211_queue_work(hw,
-			&priv->chnl_switch_handle);
+		ieee80211_queue_work(hw, &priv->chnl_switch_handle);
 		break;
 	case SDEVENT_BA_WATCHDOG:
-		ieee80211_queue_work(hw,
-			&priv->watchdog_ba_handle);
+		ieee80211_queue_work(hw, &priv->watchdog_ba_handle);
 		break;
 	default:
 		wiphy_info(hw->wiphy,"Unknown event, id=%04xh\n", event_id);
@@ -2330,6 +2328,7 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
 
+	cancel_work_sync(&card->tx_work);
 	destroy_workqueue(card->tx_workq);
 
 	tasklet_enable(&priv->rx_task);

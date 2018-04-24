@@ -711,13 +711,13 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	mwl_thermal_unregister(priv);
 
 	cancel_work_sync(&priv->watchdog_ba_handle);
+	cancel_work_sync(&priv->chnl_switch_handle);
 
 	cancel_work_sync(&priv->rx_defer_work);
 	destroy_workqueue(priv->rx_defer_workq);
 	skb_queue_purge(&priv->rx_defer_skb_q);
 
 	mwl_fwcmd_reset(hw);
-
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
 
@@ -780,8 +780,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	priv->intf = card;
 
 	priv->is_rx_defer_schedule = false;
-	priv->rx_defer_workq =
-		alloc_workqueue("mwlwifi-rx_defer_workq",
+	priv->rx_defer_workq = alloc_workqueue("mwlwifi-rx_defer_workq",
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
 	skb_queue_head_init(&priv->rx_defer_skb_q);
