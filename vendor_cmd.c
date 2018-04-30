@@ -29,13 +29,9 @@ lrd_vendor_cmd_mfg_start(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const void *data, int data_len)
 {
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct mwl_priv *priv = hw->priv;
-	struct sk_buff  *msg  = NULL;
+	struct sk_buff  *msg = NULL;
 	int rc  = -ENOSYS;
 	u32 rsp = 0;
-
-	//If Deep Sleep enabled, pause it
-	mwl_pause_ds(priv);
 
 	//Send
 	rc = lrd_fwcmd_mfg_start(hw, &rsp);
@@ -85,8 +81,7 @@ lrd_vendor_cmd_mfg_stop(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const void *data, int data_len)
 {
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct mwl_priv *priv = hw->priv;
-	struct sk_buff  *msg  = NULL;
+	struct sk_buff  *msg = NULL;
 	int rc = -ENOSYS;
 
 	//Send
@@ -102,9 +97,6 @@ lrd_vendor_cmd_mfg_stop(struct wiphy *wiphy, struct wireless_dev *wdev,
 	else {
 		rc = -ENOMEM;
 	}
-
-	//If Deep Sleep was paused, resume now
-	mwl_resume_ds(priv);
 
 	return rc;
 }
