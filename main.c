@@ -149,7 +149,7 @@ int wmm_turbo = 1;
 /* EDMAC Control */
 int EDMAC_Ctrl = 0x0;
 
-int ds_enable = DS_ENABLE_OFF;
+int ds_enable = DS_ENABLE_ON;
 
 /*Laird additions */
 int SISO_mode = 0;
@@ -967,16 +967,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	mwl_process_of_dts(priv);
 
-	if (priv->mfg_mode) {
-		priv->ds_enable = DS_ENABLE_OFF;
-	}
-	else {
-		priv->ds_enable =  ds_enable ? DS_ENABLE_ON : DS_ENABLE_OFF;
-	}
-
-	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
-	           priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
-
+	priv->ds_enable = priv->mfg_mode ? DS_ENABLE_OFF: ds_enable;
 	setup_timer(&priv->ds_timer, ds_routine, (unsigned long)priv);
 
 	rc = mwl_wl_init(priv);
@@ -1093,9 +1084,6 @@ MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
 
 module_param(lrd_debug, uint, 0644);
 MODULE_PARM_DESC(lrd_debug, "Debug mode 0:Disable 1:Enable");
-
-module_param(ds_enable, uint, 0444);
-MODULE_PARM_DESC(ds_enable, "Deep Sleep mode 0:Disable 1:Enable");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);
