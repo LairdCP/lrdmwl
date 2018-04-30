@@ -167,6 +167,8 @@ static bool mwl_is_world_mode(struct mwl_priv *priv)
 	return false;
 }
 
+bool mfg_mode = false;
+
 static int mwl_init_firmware(struct mwl_priv *priv)
 {
 	int rc = 0;
@@ -194,7 +196,7 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 		}
 
 	} else {
-		priv->mfg_mode = true;
+		mfg_mode = true;
 	}
 
 	wiphy_info(priv->hw->wiphy, "%s: found firmware image <%s>\n",
@@ -444,10 +446,10 @@ static void mwl_regd_init(struct mwl_priv *priv)
 	}
 }
 
-static void remain_on_channel_expire(struct timer_list *t)
+static void remain_on_channel_expire(unsigned long data)
 {
-	struct mwl_priv *priv = from_timer(priv, t, roc.roc_timer);
-	struct ieee80211_hw *hw = priv->hw;
+	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
+	struct mwl_priv *priv = hw->priv;
 
 	priv->roc.tmr_running = false;
 	if (!priv->roc.in_progress)
@@ -458,9 +460,9 @@ static void remain_on_channel_expire(struct timer_list *t)
 		ieee80211_remain_on_channel_expired(hw);
 }
 
-void timer_routine(struct timer_list *t)
+void timer_routine(unsigned long data)
 {
-	struct mwl_priv *priv = from_timer(priv, t, period_timer);
+	struct mwl_priv *priv = (struct mwl_priv *)data;
 	struct mwl_ampdu_stream *stream;
 	struct mwl_sta *sta_info;
 	struct mwl_tx_info *tx_stats;
@@ -492,15 +494,14 @@ void timer_routine(struct timer_list *t)
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 }
 
-void ds_routine(struct timer_list *t)
+void ds_routine(unsigned long data)
 {
-	struct mwl_priv *priv = from_timer(priv, t, ds_timer);
+	struct mwl_priv *priv = (struct mwl_priv *)data;
 	struct ieee80211_hw *hw = priv->hw;
 	struct ieee80211_conf *conf = &hw->conf;
 
-	if( priv->ds_enable != DS_ENABLE_ON || priv->shutdown) {
+	if(!priv->ds_enable || priv->shutdown)
 		return;
-	}
 
 	if (conf->flags & IEEE80211_CONF_IDLE) {
 		priv->ds_state  = DS_PENDING;
@@ -748,10 +749,6 @@ static void mwl_ds_workq(struct work_struct *work)
 	struct mwl_priv  *priv = container_of(work,
                         struct mwl_priv, ds_work);
 
-	if (priv->mfg_mode) {
-		return;
-	}
-
 	if (priv->ds_state == DS_PENDING) {
 		mwl_fwcmd_enter_deepsleep(priv->hw);
 		priv->if_ops.enter_deepsleep(priv);
@@ -759,13 +756,13 @@ static void mwl_ds_workq(struct work_struct *work)
 	}
 }
 
+
 void mwl_restart_ds_timer(struct mwl_priv *priv, bool force)
 {
 	struct ieee80211_conf *conf = &priv->hw->conf;
 
-	if(priv->ds_enable != DS_ENABLE_ON) {
+	if(!priv->ds_enable)
 		return;
-	}
 
 	if ((conf->flags & IEEE80211_CONF_IDLE) || force) {
 		mod_timer(&priv->ds_timer, jiffies + msecs_to_jiffies(1000));
@@ -781,58 +778,19 @@ EXPORT_SYMBOL_GPL(mwl_delete_ds_timer);
 
 void mwl_enable_ds(struct mwl_priv * priv)
 {
-	if (priv->ds_enable == DS_ENABLE_ON || priv->mfg_mode) {
+	if (priv->ds_enable)
 		return;
-	}
 
 	priv->ds_enable = DS_ENABLE_ON;
 	mwl_restart_ds_timer(priv,false);
-	wiphy_info(priv->hw->wiphy, "Enabled DS\n");
+	wiphy_err(priv->hw->wiphy, "Enabled DS\n");
 }
 EXPORT_SYMBOL_GPL(mwl_enable_ds);
 
-void mwl_resume_ds(struct mwl_priv * priv)
-{
-	if (priv->ds_enable != DS_ENABLE_PAUSE || priv->mfg_mode) {
-		return;
-	}
-
-	priv->ds_enable = DS_ENABLE_ON;
-	mwl_restart_ds_timer(priv,false);
-	wiphy_info(priv->hw->wiphy, "Resumed DS\n");
-}
-EXPORT_SYMBOL_GPL(mwl_resume_ds);
-
-void mwl_pause_ds(struct mwl_priv* priv)
-{
-	if(priv->ds_enable != DS_ENABLE_ON) {
-		return;
-	}
-
-	mwl_delete_ds_timer(priv);
-
-	if (priv->ds_state == DS_PENDING) {
-		cancel_work_sync(&priv->ds_work);
-
-		if (priv->ds_state == DS_PENDING) {
-			priv->ds_state = DS_AWAKE;
-		}
-	}
-
-	if(priv->ds_state == DS_SLEEP) {
-		priv->if_ops.wakeup_card(priv);
-	}
-
-	priv->ds_enable =  DS_ENABLE_PAUSE;
-	wiphy_info(priv->hw->wiphy, "Paused DS\n");
-}
-EXPORT_SYMBOL_GPL(mwl_pause_ds);
-
 void mwl_disable_ds(struct mwl_priv * priv)
 {
-	if(priv->ds_enable == DS_ENABLE_OFF) {
+	if(!priv->ds_enable)
 		return;
-	}
 
 	mwl_delete_ds_timer(priv);
 
@@ -849,9 +807,7 @@ void mwl_disable_ds(struct mwl_priv * priv)
 	}
 
 	priv->ds_enable = DS_ENABLE_OFF;
-	wiphy_info(priv->hw->wiphy, "Disabled DS\n");
 }
-
 EXPORT_SYMBOL_GPL(mwl_disable_ds);
 
 void lrd_radio_recovery(struct mwl_priv *priv)
@@ -968,7 +924,9 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
 
-	priv->ds_enable = priv->mfg_mode ? DS_ENABLE_OFF: ds_enable;
+	mwl_process_of_dts(priv);
+
+	priv->ds_enable = ds_enable;
 	timer_setup(&priv->ds_timer, ds_routine, 0);
 
 	rc = mwl_wl_init(priv);
