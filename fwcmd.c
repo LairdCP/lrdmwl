@@ -311,10 +311,6 @@ int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 	struct hostcmd_cmd_deepsleep *pcmd;
 	struct mwl_priv *priv = hw->priv;
 
-	if (priv->mfg_mode) {
-		return 0;
-	}
-
 	if(priv->if_ops.is_deepsleep(priv)) {
 		wiphy_err(priv->hw->wiphy,"radio already asleep %d\n", priv->ds_state);
 		return 0;
@@ -338,7 +334,7 @@ int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
-	wiphy_info(priv->hw->wiphy, "Entered deepsleep\n");
+	wiphy_err(priv->hw->wiphy, "Entered deepsleep\n");
 	return 0;
 }
 
@@ -346,10 +342,6 @@ int mwl_fwcmd_exit_deepsleep(struct ieee80211_hw *hw)
 {
 	int ret;
 	struct mwl_priv *priv = hw->priv;
-
-	if (priv->mfg_mode) {
-		return 0;
-	}
 
 	ret = priv->if_ops.wakeup_card(priv);
 
@@ -1350,6 +1342,11 @@ int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, __le16 type)
 {
 	struct mwl_priv *priv = hw->priv;
 	struct hostcmd_cmd_set_cfg *pcmd;
+
+#if 0
+	if (priv->mfg_mode)
+		return 0;
+#endif
 
 	if(!priv->cal_data)
 		return 0;
