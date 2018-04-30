@@ -179,19 +179,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 	might_sleep();
 
-	if (cmd != HOSTCMD_CMD_DEEPSLEEP) {
-		if (priv->ds_state == DS_PENDING) {
-			cancel_work_sync(&priv->ds_work);
 
-			if (priv->ds_state == DS_PENDING) {
-				priv->ds_state = DS_AWAKE;
-			}
-		}
-
-		if (priv->ds_state == DS_SLEEP) {
-			priv->if_ops.wakeup_card(priv);
-		}
-	}
+	if (priv->ds_state == DS_SLEEP && cmd != HOSTCMD_CMD_DEEPSLEEP)
+		priv->if_ops.wakeup_card(priv);
 
 	if (!mwl_fwcmd_chk_adapter(priv)) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
@@ -311,10 +301,8 @@ int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 	struct hostcmd_cmd_deepsleep *pcmd;
 	struct mwl_priv *priv = hw->priv;
 
-	if(priv->if_ops.is_deepsleep(priv)) {
-		wiphy_err(priv->hw->wiphy,"radio already asleep %d\n", priv->ds_state);
+	if(priv->if_ops.is_deepsleep(priv))
 		return 0;
-	}
 
 	pcmd = (struct hostcmd_cmd_deepsleep *)&priv->pcmd_buf[
 					INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
