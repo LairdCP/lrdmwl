@@ -489,7 +489,6 @@ enum DS_STATES
 
 #define DS_ENABLE_OFF      0
 #define DS_ENABLE_ON       1
-#define DS_ENABLE_PAUSE    2
 
 struct mwl_priv {
 	struct ieee80211_hw *hw;
@@ -674,8 +673,6 @@ struct mwl_priv {
 	bool is_rx_defer_schedule;
 
 	struct otp_data otp_data;
-
-	bool mfg_mode;
 	bool recovery_in_progress;
 };
 
@@ -804,10 +801,6 @@ static inline struct mwl_sta *mwl_dev_get_sta(const struct ieee80211_sta *sta)
 
 void mwl_enable_ds(struct mwl_priv *);
 void mwl_disable_ds(struct mwl_priv *);
-void mwl_resume_ds(struct mwl_priv *);
-void mwl_pause_ds(struct mwl_priv *);
-
-
 /* Defined in mac80211.c. */
 extern const struct ieee80211_ops mwl_mac80211_ops;
 
