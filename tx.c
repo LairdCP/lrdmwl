@@ -22,7 +22,6 @@
 #include "dev.h"
 #include "fwcmd.h"
 #include "tx.h"
-#include "main.h"
 
 
 #define EAGLE_TXD_XMITCTRL_USE_MC_RATE     0x8     /* Use multicast data rate */
@@ -870,8 +869,6 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 	}
 
 	skb_queue_tail(&priv->txq[txq_idx], skb);
-
-	mwl_restart_ds_timer(priv, false);
 
 	if (priv->if_ops.ptx_work != NULL) {
 		/* SDIO interface is using this path */

@@ -43,9 +43,6 @@ static void mwl_mac80211_tx(struct ieee80211_hw *hw,
 		return;
 	}
 
-	if(priv->ds_state == DS_SLEEP)
-		priv->if_ops.wakeup_card(priv);
-
 	mwl_tx_xmit(hw, control, skb);
 }
 
@@ -249,17 +246,6 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	struct mwl_priv *priv = hw->priv;
 
 	int rc;
-
-#if 1
-	if(changed & IEEE80211_CONF_CHANGE_IDLE) {
-		if (conf->flags & IEEE80211_CONF_IDLE) {
-			mwl_restart_ds_timer(priv, false);
-		} else {
-			mwl_delete_ds_timer(priv);
-		}
-
-	}
-#endif
 
 	if (conf->flags & IEEE80211_CONF_IDLE)
 		rc = mwl_fwcmd_radio_disable(hw);
@@ -1220,4 +1206,5 @@ const struct ieee80211_ops mwl_mac80211_ops = {
 
 	.set_antenna                = mwl_mac80211_set_ant,
 	.get_antenna                = mwl_mac80211_get_ant,
+
 };
