@@ -477,10 +477,10 @@ static void mwl_regd_init(struct mwl_priv *priv)
 	}
 }
 
-static void remain_on_channel_expire(unsigned long data)
+static void remain_on_channel_expire(struct timer_list *t)
 {
-	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
-	struct mwl_priv *priv = hw->priv;
+	struct mwl_priv *priv = from_timer(priv, t, roc.roc_timer);
+	struct ieee80211_hw *hw = priv->hw;
 
 	priv->roc.tmr_running = false;
 	if (!priv->roc.in_progress)
@@ -491,9 +491,9 @@ static void remain_on_channel_expire(unsigned long data)
 		ieee80211_remain_on_channel_expired(hw);
 }
 
-void timer_routine(unsigned long data)
+void timer_routine(struct timer_list *t)
 {
-	struct mwl_priv *priv = (struct mwl_priv *)data;
+	struct mwl_priv *priv = from_timer(priv, t, period_timer);
 	struct mwl_ampdu_stream *stream;
 	struct mwl_sta *sta_info;
 	struct mwl_tx_info *tx_stats;
@@ -525,9 +525,9 @@ void timer_routine(unsigned long data)
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 }
 
-void ds_routine(unsigned long data)
+void ds_routine(struct timer_list *t)
 {
-	struct mwl_priv *priv = (struct mwl_priv *)data;
+	struct mwl_priv *priv = from_timer(priv, t, ds_timer);
 	struct ieee80211_hw *hw = priv->hw;
 	struct ieee80211_conf *conf = &hw->conf;
 
@@ -733,9 +733,9 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		goto err_wl_init;
 	}
 
-	setup_timer(&priv->roc.roc_timer, remain_on_channel_expire, (unsigned long)hw);
+	timer_setup(&priv->roc.roc_timer, remain_on_channel_expire, 0);
 
-	setup_timer(&priv->period_timer, timer_routine, (unsigned long)priv);
+	timer_setup(&priv->period_timer, timer_routine, 0);
 	mod_timer(&priv->period_timer, jiffies +
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 
@@ -968,7 +968,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	mwl_process_of_dts(priv);
 
 	priv->ds_enable = priv->mfg_mode ? DS_ENABLE_OFF: ds_enable;
-	setup_timer(&priv->ds_timer, ds_routine, (unsigned long)priv);
+	timer_setup(&priv->ds_timer, ds_routine, 0);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
