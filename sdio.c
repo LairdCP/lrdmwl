@@ -574,11 +574,11 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
     /* Wait till the card informs CMD_DNLD_RDY interrupt except
      * for get HW spec command */
     if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
-        status = wait_event_timeout(card->cmd_wait_q.wait,
+        status = wait_event_interruptible_timeout(card->cmd_wait_q.wait,
                         (card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
                         (12 * HZ));
         if(status <= 0) {
-            wiphy_err(priv->hw->wiphy, "CMD_DNLD failure: %d\n", status);
+            wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
             priv->in_send_cmd = false;
             priv->cmd_timeout = true;
             return;
@@ -2283,7 +2283,7 @@ static int mwl_sdio_cmd_resp_wait_completed(struct mwl_priv *priv,
 	int status;
 
 	/* Wait for completion */
-	status = wait_event_timeout(card->cmd_wait_q.wait,
+	status = wait_event_interruptible_timeout(card->cmd_wait_q.wait,
 						  (card->cmd_cond == true),
 						  (12 * HZ));
 	if (status <= 0) {
