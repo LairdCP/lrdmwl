@@ -574,7 +574,7 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
     /* Wait till the card informs CMD_DNLD_RDY interrupt except
      * for get HW spec command */
     if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
-        status = wait_event_interruptible_timeout(card->cmd_wait_q.wait,
+        status = wait_event_timeout(card->cmd_wait_q.wait,
                         (card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
                         (12 * HZ));
         if(status <= 0) {
@@ -1028,7 +1028,7 @@ static int mwl_sdio_complete_cmd(struct mwl_priv *priv)
 
 	card->cmd_wait_q.status = 0;
 	card->cmd_cond = true;
-	wake_up_interruptible(&card->cmd_wait_q.wait);
+	wake_up(&card->cmd_wait_q.wait);
 
 	return 0;
 }
@@ -1466,7 +1466,7 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 	if (sdio_ireg & DN_LD_CMD_PORT_HOST_INT_STATUS) {
 		//card->cmd_sent = false;
         card->cmd_wait_q.status = 0;
-	    wake_up_interruptible(&card->cmd_wait_q.wait);
+	    wake_up(&card->cmd_wait_q.wait);
     }
 
 	/* Command Response / Event is back */
@@ -2287,7 +2287,7 @@ static int mwl_sdio_cmd_resp_wait_completed(struct mwl_priv *priv,
 	int status;
 
 	/* Wait for completion */
-	status = wait_event_interruptible_timeout(card->cmd_wait_q.wait,
+	status = wait_event_timeout(card->cmd_wait_q.wait,
 						  (card->cmd_cond == true),
 						  (12 * HZ));
 	if (status <= 0) {
