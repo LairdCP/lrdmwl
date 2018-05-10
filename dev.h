@@ -307,9 +307,9 @@ struct mwl_rx_hndl {
 #define MWL_RX_EVNT_RADAR_DETECT         0x2
 #define MWL_RX_EVENT_LINKLOSS_DETECT     0x3
 
-#define MWL_RX_EVENT_WOW_LINKLOSS_DETECT 0x4
-#define MWL_RX_EVENT_WOW_AP_DETECT       0x5
-#define MWL_RX_EVENT_WOW_RX_DETECT       0x6
+#define MWL_RX_EVENT_WOW_LINKLOSS_DETECT 0x14
+#define MWL_RX_EVENT_WOW_AP_DETECT       0x15
+#define MWL_RX_EVENT_WOW_RX_DETECT       0x16
 
 
 struct mwl_rx_event_data {
