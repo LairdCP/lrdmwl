@@ -24,4 +24,5 @@ extern void mwl_delete_ds_timer(struct mwl_priv *priv);
 extern void lrd_report_wowlan_wakeup(struct mwl_priv *priv);
 #endif
 
+void lrd_radio_recovery(struct mwl_priv *priv);
 #endif

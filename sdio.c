@@ -801,11 +801,15 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 
 	if (!ret) {
 		if (firmware_status == FIRMWARE_READY_SDIO) {
-			wiphy_debug(priv->hw->wiphy, "Resetting Firmware\n");
+			wiphy_err(priv->hw->wiphy, "Firmware already initialized!\n");
+			wiphy_err(priv->hw->wiphy, "Resetting radio...\n");
+
 			ret = mwl_sdio_reset_gpio(priv);
 			if (ret) {
-				goto err_dnld;
+				wiphy_err(priv->hw->wiphy, "Unable to reset radio!\n");
 			}
+			ret = -1;
+			goto err_dnld;
 		}
 	}
 
@@ -2423,13 +2427,13 @@ static struct mwl_if_ops sdio_ops = {
 	.unregister_dev =     mwl_sdio_unregister_dev,
 	.send_cmd =           mwl_sdio_send_command,
 	.cmd_resp_wait_completed = mwl_sdio_cmd_resp_wait_completed,
-	.host_to_card       = mwl_sdio_host_to_card,
-	.is_tx_available    = mwl_sdio_is_tx_available,
-	.flush_amsdu		  = mwl_sdio_flush_amsdu,
-	.enter_deepsleep =	mwl_sdio_enter_deepsleep,
-	.wakeup_card =		mwl_sdio_wakeup_card,
-	.is_deepsleep =		mwl_sdio_is_deepsleep,
-	.wakeup_complete = 	mwl_sdio_wakeup_complete,
+	.host_to_card =       mwl_sdio_host_to_card,
+	.is_tx_available =    mwl_sdio_is_tx_available,
+	.flush_amsdu =        mwl_sdio_flush_amsdu,
+	.enter_deepsleep =    mwl_sdio_enter_deepsleep,
+	.wakeup_card =        mwl_sdio_wakeup_card,
+	.is_deepsleep =       mwl_sdio_is_deepsleep,
+	.wakeup_complete =    mwl_sdio_wakeup_complete,
 };
 
 static int mwl_sdio_probe(struct sdio_func *func,
@@ -2721,7 +2725,6 @@ static struct sdio_driver mwl_sdio_driver = {
 };
 
 
-#define LRDMWL_MMC_PROBE_DELAY	150
 static unsigned int reset_pwd_gpio = ARCH_NR_GPIOS;
 
 #ifdef CONFIG_GPIOLIB
@@ -2734,42 +2737,46 @@ static int mwl_sdio_init_gpio(void)
 	int ret = 0;
 
 	if (gpio_is_valid(reset_pwd_gpio)) {
-		/* Request the reset GPIO, and assert it to make sure we get a
-		 * clean boot in-case we had a floating input or other issue.
+
+		pr_info("lrdmwl: Reset GPIO %d configured\n", reset_pwd_gpio);
+
+		/* Request the reset GPIO in de-asserted state
+		 * It is the responsibility of device tree to ensure module is 
+		 * reset up to this point if necessary
+		 * Guarantee minimum of 50ms assertion
 		 */
+		msleep(50);
 		ret = gpio_request_one(reset_pwd_gpio,
-				       GPIOF_INIT_LOW |
+				       GPIOF_INIT_HIGH |
 				       GPIOF_EXPORT_DIR_FIXED,
 				       "WIFI_RESET");
 
-		if (!ret) {
-			msleep(50);  /* Pin must be asserted a min of 50ms  */
-
-			gpio_set_value(reset_pwd_gpio, 1); /* De-assert the pin */
-
-			msleep(LRDMWL_MMC_PROBE_DELAY);
-		}
-		else {
-			pr_info("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
+		/* Only return failure code if GPIO is configured but 
+		 * request fails
+		 */
+		if (ret) {
+			pr_err("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
 		}
 	}
+	else
+		pr_info("lrdmwl: No reset GPIO configured\n");
 
 	return ret;
 }
 
 static int mwl_sdio_reset_gpio(struct mwl_priv *priv)
 {
-	int ret = -2;
-
 	if (gpio_is_valid(reset_pwd_gpio)) {
 		gpio_set_value(reset_pwd_gpio, 0);
 
-		msleep(50);
+		msleep(500);
 
 		gpio_set_value(reset_pwd_gpio, 1);
+
+		return 0;
 	}
 
-	return ret;
+	return -1;
 }
 
 static int mwl_sdio_release_gpio(void)
@@ -2792,6 +2799,10 @@ static int __init mwl_sdio_driver_init(void)
 	ret = mwl_sdio_init_gpio();
 
 	if (!ret) {
+
+		if (reset_pwd_gpio != ARCH_NR_GPIOS)
+			sdio_ops.hardware_reset = mwl_sdio_reset_gpio;
+
 		ret = sdio_register_driver(&mwl_sdio_driver);
 
 		if (ret) {
