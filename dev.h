@@ -469,6 +469,7 @@ struct mwl_if_ops {
 	void (*multi_port_resync)(struct mwl_priv *);
 	int (*wakeup_card)(struct mwl_priv *);
 	int (*is_deepsleep)(struct mwl_priv *);
+	int (*hardware_reset)(struct mwl_priv *);
 };
 
 #define MWL_OTP_BUF_SIZE	(256*8)		//258 lines * 8 bytes
@@ -675,6 +676,10 @@ struct mwl_priv {
 	struct otp_data otp_data;
 
 	bool mfg_mode;
+	bool recovery_in_progress;
+	struct workqueue_struct *recovery_workq;
+	struct work_struct recovery_work;
+
 };
 
 struct beacon_info {

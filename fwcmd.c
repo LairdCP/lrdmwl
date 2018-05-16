@@ -179,6 +179,11 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 	might_sleep();
 
+	// If recovery is in progress, firmware is hung
+	// Don't attempt to access it
+	if (priv->recovery_in_progress)
+		return -EIO;
+
 	if (cmd != HOSTCMD_CMD_DEEPSLEEP) {
 		if (priv->ds_state == DS_PENDING) {
 			cancel_work_sync(&priv->ds_work);
@@ -232,6 +237,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
 			}
+
+			// Fatal error, initiate firmware recovery
+			lrd_radio_recovery(priv);
 			return -EIO;
 		}
 
@@ -250,6 +258,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 			priv->in_send_cmd = false;
 			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
 				priv->cmd_timeout = true;
+
+				// Fatal error, initiate firmware recovery
+				lrd_radio_recovery(priv);
 			}
 			return -EIO;
 		}
