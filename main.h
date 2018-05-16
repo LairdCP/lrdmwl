@@ -22,4 +22,5 @@ extern void timer_routine(unsigned long data);
 extern void lrd_report_wowlan_wakeup(struct mwl_priv *priv);
 #endif
 
+void lrd_radio_recovery(struct mwl_priv *priv);
 #endif

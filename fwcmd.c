@@ -178,6 +178,11 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 	might_sleep();
 
+	// If recovery is in progress, firmware is hung
+	// Don't attempt to access it
+	if (priv->recovery_in_progress)
+		return -EIO;
+
 	if (!mwl_fwcmd_chk_adapter(priv)) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
 		priv->in_send_cmd = false;
@@ -217,6 +222,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
 			}
+
+			// Fatal error, initiate firmware recovery
+			lrd_radio_recovery(priv);
 			return -EIO;
 		}
 
@@ -235,6 +243,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 			priv->in_send_cmd = false;
 			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
 				priv->cmd_timeout = true;
+
+				// Fatal error, initiate firmware recovery
+				lrd_radio_recovery(priv);
 			}
 			return -EIO;
 		}

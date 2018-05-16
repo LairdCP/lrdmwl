@@ -909,6 +909,51 @@ err:
 }
 
 
+static ssize_t mwl_debugfs_device_recovery_read(struct file *file,
+                char __user *ubuf,
+                size_t count, loff_t *ppos)
+{
+	int ret;
+	char ctrl[2];
+	ctrl[0]='0';
+	ctrl[1]='\n';
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, ctrl, sizeof(ctrl));
+	return ret;
+}
+
+
+static ssize_t mwl_debugfs_device_recovery_write(struct file *file,
+                                         const char __user *ubuf,
+                                         size_t count, loff_t *ppos)
+{
+	struct mwl_priv *priv = (struct mwl_priv *)file->private_data;
+	int ret = 0;
+	char recover;
+	if(count > 2)
+	{
+		printk("Invalid Arguments\n\n");
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&recover, ubuf, 1)) {
+		ret = -EFAULT;
+		return ret;
+	}
+
+	switch(recover)
+	{
+		case '1':
+			lrd_radio_recovery(priv);
+		break;
+		default : printk("Invalid argument : 1 needed\n");
+			return -EINVAL;
+		break;
+	}
+
+	return count;
+}
+
 MWLWIFI_DEBUGFS_FILE_READ_OPS(info);
 MWLWIFI_DEBUGFS_FILE_READ_OPS(vif);
 MWLWIFI_DEBUGFS_FILE_READ_OPS(sta);
@@ -920,6 +965,7 @@ MWLWIFI_DEBUGFS_FILE_OPS(dfs_radar);
 MWLWIFI_DEBUGFS_FILE_OPS(thermal);
 MWLWIFI_DEBUGFS_FILE_OPS(regrdwr);
 MWLWIFI_DEBUGFS_FILE_OPS(otp_data);
+MWLWIFI_DEBUGFS_FILE_OPS(device_recovery);
 
 void mwl_debugfs_init(struct ieee80211_hw *hw)
 {
@@ -943,6 +989,7 @@ void mwl_debugfs_init(struct ieee80211_hw *hw)
 	MWLWIFI_DEBUGFS_ADD_FILE(thermal);
 	MWLWIFI_DEBUGFS_ADD_FILE(regrdwr);
 	MWLWIFI_DEBUGFS_ADD_FILE(otp_data);
+	MWLWIFI_DEBUGFS_ADD_FILE(device_recovery);
 }
 
 void mwl_debugfs_remove(struct ieee80211_hw *hw)

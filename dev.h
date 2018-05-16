@@ -466,6 +466,7 @@ struct mwl_if_ops {
 	int (*clean_pcie_ring) (struct mwl_priv *);
 	void (*deaggr_pkt)(struct mwl_priv *, struct sk_buff *);
 	void (*multi_port_resync)(struct mwl_priv *);
+	int (*hardware_reset)(struct mwl_priv *);
 };
 
 #define MWL_OTP_BUF_SIZE	(256*8)		//258 lines * 8 bytes
@@ -652,6 +653,11 @@ struct mwl_priv {
 	bool is_rx_defer_schedule;
 
 	struct otp_data otp_data;
+
+	bool recovery_in_progress;
+	struct workqueue_struct *recovery_workq;
+	struct work_struct recovery_work;
+
 };
 
 struct beacon_info {
