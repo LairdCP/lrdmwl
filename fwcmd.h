@@ -63,6 +63,7 @@ enum encr_type {
 
 struct cmd_header {
 	__le16 command;
+	__le16 result;
 	__le16 len;
 } __packed;
 
@@ -276,7 +277,8 @@ int lrd_fwcmd_mfg_start(struct ieee80211_hw *hw, u32 *data);
 int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int len);
 int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw);
 
-int lrd_fwcmd_lru(struct ieee80211_hw *hw, void* data, int len, void** rsp);
+int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
+int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
 
 #ifdef CONFIG_PM
 int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCond);
