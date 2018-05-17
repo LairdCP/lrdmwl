@@ -734,8 +734,6 @@ static void lrd_radio_recovery_handler(struct work_struct *work)
 	// Reset radio hardware
 	// The assumption is this reset will also trigger an unload/reload
 	// of the radio driver
-	priv->recovery_in_progress = 1;
-
 	ret = priv->if_ops.hardware_reset(priv);
 	if (!ret)
 		wiphy_err(hw->wiphy, "%s: Radio reset complete...\n",
@@ -751,6 +749,8 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 
 	if ((priv->recovery_in_progress) || (priv->shutdown))
 		return;
+		
+	priv->recovery_in_progress = 1;
 
 	if (!priv->if_ops.hardware_reset)
 	{
