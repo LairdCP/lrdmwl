@@ -4007,7 +4007,7 @@ int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int data_len)
 	return 0;
 }
 
-int lrd_fwcmd_lru(struct ieee80211_hw *hw, void *data, int len, void **rsp)
+int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp)
 {
 	struct hostcmd_mfgfw_header *pcmd;
 	struct mwl_priv *priv = hw->priv;
@@ -4026,7 +4026,7 @@ int lrd_fwcmd_lru(struct ieee80211_hw *hw, void *data, int len, void **rsp)
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MFG) ||
 	    pcmd->result != HOSTCMD_RESULT_OK) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed execution %x\n", pcmd->result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed execution %x\n", pcmd->result);
 		return -EIO;
 	}
 
@@ -4040,17 +4040,67 @@ int lrd_fwcmd_lru(struct ieee80211_hw *hw, void *data, int len, void **rsp)
 		*rsp = kzalloc(len, GFP_KERNEL);
 		if (!*rsp) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed allocation lru response %d\n", pcmd->len);
+			wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed allocation response %d\n", pcmd->len);
 			return -EIO;
 		}
 
 		((struct cmd_header*)*rsp)->command = pcmd->cmd;
+		//Note: this field added after lru implemented so must continue to use result check above
+		((struct cmd_header*)*rsp)->result  = pcmd->result;
 		((struct cmd_header*)*rsp)->len     = len;
 		memcpy(((u8*)*rsp) + (u8)sizeof(struct cmd_header), ((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header) , len - sizeof(struct cmd_header));
 	}
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
+	return 0;
+}
+
+int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp)
+{
+	struct hostcmd_header *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	pcmd = (struct hostcmd_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd = cpu_to_le16(HOSTCMD_LRD_CMD);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + len);
+
+	memcpy(((u8*)pcmd) + sizeof(struct hostcmd_header), data, len);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_write failed execution %x\n", pcmd->result);
+		return -EIO;
+	}
+
+	if (pcmd->len) {
+		/* To keep structures somewhat encapsulated we are going to squash
+		 * part of the hostcmd_cmd_lrd so that we are left only with
+		 * cmd_header and data response
+		 */
+		u16 len =  pcmd->len - sizeof(struct hostcmd_header) + sizeof(struct cmd_header);
+
+		*rsp = kzalloc(len, GFP_KERNEL);
+		if (!*rsp) {
+			mutex_unlock(&priv->fwcmd_mutex);
+			wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_write failed allocation response %d\n", pcmd->len);
+			return -EIO;
+		}
+
+		((struct cmd_header*)*rsp)->command      = pcmd->cmd;
+		((struct cmd_header*)*rsp)->result       = pcmd->result;
+		((struct hostcmd_cmd_lrd*)*rsp)->result  = pcmd->result;
+		((struct cmd_header*)*rsp)->len          = len;
+
+		memcpy(((u8*)*rsp) + (u8)sizeof(struct cmd_header), ((u8*)pcmd) + sizeof(struct hostcmd_header) , len - sizeof(struct cmd_header));
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;
 }
 
