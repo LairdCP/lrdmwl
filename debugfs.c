@@ -1017,6 +1017,26 @@ static ssize_t mwl_debugfs_device_recovery_write(struct file *file,
 	return count;
 }
 
+static ssize_t mwl_debugfs_restart_required_read(struct file *file,
+                char __user *ubuf,
+                size_t count, loff_t *ppos)
+{
+	struct mwl_priv *priv = (struct mwl_priv *)file->private_data;
+	int ret;
+	char ctrl[2];
+
+	if (priv->recovery_in_progress)
+		ctrl[0]='1';
+	else
+		ctrl[0]='0';
+
+	ctrl[1]='\n';
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, ctrl, sizeof(ctrl));
+	return ret;
+}
+
+
 MWLWIFI_DEBUGFS_FILE_READ_OPS(info);
 MWLWIFI_DEBUGFS_FILE_READ_OPS(vif);
 MWLWIFI_DEBUGFS_FILE_READ_OPS(sta);
@@ -1031,6 +1051,7 @@ MWLWIFI_DEBUGFS_FILE_OPS(thermal);
 MWLWIFI_DEBUGFS_FILE_OPS(regrdwr);
 MWLWIFI_DEBUGFS_FILE_OPS(otp_data);
 MWLWIFI_DEBUGFS_FILE_OPS(device_recovery);
+MWLWIFI_DEBUGFS_FILE_READ_OPS(restart_required);
 
 void mwl_debugfs_init(struct ieee80211_hw *hw)
 {
@@ -1057,6 +1078,7 @@ void mwl_debugfs_init(struct ieee80211_hw *hw)
 	MWLWIFI_DEBUGFS_ADD_FILE(regrdwr);
 	MWLWIFI_DEBUGFS_ADD_FILE(otp_data);
 	MWLWIFI_DEBUGFS_ADD_FILE(device_recovery);
+	MWLWIFI_DEBUGFS_ADD_FILE(restart_required);
 }
 
 void mwl_debugfs_remove(struct ieee80211_hw *hw)
