@@ -154,7 +154,7 @@ lrd_vendor_cmd_lru_end(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 
 static int
-lrd_vendor_cmd_lru(struct wiphy *wiphy, struct wireless_dev *wdev,
+lrd_vendor_cmd_lru_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const void *data, int data_len)
 {
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
@@ -163,7 +163,7 @@ lrd_vendor_cmd_lru(struct wiphy *wiphy, struct wireless_dev *wdev,
 	int       rc = -ENOSYS;
 
 	//Send
-	rc = lrd_fwcmd_lru(hw, (void*)data, data_len, (void*)&rsp);
+	rc = lrd_fwcmd_lru_write(hw, (void*)data, data_len, (void*)&rsp);
 
 	if (rc < 0 ) {
 		goto fail;
@@ -174,6 +174,47 @@ lrd_vendor_cmd_lru(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	if (msg) {
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
+
+		if (rsp) {
+			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct cmd_header), ((u8*)rsp) + sizeof(struct cmd_header) );
+		}
+
+		rc = cfg80211_vendor_cmd_reply(msg);
+	}
+	else {
+		rc = -ENOMEM;
+		goto fail;
+	}
+
+fail:
+	if (rsp) {
+		kfree(rsp);
+	}
+
+	return rc;
+}
+
+static int
+lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const void *data, int data_len)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct sk_buff    *msg = NULL;
+	struct cmd_header *rsp = NULL;
+	int                 rc = -ENOSYS;
+
+	//Send
+	rc = lrd_fwcmd_lrd_write(hw, (void*)data, data_len, (void*)&rsp);
+
+	if (rc < 0 ) {
+		goto fail;
+	}
+
+	//Respond
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t) + (rsp ? rsp->len:0));
+
+	if (msg) {
+		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rsp ? rsp->result : 0);
 
 		if (rsp) {
 			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct cmd_header), ((u8*)rsp) + sizeof(struct cmd_header) );
@@ -234,7 +275,7 @@ static const struct wiphy_vendor_command lrd_vendor_commands[] = {
 			.subcmd    = LRD_VENDOR_CMD_LRU_WRITE,
 		},
 		.flags = 0,
-		.doit  = lrd_vendor_cmd_lru,
+		.doit  = lrd_vendor_cmd_lru_write,
 	},
 
 	{
@@ -244,6 +285,15 @@ static const struct wiphy_vendor_command lrd_vendor_commands[] = {
 		},
 		.flags = 0,
 		.doit  = lrd_vendor_cmd_lru_end,
+	},
+
+	{
+		.info = {
+			.vendor_id = LRD_OUI,
+			.subcmd    = LRD_VENDOR_CMD_LRD_WRITE,
+		},
+		.flags = 0,
+		.doit  = lrd_vendor_cmd_lrd_write,
 	},
 
 };

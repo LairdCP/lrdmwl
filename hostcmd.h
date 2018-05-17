@@ -37,6 +37,7 @@
 #define HOSTCMD_CMD_MFG                         0x0089
 #define HOSTCMD_CMD_SET_CFG                     0x008f
 
+#define HOSTCMD_LRD_CMD                         0x00fd
 #define HOSTCMD_LRD_MFG                         0x00fe
 #define HOSTCMD_LRD_REGION_MAPPING              0x00ff
 
@@ -1191,6 +1192,28 @@ struct hostcmd_cmd_lru
 	__le16 id;
 	__le32 error;
 	u8 data[0];
+}__packed;
+
+struct hostcmd_cmd_lrd
+{
+	struct hostcmd_header cmd_hdr;
+	__le16 cmd;
+	__le16 result;
+	__le32 reserved;
+}__packed;
+
+struct lrdcmd_header
+{
+	__le16 lrd_cmd;
+	__le16 result;
+	__le32 reserved;  /* should be 0 */
+}__packed;
+
+struct lrdcmd_cmd_cap
+{
+	struct lrdcmd_header hdr;
+	__le16 capability;
+	__le16 num_mac_addr;
 }__packed;
 
 #endif /* _HOSTCMD_H_ */
