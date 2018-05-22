@@ -312,8 +312,12 @@ static bool mwl_usb_check_card_status(struct mwl_priv *priv)
         return true;
 }
 
-static void mwl_usb_tx_aggr_tmo(unsigned long context)
+static void mwl_usb_tx_aggr_tmo(struct timer_list *t)
 {
+   /*
+	struct usb_tx_data_port *port = from_timer(port, t, tx_aggr.timer_cnxt.hold_timer);
+    tx_aggr.timer_cnxt.hold_timer
+   */
    printk(KERN_ALERT"Dummy function %s\n",__FUNCTION__);
 }
 
@@ -777,9 +781,9 @@ static int mwl_usb_tx_init(struct mwl_priv *adapter)
                 port->tx_aggr.timer_cnxt.port = port;
                 port->tx_aggr.timer_cnxt.is_hold_timer_set = false;
                 port->tx_aggr.timer_cnxt.hold_tmo_msecs = 0;
-                setup_timer(&port->tx_aggr.timer_cnxt.hold_timer,
+                timer_setup(&port->tx_aggr.timer_cnxt.hold_timer,
                             mwl_usb_tx_aggr_tmo,
-                            (unsigned long)&port->tx_aggr.timer_cnxt);
+                            0);
         }
 
         return 0;

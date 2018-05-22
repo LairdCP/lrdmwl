@@ -1011,7 +1011,7 @@ static void mwl_mac80211_sw_scan_complete(struct ieee80211_hw *hw,
 
 	if (!priv->shutdown) {
 		/* Start BA timer again */
-		setup_timer(&priv->period_timer, timer_routine, (unsigned long)priv);
+		timer_setup(&priv->period_timer, timer_routine, 0);
 		mod_timer(&priv->period_timer, jiffies +
 			msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 	}

@@ -16,7 +16,7 @@ extern int EDMAC_Ctrl;
 int mwl_add_card(void *, struct mwl_if_ops *);
 void mwl_wl_deinit(struct mwl_priv *);
 void mwl_set_caps(struct mwl_priv *priv);
-extern void timer_routine(unsigned long data);
+extern void timer_routine(struct timer_list *t);
 extern void mwl_restart_ds_timer(struct mwl_priv *priv, bool force);
 extern void mwl_delete_ds_timer(struct mwl_priv *priv);
 
