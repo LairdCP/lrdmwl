@@ -33,7 +33,7 @@
 #define MWL_DRV_VERSION	 "P22.2-20180509"
 #define LRD_DESC         "Laird 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Technologies"
-#define LRD_BLD_VERSION  "3.5.5.95"
+#define LRD_BLD_VERSION  "5.0.1.2"
 #define LRD_DRV_VERSION   LRD_BLD_VERSION "-" MWL_DRV_VERSION
 
 /* Map to 0x80000000 (Bus control) on BAR0 */
