@@ -2521,10 +2521,10 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	struct mwl_sdio_card *card;
 	struct ieee80211_hw *hw;
 
+	pr_info("lrdmwl: Card removal initiated!\n");
 	card = sdio_get_drvdata(func);
 	if (!card || !card->priv) {
-		pr_err("int: func=%p card=%p priv=%p\n",
-			 func, card, card ? card->priv : NULL);
+		pr_err("Data structures invalid, exiting...");
 		return;
 	}
 	priv = card->priv;
@@ -2537,8 +2537,17 @@ static void mwl_sdio_remove(struct sdio_func *func)
 
     mwl_delete_ds_timer(priv);
 
+	// If there are issues with the SDIO interface the mmc host code
+	// triggers a card removal sequence which causes the client driver to
+	// be unloaded.  This typically occurs before recovery logic kicks in
+	// that could recover the interface.
+	// Work around by unconditionally initiating a recovery on card removal
+	// If implemented, this will ensure radio hardware is reset
+	lrd_radio_recovery(priv);
+
 	ieee80211_free_hw(hw);
 
+	pr_info("lrdmwl: Card removal complete!\n");
 	return;
 }
 

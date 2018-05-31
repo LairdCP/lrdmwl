@@ -677,9 +677,6 @@ struct mwl_priv {
 
 	bool mfg_mode;
 	bool recovery_in_progress;
-	struct workqueue_struct *recovery_workq;
-	struct work_struct recovery_work;
-
 };
 
 struct beacon_info {

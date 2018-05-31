@@ -733,16 +733,12 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	destroy_workqueue(priv->rx_defer_workq);
 	skb_queue_purge(&priv->rx_defer_skb_q);
 
-	cancel_work_sync(&priv->recovery_work);
-	destroy_workqueue(priv->recovery_workq);
-
 	mwl_fwcmd_reset(hw);
 
 	cancel_work_sync(&priv->ds_work);
 	destroy_workqueue(priv->ds_workq);
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
-
 
 static void mwl_ds_workq(struct work_struct *work)
 {
@@ -855,47 +851,43 @@ void mwl_disable_ds(struct mwl_priv * priv)
 
 EXPORT_SYMBOL_GPL(mwl_disable_ds);
 
-static void lrd_radio_recovery_handler(struct work_struct *work)
+void lrd_radio_recovery(struct mwl_priv *priv)
 {
-	struct mwl_priv  *priv = container_of(work,
-				               struct mwl_priv, recovery_work);
 	struct ieee80211_hw *hw = priv->hw;
-
 	int ret;
+
+	wiphy_info(priv->hw->wiphy, "%s: Radio recovery requested!\n", __func__);
+	if (priv->recovery_in_progress)
+	{
+		wiphy_info(priv->hw->wiphy, "recovery_in_progress, skipping\n");
+		return;
+	}
+
+	priv->recovery_in_progress = 1;
+
+	if (!priv->if_ops.hardware_reset)
+	{
+		wiphy_info(hw->wiphy, "%s: Radio recovery requested but no reset handler configured!\n", 
+			MWL_DRV_NAME);
+		return;
+	}
+
+	wiphy_info(hw->wiphy, "%s: Initiating radio recovery!!\n",
+		  MWL_DRV_NAME);
 
 	// Reset radio hardware
 	// The assumption is this reset will also trigger an unload/reload
 	// of the radio driver
 	ret = priv->if_ops.hardware_reset(priv);
 	if (!ret)
-		wiphy_err(hw->wiphy, "%s: Radio reset complete...\n",
+		wiphy_info(hw->wiphy, "%s: Radio reset complete...\n",
 			MWL_DRV_NAME);
 	else
 		wiphy_err(hw->wiphy, "%s: Unable to reset radio!!\n",
 			MWL_DRV_NAME);
+
 }
-
-void lrd_radio_recovery(struct mwl_priv *priv)
-{
-	struct ieee80211_hw *hw = priv->hw;
-
-	if ((priv->recovery_in_progress) || (priv->shutdown))
-		return;
-		
-	priv->recovery_in_progress = 1;
-
-	if (!priv->if_ops.hardware_reset)
-	{
-		wiphy_err(hw->wiphy, "%s: Radio recovery requested but no reset handler configured!\n", 
-			MWL_DRV_NAME);
-		return;
-	}
-
-	wiphy_err(hw->wiphy, "%s: Initiating radio recovery!!\n",
-		  MWL_DRV_NAME);
-
-	queue_work(priv->recovery_workq, &priv->recovery_work);
-}
+EXPORT_SYMBOL_GPL(lrd_radio_recovery);
 
 int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 {
@@ -926,12 +918,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	priv->ds_workq = alloc_workqueue("mwlwifi-ds_workq",
                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->ds_work, mwl_ds_workq);
-
-	priv->recovery_workq =
-		alloc_workqueue("mwlwifi-recovery_workq",
-		 WQ_UNBOUND, 1);
-
-	INIT_WORK(&priv->recovery_work, lrd_radio_recovery_handler);
 
 	/* Save interface specific operations in adapter */
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
