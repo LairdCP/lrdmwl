@@ -655,9 +655,6 @@ struct mwl_priv {
 	struct otp_data otp_data;
 
 	bool recovery_in_progress;
-	struct workqueue_struct *recovery_workq;
-	struct work_struct recovery_work;
-
 };
 
 struct beacon_info {
