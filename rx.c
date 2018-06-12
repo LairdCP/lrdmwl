@@ -55,7 +55,7 @@ void mwl_rx_prepare_status(struct mwl_rx_desc *pdesc,
 
 	memset(status, 0, sizeof(*status));
 
-	status->signal = -(pdesc->rssi + W8997_RSSI_OFFSET);
+	status->signal = pdesc->rssi - W8997_RSSI_OFFSET;
 
 	rate = le16_to_cpu(pdesc->rate);
 	format = rate & MWL_RX_RATE_FORMAT_MASK;
@@ -190,7 +190,6 @@ void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 }
 EXPORT_SYMBOL_GPL(mwl_rx_enable_sta_amsdu);
 
-
 struct mwl_vif *mwl_find_first_sta(struct mwl_priv *priv)
 {
 	struct mwl_vif *mwl_vif;
@@ -279,6 +278,10 @@ inline bool mwl_rx_needs_defered_processing(struct sk_buff *rx_skb)
 	return 0;
 }
 
+#if 1
+unsigned int dbgRxPrbResp, dbgRxBcn;
+#endif
+
 void mwl_rx_upload_pkt(struct ieee80211_hw *hw,
 		struct sk_buff *rx_skb)
 {
@@ -298,6 +301,17 @@ void mwl_rx_upload_pkt(struct ieee80211_hw *hw,
 			queue_work(priv->rx_defer_workq, &priv->rx_defer_work);
 		}
 	}
+
+#if 1
+if (ieee80211_is_mgmt(wh->frame_control)) {
+
+	if (ieee80211_is_probe_resp(wh->frame_control)) {
+		dbgRxPrbResp++;
+	} else if (ieee80211_is_beacon(wh->frame_control)) {
+		dbgRxBcn++;
+	}
+}
+#endif
 
 	/* Upload pkts to mac80211 */
 	ieee80211_rx(hw, rx_skb);
