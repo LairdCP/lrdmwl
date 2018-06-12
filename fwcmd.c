@@ -120,6 +120,7 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)
 		ENTRY(HOSTCMD_CMD_MONITOR_MODE)
 		ENTRY(HOSTCMD_CMD_DEEPSLEEP)
+		ENTRY(HOSTCMD_CMD_CONFIRM_PS)
 		ENTRY(HOSTCMD_LRD_MFG)
 		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
@@ -184,7 +185,8 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	if (priv->recovery_in_progress)
 		return -EIO;
 
-	if (priv->ds_state == DS_SLEEP && cmd != HOSTCMD_CMD_DEEPSLEEP)
+	if ((priv->ds_state == DS_SLEEP && cmd != HOSTCMD_CMD_DEEPSLEEP)
+		|| (priv->ps_state == PS_SLEEP && cmd != HOSTCMD_CMD_CONFIRM_PS))
 		priv->if_ops.wakeup_card(priv);
 
 	if (!mwl_fwcmd_chk_adapter(priv)) {
@@ -303,6 +305,35 @@ int mwl_fwcmd_set_slot_time(struct ieee80211_hw *hw, bool short_slot)
 	return 0;
 }
 
+int mwl_fwcmd_confirm_ps(struct ieee80211_hw *hw)
+{
+	struct hostcmd_cmd_confirm_ps *pcmd;
+	struct mwl_priv *priv = hw->priv;
+
+	if(priv->if_ops.is_deepsleep(priv))
+		return 0;
+	pcmd = (struct hostcmd_cmd_confirm_ps *)&priv->pcmd_buf[
+			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	// mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_CONFIRM_PS);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_CONFIRM_PS)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(priv->hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	if(pcmd->status == 0)
+		return 0;
+	return -1;
+}
+EXPORT_SYMBOL_GPL(mwl_fwcmd_confirm_ps);
+
 int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 {
 	struct hostcmd_cmd_deepsleep *pcmd;
@@ -328,9 +359,9 @@ int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 	pcmd->enableFlag = 1;
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_DEEPSLEEP)) {
-			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(priv->hw->wiphy, "failed execution\n");
-			return -EIO;
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(priv->hw->wiphy, "failed execution\n");
+		return -EIO;
 	}
 
 	mutex_unlock(&priv->fwcmd_mutex);
@@ -1694,6 +1725,7 @@ int mwl_fwcmd_powersave_EnblDsbl(struct ieee80211_hw *hw,
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->action = cpu_to_le16(WL_SET);
 	pcmd->powermode = cpu_to_le16(conf->flags & IEEE80211_CONF_PS);
+	priv->ps_mode = pcmd->powermode;
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_PS_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
@@ -1717,6 +1749,8 @@ int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCon
 
 	mutex_lock(&priv->fwcmd_mutex);
 
+	if(enbl == 0 && priv->ps_mode )
+		priv->if_ops.wakeup_card(priv);
 	memset(pcmd, 0x00, sizeof(*pcmd));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_HOSTSLEEP_CTRL);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
@@ -2846,9 +2880,9 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 			mwl_vif->wep_key_conf[idx].enabled = 1;
 		}
 
-        if (vif->type == NL80211_IFTYPE_STATION) {
-            ether_addr_copy(mwl_vif->bssid, vif->bss_conf.bssid);
-        }
+		if (vif->type == NL80211_IFTYPE_STATION) {
+			ether_addr_copy(mwl_vif->bssid, vif->bss_conf.bssid);
+		}
 		keymlen = key->keylen;
 		action = ENCR_ACTION_TYPE_SET_KEY;
 		break;
@@ -3623,23 +3657,23 @@ int mwl_fwcmd_quiet_mode(struct ieee80211_hw *hw, bool enable, u32 period,
 
 int mwl_fwcmd_get_survey(struct ieee80211_hw *hw, int rstReg)
 {
-    struct mwl_priv *priv = hw->priv;
+	struct mwl_priv *priv = hw->priv;
 	struct mwl_survey_info *survey_info;
-    int last_read_val, cca_cnt_val, txpe_cnt_val;
+	int last_read_val, cca_cnt_val, txpe_cnt_val;
 
-    if(!priv->cur_survey_valid)
-        return 0;
+	if(!priv->cur_survey_valid)
+		return 0;
 
-    survey_info = &priv->cur_survey_info;
+	survey_info = &priv->cur_survey_info;
 
-    if(mwl_fwcmd_reg_mac(hw, WL_GET, MCU_LAST_READ, &last_read_val))
+	if(mwl_fwcmd_reg_mac(hw, WL_GET, MCU_LAST_READ, &last_read_val))
 		return -EIO;
-    if(mwl_fwcmd_reg_mac(hw, WL_GET, MCU_CCA_CNT, &cca_cnt_val))
+	if(mwl_fwcmd_reg_mac(hw, WL_GET, MCU_CCA_CNT, &cca_cnt_val))
 		return -EIO;
-    if(mwl_fwcmd_reg_mac(hw, WL_GET, MCU_TXPE_CNT, &txpe_cnt_val))
+	if(mwl_fwcmd_reg_mac(hw, WL_GET, MCU_TXPE_CNT, &txpe_cnt_val))
 		return -EIO;
 
-    if(!rstReg) {
+	if(!rstReg) {
 		survey_info->filled = SURVEY_INFO_TIME |
 					SURVEY_INFO_TIME_BUSY |
 					SURVEY_INFO_TIME_TX |

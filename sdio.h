@@ -381,10 +381,11 @@ struct mwifiex_sdio_mpa_rx {
 };
 
 /* 16 bit SDIO event code */
-#define SDEVENT_RADAR_DETECT    0x0001
-#define SDEVENT_CHNL_SWITCH     0x0002
-#define SDEVENT_BA_WATCHDOG     0x0003
-#define SDEVENT_WAKEUP          0x0005
+#define SDEVENT_RADAR_DETECT   0x0001
+#define SDEVENT_CHNL_SWITCH    0x0002
+#define SDEVENT_BA_WATCHDOG    0x0003
+#define SDEVENT_WAKEUP         0x0005
+#define SDEVENT_PS_SLEEP       0x0006
 
 struct mwl_host_event_mac_t {
 	u16	event_id;
@@ -415,6 +416,9 @@ struct mwl_sdio_card {
 	u8 int_status;
 	struct workqueue_struct *tx_workq;
 	struct work_struct tx_work;
+	struct workqueue_struct *cmd_workq;
+	struct work_struct cmd_work;
+	struct work_struct event_work;
 	/*
 	 * Variables for data path
 	 */

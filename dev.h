@@ -30,7 +30,7 @@
 #include "pfu.h"
 
 #define MWL_DRV_NAME     KBUILD_MODNAME
-#define MWL_DRV_VERSION	 "P25-20180330"
+#define MWL_DRV_VERSION	 "P29-20180515"
 
 #define LRD_DESC         "Laird 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Technologies"
@@ -488,6 +488,9 @@ struct otp_data {
 #define DS_SLEEP 1
 #define DS_AWAKE 0
 
+#define PS_SLEEP 1
+#define PS_AWAKE 0
+
 #define DS_ENABLE_OFF      0
 #define DS_ENABLE_ON       1
 #define DS_ENABLE_PAUSE    2
@@ -522,7 +525,7 @@ struct mwl_priv {
 	bool cdd;
 	u16 txantenna2;
 	u8 powinited;
-	u16 max_tx_pow[SYSADPT_TX_GRP_PWR_LEVEL_TOTAL]; /* max tx power (dBm) */
+	u16 max_tx_pow[SYSADPT_TX_GRP_PWR_LEVEL_TOTAL];    /* max tx power (dBm) */
 	u16 target_powers[SYSADPT_TX_GRP_PWR_LEVEL_TOTAL]; /* target powers   */
 	u16 target_power;
 
@@ -531,14 +534,15 @@ struct mwl_priv {
 	struct device *dev;
 	u8 host_if;
 
-	struct mutex fwcmd_mutex;    /* for firmware command         */
-	unsigned short *pcmd_buf;    /* pointer to CmdBuf (virtual)  */
-	dma_addr_t pphys_cmd_buf;    /* pointer to CmdBuf (physical) */
+	struct mutex fwcmd_mutex;          /* for firmware command         */
+	unsigned short *pcmd_buf;          /* pointer to CmdBuf (virtual)  */
+	dma_addr_t pphys_cmd_buf;          /* pointer to CmdBuf (physical) */
+	unsigned short *pcmd_event_buf;    /* pointer to EvtBuf (virtual)  */
 	bool in_send_cmd;
-	u8 cmd_seq_num; 	/* CMD Seq Number */
+	u8 cmd_seq_num;                    /* CMD Seq Number */
 	bool cmd_timeout;
 	int irq;
-	struct mwl_hw_data hw_data;  /* Adapter HW specific info     */
+	struct mwl_hw_data hw_data;        /* Adapter HW specific info     */
 	u8 tc_2_txq_map[SYSADPT_TX_WMM_QUEUES];
 
 	/* various descriptor data */
@@ -568,6 +572,9 @@ struct mwl_priv {
 	struct timer_list ds_timer;
 	bool ds_state;
 	u8   ds_enable;
+	bool ps_state;
+	struct mutex ps_mutex;
+	u16 ps_mode;
 
 #ifdef CONFIG_PM
 	struct mwl_wowlan_cfg wow;
