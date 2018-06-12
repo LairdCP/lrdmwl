@@ -361,7 +361,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	}
 
 	mwl_rx_prepare_status(pdesc, &status);
-	priv->noise = -pdesc->noise_floor;
+	priv->noise = pdesc->noise_floor;
 
 	skb_pull(prx_skb, sizeof(struct mwl_rx_desc));
 	dma = (struct mwl_dma_data *)prx_skb->data;

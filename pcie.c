@@ -475,7 +475,7 @@ void mwl_pcie_rx_recv(unsigned long data)
 
 		mwl_rx_prepare_status(curr_hndl->pdesc, &status);
 
-		priv->noise = -curr_hndl->pdesc->noise_floor;
+		priv->noise = curr_hndl->pdesc->noise_floor;
 
 		wh = &((struct mwl_dma_data *)prx_skb->data)->wh;
 

@@ -294,10 +294,10 @@ struct mwl_rx_desc {
 	__le16 ht_sig2;              /* like name states                   */
 	__le32 hw_rssi_info;
 	__le32 hw_noise_floor_info;
-	u8 noise_floor;
+	s8 noise_floor;
 	u8 reserved[2];
 	u8 payldType;
-	u8 rssi;                     /* received signal strengt indication */
+	s8 rssi;                     /* received signal strengt indication */
 	u8 status;                   /* status field containing USED bit   */
 	u8 channel;                  /* channel this pkt was received on   */
 	u8 rx_control;               /* the control element of the desc    */
