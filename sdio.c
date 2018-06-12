@@ -508,6 +508,15 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 
 	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 
+	priv->pcmd_event_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
+	if (!priv->pcmd_event_buf) {
+		wiphy_err(priv->hw->wiphy,"%s: cannot alloc memory for command_event buffer\n",
+			  MWL_DRV_NAME);
+		return -ENOMEM;
+	}
+
+	memset(priv->pcmd_event_buf, 0x00, CMD_BUF_SIZE);
+
 	/* Init the tasklet first in case there are tx/rx interrupts */
 	tasklet_init(&priv->rx_task, (void *)mwl_sdio_rx_recv,
 		(unsigned long)priv->hw);
@@ -973,7 +982,8 @@ static char *mwl_sdio_event_strn(u16 event_id)
 		{ SDEVENT_RADAR_DETECT, "SDEVENT_RADAR_DETECT" },
 		{ SDEVENT_CHNL_SWITCH,  "SDEVENT_CHNL_SWITCH" },
 		{ SDEVENT_BA_WATCHDOG,  "SDEVENT_BA_WATCHDOG" },
-        {SDEVENT_WAKEUP,        "SDEVENT_WAKEUP" },
+		{ SDEVENT_WAKEUP,       "SDEVENT_WAKEUP" },
+		{ SDEVENT_PS_SLEEP,     "SDEVENT_PS_SLEEP" },
 	};
 
 	max_entries = ARRAY_SIZE(events);
@@ -991,12 +1001,15 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 	struct mwl_sdio_card *card = priv->intf;
 	u8 cr;
 
+	mutex_lock(&priv->ps_mutex);
+
 	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
 		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
 
 	wiphy_info(priv->hw->wiphy,"Initiate Card wakeup\n");
 
 	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x2))) {
+		mutex_unlock(&priv->ps_mutex);
 		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
 		return -EIO;
 	}
@@ -1005,9 +1018,10 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
 
 	status = wait_event_timeout(card->wait_deepsleep,(
-					card->is_deepsleep == 0), 12 * HZ);
+					card->is_deepsleep == 0) && (priv->ps_state == PS_AWAKE), 12 * HZ);
 	if(status <= 0) {
 		wiphy_err(priv->hw->wiphy, "info: Card Wakeup failed\n");
+		mutex_unlock(&priv->ps_mutex);
 		return -EIO;
 	}
 
@@ -1016,28 +1030,85 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 	mwl_restart_ds_timer(priv, false);
 
 	wiphy_err(priv->hw->wiphy, "info: Card Wakeup complete\n");
+	mutex_unlock(&priv->ps_mutex);
 	return 0;
 }
 
-void mwl_sdio_wakeup_complete(struct mwl_priv *priv)
+void mwl_sdio_wakeup_complete(struct work_struct *work)
 {
-	struct mwl_sdio_card *card = priv->intf;
+	struct mwl_sdio_card *card = container_of(work,
+				struct mwl_sdio_card, event_work);
+	struct mwl_priv *priv = card->priv;
+
 	if (mwl_write_reg(priv, CONFIGURATION_REG, 0))
 		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
 
 	card->is_deepsleep = 0;
-	wake_up_interruptible(&card->wait_deepsleep);
+	priv->ps_state = PS_AWAKE;
+	wake_up(&card->wait_deepsleep);
+}
+
+void mwl_sdio_enter_ps_sleep(struct work_struct *work)
+{
+	struct mwl_sdio_card *card = container_of(work,
+					struct mwl_sdio_card, cmd_work);
+	struct mwl_priv *priv = card->priv;
+	int num,ret;
+
+	if(!mutex_trylock(&priv->fwcmd_mutex))
+	{
+		printk("returning not able to acquire lock\n\n");
+		mutex_unlock(&priv->ps_mutex);
+		return;
+	}
+	printk("In ps sleep enter:\n");
+
+	mutex_lock(&priv->ps_mutex);
+
+	//check if tx empty,if not do not enter PS
+	for (num = SYSADPT_TX_WMM_QUEUES - 1; num >= 0; num--) {
+		if (skb_queue_len(&priv->txq[num]) > 0)
+		{	wiphy_err(priv->hw->wiphy, "Sleep fail due to tx not empty %d\n",skb_queue_len(&priv->txq[num]));
+			mutex_unlock(&priv->ps_mutex);
+			mutex_unlock(&priv->fwcmd_mutex);
+			return;
+		}
+	}
+
+	//check if Rx has any packets
+	if (skb_queue_len(&card->rx_data_q) > 0)
+	{
+		wiphy_err(priv->hw->wiphy, "Sleep fail due to rx not empty\n");
+		mutex_unlock(&priv->ps_mutex);
+		mutex_unlock(&priv->fwcmd_mutex);
+		return;
+	}
+
+	//check if cmd is sent
+	if (priv->in_send_cmd == true)
+	{	wiphy_err(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
+		mutex_unlock(&priv->ps_mutex);
+		mutex_unlock(&priv->fwcmd_mutex);
+		return;
+	}
+
+	ret = mwl_fwcmd_confirm_ps(priv->hw);
+	if(ret ==0)
+		priv->ps_state=PS_SLEEP;
+
+	mutex_unlock(&priv->ps_mutex);
 }
 
 static int mwl_sdio_event(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
+	struct mwl_sdio_card *card = priv->intf;
 #if 0
 	struct mwl_hostevent *host_event = (struct mwl_hostevent *)(
 		&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)]);
 #else
 	struct mwl_hostevent *host_event = (struct mwl_hostevent *)(
-		&priv->pcmd_buf[0]);
+		&priv->pcmd_event_buf[0]);
 #endif
 	u16	event_id = host_event->mac_event.event_id;
 
@@ -1058,7 +1129,10 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 		ieee80211_queue_work(hw, &priv->watchdog_ba_handle);
 		break;
 	case SDEVENT_WAKEUP:
-		mwl_sdio_wakeup_complete(priv);
+		queue_work(card->cmd_workq, &card->event_work);
+		break;
+	case SDEVENT_PS_SLEEP:
+		queue_work(card->cmd_workq, &card->cmd_work);
 		break;
 	default:
 		wiphy_info(hw->wiphy,"Unknown event, id=%04xh\n", event_id);
@@ -1501,7 +1575,7 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 	unsigned long flags;
 	u32 bitmap;
 	u8 cr;
-	__le16 *pBuf = (__le16 *)priv->pcmd_buf;
+	__le16 *pBuf = (__le16 *)priv->pcmd_event_buf;
 
 	spin_lock_irqsave(&card->int_lock, flags);
 	sdio_ireg = card->int_status;
@@ -1530,13 +1604,14 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 		rx_len = card->mp_regs[reg->cmd_rd_len_1] << 8;
 		rx_len |= (u16)card->mp_regs[reg->cmd_rd_len_0];
 		rx_blocks = DIV_ROUND_UP(rx_len, MWL_SDIO_BLOCK_SIZE);
-		if ((rx_blocks * MWL_SDIO_BLOCK_SIZE) >
-		     CMD_BUF_SIZE)
+		if ((rx_blocks * MWL_SDIO_BLOCK_SIZE) > CMD_BUF_SIZE)
 			return -1;
+
 		rx_len = (u16) (rx_blocks * MWL_SDIO_BLOCK_SIZE);
 
-		ret = mwl_sdio_card_to_host(priv, NULL, (u8 *)priv->pcmd_buf,
+		ret = mwl_sdio_card_to_host(priv, NULL, (u8 *)priv->pcmd_event_buf,
 			rx_len, card->ioport | CMD_PORT_SLCT);
+
 		if (ret != 0) {
 			wiphy_err(hw->wiphy,
 			    "%s: failed to card_to_host, (%d)", __func__, ret);
@@ -1551,6 +1626,7 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 		    ((le16_to_cpu(cmd_hdr->command) & ~HOSTCMD_RESP_BIT) == card->cmd_id) &&
 		    (pBuf[1] ==  cpu_to_le16(MWL_TYPE_CMD))) {
 			card->cmd_id = 0;
+			memcpy(priv->pcmd_buf,priv->pcmd_event_buf,rx_len);
 			mwl_sdio_complete_cmd(priv);
 		} else if (pBuf[1] ==  cpu_to_le16(MWL_TYPE_EVENT))
 			mwl_sdio_event(priv);
@@ -2027,10 +2103,14 @@ static void mwl_sdio_tx_workq(struct work_struct *work)
 	struct mwl_priv *priv = card->priv;
 	struct ieee80211_hw *hw = (struct ieee80211_hw *)priv->hw;
 
+	/* We wakeup here instead of mwl_mac80211_tx since this call runs in atomic context
+		and tx needs sdio write call which is blocking call */
+	if(priv->ds_state == DS_SLEEP || priv->ps_state == PS_SLEEP )
+		priv->if_ops.wakeup_card(priv);
+
 	priv->is_tx_done_schedule = false;
 	mwl_tx_skbs((unsigned long)hw);
 	mwl_sdio_flush_amsdu_no_lock((unsigned long)hw);
-
 }
 
 
@@ -2326,6 +2406,7 @@ mwl_sdio_interrupt(struct sdio_func *func)
 			 func, card, card ? card->priv : NULL);
 		return;
 	}
+
 	mwl_sdio_interrupt_status(priv);
 	mwl_sdio_process_int_status(priv);
 	return;
@@ -2425,7 +2506,6 @@ static struct mwl_if_ops sdio_ops = {
 	.enter_deepsleep         = mwl_sdio_enter_deepsleep,
 	.wakeup_card             = mwl_sdio_wakeup_card,
 	.is_deepsleep            = mwl_sdio_is_deepsleep,
-	.wakeup_complete         = mwl_sdio_wakeup_complete,
 };
 
 static int mwl_sdio_probe(struct sdio_func *func,
@@ -2485,6 +2565,12 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	card->tx_workq = alloc_workqueue("mwlwifi-tx_workq",
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&card->tx_work, mwl_sdio_tx_workq);
+
+	card->cmd_workq = alloc_workqueue("mwlwifi-cmd_workq",
+		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&card->cmd_work, mwl_sdio_enter_ps_sleep);
+	INIT_WORK(&card->event_work, mwl_sdio_wakeup_complete);
+
 	sdio_ops.ptx_work = &card->tx_work;
 	sdio_ops.ptx_workq = card->tx_workq;
 

@@ -1045,6 +1045,10 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 			break;
 
 		tx_skb = skb_dequeue(&priv->txq[num]);
+
+        if (!tx_skb)
+            continue;
+
 		tx_info = IEEE80211_SKB_CB(tx_skb);
 		tx_ctrl = (struct mwl_tx_ctrl *)&tx_info->status;
 
