@@ -156,11 +156,10 @@ int EDMAC_Ctrl = 0x0;
 /* Tx AMSDU control*/
 int tx_amsdu_enable = 0;
 
-int ds_enable = DS_ENABLE_ON;
+int ds_enable = DS_ENABLE_OFF;
 
 /*Laird additions */
 int SISO_mode = 0;
-
 int lrd_debug = 0;
 
 static bool mwl_is_world_mode(struct mwl_priv *priv)
@@ -972,7 +971,16 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
 
-	priv->ds_enable = priv->mfg_mode ? DS_ENABLE_OFF: ds_enable;
+	if (priv->mfg_mode) {
+		priv->ds_enable = DS_ENABLE_OFF;
+	}
+	else {
+		priv->ds_enable =  ds_enable ? DS_ENABLE_ON : DS_ENABLE_OFF;
+	}
+
+	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
+	           priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
+
 	timer_setup(&priv->ds_timer, ds_routine, 0);
 	mwl_restart_ds_timer(priv, true);
 
@@ -1096,11 +1104,11 @@ MODULE_PARM_DESC(tx_amsdu_enable, "Tx AMSDU enable/disable");
 module_param(SISO_mode, uint, 0444);
 MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
 
-module_param(ds_enable, int, 0);
-MODULE_PARM_DESC(ds_enable, "Deepsleep enable/disable");
-
 module_param(lrd_debug, uint, 0644);
 MODULE_PARM_DESC(lrd_debug, "Debug mode 0:Disable 1:Enable");
+
+module_param(ds_enable, uint, 0444);
+MODULE_PARM_DESC(ds_enable, "Deep Sleep mode 0:Disable 1:Enable");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);
