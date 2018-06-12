@@ -43,9 +43,6 @@ static void mwl_mac80211_tx(struct ieee80211_hw *hw,
 		return;
 	}
 
-	if(priv->ds_state == DS_SLEEP)
-		priv->if_ops.wakeup_card(priv);
-
 	mwl_tx_xmit(hw, control, skb);
 }
 

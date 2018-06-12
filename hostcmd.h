@@ -90,6 +90,7 @@
 #define HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG       0x1206
 #define HOSTCMD_CMD_MONITOR_MODE                0x1207
 #define HOSTCMD_CMD_DEEPSLEEP                   0x1209
+#define HOSTCMD_CMD_CONFIRM_PS                  0x1210
 
 
 /* Define general result code for each command */
@@ -1204,8 +1205,13 @@ struct lrdcmd_cmd_cap
 }__packed;
 
 struct hostcmd_cmd_deepsleep {
-    struct hostcmd_header cmd_hdr;
-    u8 enableFlag;
+	struct hostcmd_header cmd_hdr;
+	u8 enableFlag;
+} __packed;
+
+struct hostcmd_cmd_confirm_ps {
+	struct hostcmd_header cmd_hdr;
+	u8 status;
 } __packed;
 
 #endif /* _HOSTCMD_H_ */
