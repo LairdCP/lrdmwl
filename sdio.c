@@ -1018,7 +1018,7 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
 		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
 
-	wiphy_err(priv->hw->wiphy,"Initiate Card wakeup\n");
+	wiphy_info(priv->hw->wiphy,"Initiate Card wakeup\n");
 
 	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x2))) {
 		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
