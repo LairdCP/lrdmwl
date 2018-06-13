@@ -985,7 +985,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	           priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
 
 	timer_setup(&priv->ds_timer, ds_routine, 0);
-	mwl_restart_ds_timer(priv, true);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
@@ -1000,6 +999,11 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas\n",
 		   priv->ant_tx_num, priv->ant_rx_num);
+
+	/* Start DS timer after init where radio is registered with mac802.11
+	 * and IEEE80211_CONF_IDLE flag is setup
+	 */
+	mwl_restart_ds_timer(priv, true);
 
 #ifdef CONFIG_SYSFS
 	lrd_sysfs_init(hw);
