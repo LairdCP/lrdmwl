@@ -795,8 +795,6 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -ENOMEM;
 	}
 
-	mwl_sdio_enable_int(priv);
-
 	sdio_claim_host(card->func);
 
 	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
@@ -929,6 +927,11 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy,
 			"FW status is not ready\n");
 	}
+
+	/* Enabling interrupt after firmware is ready.
+	 * Otherwise there may be abnormal interrupt DN_LD_HOST_INT_MASK
+	 */
+	mwl_sdio_enable_int(priv);
 	kfree(fwbuf);
 
 	return ret;
