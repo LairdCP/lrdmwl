@@ -1055,7 +1055,7 @@ void mwl_debugfs_init(struct ieee80211_hw *hw)
 	struct mwl_priv *priv = hw->priv;
 
 	if (!priv->debugfs_phy)
-		priv->debugfs_phy = debugfs_create_dir("mwlwifi",
+		priv->debugfs_phy = debugfs_create_dir("lrdwifi",
 						       hw->wiphy->debugfsdir);
 
 	if (!priv->debugfs_phy)
