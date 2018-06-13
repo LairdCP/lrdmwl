@@ -949,6 +949,7 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy,
 			"FW status is not ready\n");
 	}
+
 	/* Enabling interrupt after firmware is ready.
 	 * Otherwise there may be abnormal interrupt DN_LD_HOST_INT_MASK
 	 */
