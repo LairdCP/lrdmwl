@@ -149,6 +149,9 @@ int wmm_turbo = 1;
 /* EDMAC Control */
 int EDMAC_Ctrl = 0x0;
 
+/* Tx AMSDU control*/
+int tx_amsdu_enable = 0;
+
 int SISO_mode = 0;
 
 int lrd_debug = 0;
@@ -936,6 +939,10 @@ MODULE_PARM_DESC(EDMAC_Ctrl, "EDMAC CFG: BIT0:2G_enbl, BIT1:5G_enbl, " \
                              "BIT[4:11]: 2G_Offset, BIT[12:19]:5G_offset, " \
                              "BIT[20:27]:Queue_lock, BIT[28]: MCBC_QLock, " \
                              "BIT[29]: BCN_DSBL");
+
+
+module_param(tx_amsdu_enable, int, 0);
+MODULE_PARM_DESC(tx_amsdu_enable, "Tx AMSDU enable/disable");
 
 module_param(SISO_mode, uint, 0444);
 MODULE_PARM_DESC(SISO_mode, "SISO mode 0:Disable 1:Ant0 2:Ant1");
