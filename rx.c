@@ -177,7 +177,7 @@ void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 	struct mwl_sta *sta_info;
 	struct ieee80211_sta *sta;
 
-	spin_lock_bh(&priv->sta_lock);
+	mutex_lock(&priv->sta_mutex);
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
 		sta = container_of((char *)sta_info, struct ieee80211_sta,
 				   drv_priv[0]);
@@ -186,7 +186,7 @@ void mwl_rx_enable_sta_amsdu(struct mwl_priv *priv,
 			break;
 		}
 	}
-	spin_unlock_bh(&priv->sta_lock);
+	mutex_unlock(&priv->sta_mutex);
 }
 EXPORT_SYMBOL_GPL(mwl_rx_enable_sta_amsdu);
 

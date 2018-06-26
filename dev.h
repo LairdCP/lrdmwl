@@ -426,9 +426,9 @@ struct mwl_priv;
 
 struct mwl_if_ops {
 	unsigned short inttf_head_len;
-	struct tasklet_struct *ptx_task;
 	struct tasklet_struct *ptx_done_task;
-	struct tasklet_struct *pqe_task;
+	struct workqueue_struct *pqe_workq;
+	struct work_struct *pqe_work;
 	struct workqueue_struct *ptx_workq;
 	struct work_struct *ptx_work;
 	struct mwl_chip_info	mwl_chip_tbl;
@@ -579,7 +579,7 @@ struct mwl_priv {
 	} ____cacheline_aligned_in_smp;
 
 	struct {
-		spinlock_t sta_lock;         /* for private sta info        */
+		struct mutex sta_mutex;         /* for private sta info        */
 		struct list_head sta_list;   /* List of stations            */
 	} ____cacheline_aligned_in_smp;
 

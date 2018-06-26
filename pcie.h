@@ -32,6 +32,12 @@ struct mwl_pcie_card {
 	struct mwl_desc_data desc_data[SYSADPT_NUM_OF_DESC_DATA];
 	/* number of descriptors owned by fw at any one time */
 	int fw_desc_cnt[SYSADPT_NUM_OF_DESC_DATA];
+
+	struct workqueue_struct *tx_workq;
+	struct work_struct tx_work;
+	
+	struct workqueue_struct *qe_workq;
+	struct work_struct qe_work;
 };
 
 void mwl_pcie_tx_done(unsigned long data);

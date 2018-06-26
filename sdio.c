@@ -2585,6 +2585,7 @@ static void mwl_sdio_flush_amsdu(unsigned long data)
 	struct mwl_sta *sta_info;
 	int i;
 
+	// Note - station list mutex is held on entry
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
 		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
 			amsdu_frag = &sta_info->amsdu_ctrl.frag[i];
@@ -2602,6 +2603,8 @@ static void mwl_sdio_flush_amsdu(unsigned long data)
 	return;
 }
 
+// Note - xxx_no_lock means spin locks are not held on entry
+// Station list mutex is also not held
 static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
 {
 	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
@@ -2611,8 +2614,11 @@ static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
 	struct mwl_sta *sta_info;
 	int i;
 
+	// Need to protect station list against asynchronous removal
+	mutex_lock(&priv->sta_mutex);
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
 		if (sta_info == NULL) {
+			mutex_unlock(&priv->sta_mutex);
 			return;
 		}
 		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
@@ -2625,6 +2631,7 @@ static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
 			}
 		}
 	}
+	mutex_unlock(&priv->sta_mutex);
 
 	return;
 }

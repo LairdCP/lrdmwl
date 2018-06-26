@@ -871,16 +871,14 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 
 	skb_queue_tail(&priv->txq[txq_idx], skb);
 
-	if (priv->if_ops.ptx_work != NULL) {
-		/* SDIO interface is using this path */
+	if (priv->host_if == MWL_IF_SDIO) {
 		if (!priv->is_tx_done_schedule) {
 			priv->is_tx_done_schedule = true;
 			queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
 		}
-	} else {
-		/* PCIE interface is using this path */
-		tasklet_schedule(priv->if_ops.ptx_task);
 	}
+	else
+		queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
 
 	/* Initiate the ampdu session here */
 	if (start_ba_session) {
@@ -1033,6 +1031,13 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 		PCIE_TXBD_NOT_FULL(priv->txbd_wrptr, priv->txbd_rdptr));
 #endif
 
+	// Note - station list mutex is taken and held because station pointer
+	// is copied to skbuff and referenced throughout transmission
+	// Lock is needed to prevent station from being deleted while 
+	// tx skbuff is being processed
+	// Note - USB and PCI handlers have been converted from tasklet to workqueue
+	// to allow mutex to be used.
+	mutex_lock(&priv->sta_mutex);
 	spin_lock_bh(&priv->tx_desc_lock);
 	while (1) {
 		struct ieee80211_tx_info *tx_info;
@@ -1093,8 +1098,7 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 		}
 
 		if (skb_queue_len(&priv->txq[num]) == 0) {
-			spin_lock(&priv->sta_lock);
-
+			
 			list_for_each_entry(sta_info, &priv->sta_list, list) {
 
 				spin_lock_bh(&sta_info->amsdu_lock);
@@ -1104,7 +1108,6 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 						sta_info->amsdu_ctrl.frag[num].num = 0;
 						sta_info->amsdu_ctrl.frag[num].cur_pos = NULL;
 						spin_unlock_bh(&sta_info->amsdu_lock);
-						spin_unlock(&priv->sta_lock);
 						spin_unlock_bh(&priv->tx_desc_lock);
 						//	wiphy_err(priv->hw->wiphy, "[call mwl_tx_skb2]\n");
                         /* Passing 0 or num as argument is HID specific since
@@ -1115,13 +1118,11 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 								((priv->host_if == MWL_IF_SDIO)? 0: num),
 								sta_info->amsdu_ctrl.frag[num].skb);
 						spin_lock_bh(&priv->tx_desc_lock);
-						spin_lock(&priv->sta_lock);
 						spin_lock_bh(&sta_info->amsdu_lock);
 					}
 				}
 				spin_unlock_bh(&sta_info->amsdu_lock);
 			}
-			spin_unlock(&priv->sta_lock);
 		}
 
 		if (skb_queue_len(&priv->txq[num]) <
@@ -1137,6 +1138,7 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 		}
 	}
 	spin_unlock_bh(&priv->tx_desc_lock);
+	mutex_unlock(&priv->sta_mutex);
 }
 EXPORT_SYMBOL_GPL(mwl_tx_skbs);
 

@@ -298,7 +298,7 @@ static ssize_t mwl_debugfs_sta_read(struct file *file, char __user *ubuf,
 		return -ENOMEM;
 
 	len += scnprintf(p + len, size - len, "\n");
-	spin_lock_bh(&priv->sta_lock);
+	mutex_lock(&priv->sta_mutex);
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
 		sta = container_of((char *)sta_info, struct ieee80211_sta,
 				   drv_priv[0]);
@@ -345,7 +345,7 @@ static ssize_t mwl_debugfs_sta_read(struct file *file, char __user *ubuf,
 				 sta_info->iv32, sta_info->iv16);
 		len += scnprintf(p + len, size - len, "\n");
 	}
-	spin_unlock_bh(&priv->sta_lock);
+	mutex_unlock(&priv->sta_mutex);;
 
 	ret = simple_read_from_buffer(ubuf, count, ppos, p, len);
 	free_page(page);
@@ -388,7 +388,7 @@ static ssize_t mwl_debugfs_ampdu_read(struct file *file, char __user *ubuf,
 		}
 	}
 	spin_unlock_bh(&priv->stream_lock);
-	spin_lock_bh(&priv->sta_lock);
+	mutex_lock(&priv->sta_mutex);
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
 		for (i = 0; i < MWL_MAX_TID; i++) {
 			if (sta_info->check_ba_failed[i]) {
@@ -402,7 +402,7 @@ static ssize_t mwl_debugfs_ampdu_read(struct file *file, char __user *ubuf,
 			}
 		}
 	}
-	spin_unlock_bh(&priv->sta_lock);
+	mutex_unlock(&priv->sta_mutex);
 	len += scnprintf(p + len, size - len, "\n");
 
 	ret = simple_read_from_buffer(ubuf, count, ppos, p, len);

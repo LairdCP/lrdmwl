@@ -575,9 +575,9 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->cmd_timeout = false;
 
 	mutex_init(&priv->fwcmd_mutex);
+	mutex_init(&priv->sta_mutex);
 	spin_lock_init(&priv->tx_desc_lock);
 	spin_lock_init(&priv->vif_lock);
-	spin_lock_init(&priv->sta_lock);
 	spin_lock_init(&priv->stream_lock);
 
 	rc = mwl_thermal_register(priv);

@@ -60,7 +60,7 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 	},
 };
 
-static void mwl_pcie_tx_flush_amsdu(unsigned long data);
+static void mwl_pcie_tx_flush_amsdu(struct mwl_priv *priv);
 static int mwl_tx_ring_alloc(struct mwl_priv *priv);
 static int mwl_tx_ring_init(struct mwl_priv *priv);
 static void mwl_tx_ring_cleanup(struct mwl_priv *priv);
@@ -824,6 +824,7 @@ static int mwl_pcie_init(struct mwl_priv *priv)
 
 	priv->chip_type = card->chip_type;
 	priv->host_if = MWL_IF_PCIE;
+	card->priv = priv;
 
 	hw = priv->hw;
 	rc = pci_enable_device(pdev);
@@ -1367,7 +1368,7 @@ void mwl_non_pfu_tx_done(unsigned long data)
 		set_bit(MACREG_A2HRIC_BIT_TX_DONE,
 		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
 
-		tasklet_schedule(priv->if_ops.ptx_task);
+		queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
 		priv->is_tx_done_schedule = false;
 	}
 
@@ -1503,7 +1504,8 @@ void mwl_pfu_tx_done(unsigned long data)
 		set_bit(MACREG_A2HRIC_BIT_TX_DONE,
 		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
 
-		tasklet_schedule(priv->if_ops.ptx_task);
+		queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
+
 		priv->is_tx_done_schedule = false;
 	}	
 }
@@ -1582,8 +1584,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 					       (priv->qe_trigger_time + 1))) {
 					clear_bit(MACREG_A2HRIC_BIT_QUE_EMPTY,
 		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
-						tasklet_schedule(
-						    priv->if_ops.pqe_task);
+					queue_work(card->qe_workq, &card->qe_work);
 					priv->qe_trigger_num++;
 					priv->is_qe_schedule = true;
 					priv->qe_trigger_time = jiffies;
@@ -1614,6 +1615,25 @@ static void mwl_pcie_read_register(struct mwl_priv *priv,
 		*data = readl(card->iobase1 + reg);
 }
 
+static void mwl_pci_tx_workq(struct work_struct *work)
+{
+	struct mwl_pcie_card *card = container_of(work,
+			struct mwl_pcie_card, tx_work);
+	struct mwl_priv *priv = card->priv;
+	struct ieee80211_hw *hw = (struct ieee80211_hw *)priv->hw;
+
+	mwl_tx_skbs((unsigned long)hw);
+}
+
+static void mwl_pcie_tx_flush_amsdu_workq(struct work_struct *work)
+{
+	struct mwl_pcie_card *card = container_of(work,
+			struct mwl_pcie_card, qe_work);
+	struct mwl_priv *priv = card->priv;
+	
+	mwl_pcie_tx_flush_amsdu(priv);
+}
+
 static void mwl_pcie_write_register(struct mwl_priv *priv,
 		int index, int reg, u32 data)
 {
@@ -1634,17 +1654,22 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 	card = (struct mwl_pcie_card *)priv->intf;
 
 #ifndef NEW_DP
-	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs,
-		(unsigned long)priv->hw);
-	tasklet_disable(priv->if_ops.ptx_task);
+	card->tx_workq = alloc_workqueue("mwlwifi-tx_workq",
+		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&card->tx_work, mwl_pci_tx_workq);
+	priv->if_ops.ptx_work = &card->tx_work;
+	priv->if_ops.ptx_workq = card->tx_workq;
+
 
 	tasklet_init(priv->if_ops.ptx_done_task,
 		(void *)mwl_pcie_tx_done, (unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.ptx_done_task);
 
-	tasklet_init(priv->if_ops.pqe_task, (void *)mwl_pcie_tx_flush_amsdu,
-		(unsigned long)priv->hw);
-	tasklet_disable(priv->if_ops.pqe_task);
+	card->qe_workq = alloc_workqueue("mwlwifi-qe_workq",
+		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&card->qe_work, mwl_pcie_tx_flush_amsdu_workq);
+	priv->if_ops.pqe_work = &card->qe_work;
+	priv->if_ops.pqe_workq = card->qe_workq;
 #endif
 	tasklet_init(&priv->rx_task, (void *)mwl_pcie_rx_recv,
 		(unsigned long)priv->hw);
@@ -1673,30 +1698,33 @@ static void mwl_pcie_unregister_dev(struct mwl_priv *priv)
 		priv->irq = -1;
 	}
 #ifndef NEW_DP
-	if (priv->if_ops.ptx_task != NULL)
-		tasklet_kill(priv->if_ops.ptx_task);
+	if (priv->if_ops.ptx_work)
+	{
+		cancel_work_sync(priv->if_ops.ptx_work);
+		destroy_workqueue(priv->if_ops.ptx_workq);
+	}
 
 	if (priv->if_ops.ptx_done_task != NULL)
 		tasklet_kill(priv->if_ops.ptx_done_task);
 
-	if (priv->if_ops.pqe_task != NULL)
-		tasklet_kill(priv->if_ops.pqe_task);
+	if (priv->if_ops.pqe_work != NULL)
+	{
+		cancel_work_sync(priv->if_ops.pqe_work);
+		destroy_workqueue(priv->if_ops.pqe_workq);
+	}
 #endif /* NEW_DP */
 }
 
-static void mwl_pcie_tx_flush_amsdu(unsigned long data)
+static void mwl_pcie_tx_flush_amsdu(struct mwl_priv *priv)
 {
-	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
-	struct mwl_priv *priv = hw->priv;
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
 
 	struct mwl_sta *sta_info;
 	int i;
 	struct mwl_amsdu_frag *amsdu_frag;
 
-// TODO: RR: Take spin_lock_bh() here ??
-	spin_lock(&priv->tx_desc_lock);
-	spin_lock(&priv->sta_lock);
+	mutex_lock(&priv->sta_mutex);
+	spin_lock_bh(&priv->tx_desc_lock);
 	list_for_each_entry(sta_info, &priv->sta_list, list) {
 		spin_lock(&sta_info->amsdu_lock);
 		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
@@ -1718,8 +1746,8 @@ static void mwl_pcie_tx_flush_amsdu(unsigned long data)
 		}
 		spin_unlock(&sta_info->amsdu_lock);
 	}
-	spin_unlock(&priv->sta_lock);
-	spin_unlock(&priv->tx_desc_lock);
+	spin_unlock_bh(&priv->tx_desc_lock);
+	mutex_unlock(&priv->sta_mutex);
 
 	set_bit(MACREG_A2HRIC_BIT_QUE_EMPTY,
 		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
@@ -1786,15 +1814,11 @@ static int mwl_pcie_debugfs_reg_access(struct mwl_priv *priv, bool write)
 	return ret;
 }
 
-static struct tasklet_struct tx_task;
 static struct tasklet_struct tx_done_task;
-static struct tasklet_struct qe_task;
 
 static struct mwl_if_ops pcie_ops = {
 	.inttf_head_len = INTF_HEADER_LEN,
-	.ptx_task = &tx_task,
 	.ptx_done_task = &tx_done_task,
-	.pqe_task = &qe_task,
 	.init_if =			mwl_pcie_init,
 	.cleanup_if =		mwl_pcie_cleanup,
 	.check_card_status =		mwl_pcie_check_card_status,

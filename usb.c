@@ -304,9 +304,6 @@ static struct usb_driver mwl_usb_driver = {
 
 
 
-static struct tasklet_struct tx_task;
-
-
 static bool mwl_usb_check_card_status(struct mwl_priv *priv)
 {
         return true;
@@ -482,6 +479,17 @@ static void mwl_usb_rx_recv(unsigned long data)
 	return;
 }
 
+static void mwl_usb_tx_workq(struct work_struct *work)
+{
+	struct usb_card_rec *card = container_of(work,
+			struct usb_card_rec, tx_work);
+	struct mwl_priv *priv = card->priv;
+	struct ieee80211_hw *hw = (struct ieee80211_hw *)priv->hw;
+
+	mwl_tx_skbs((unsigned long)hw);
+}
+
+
 static int mwl_usb_init(struct mwl_priv *priv)
 {
         struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
@@ -553,9 +561,13 @@ static int mwl_register_dev(struct mwl_priv *priv)
         adapter->usb_mc_status = false;
         adapter->usb_mc_setup = false;
 #endif
-	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs,
-                (unsigned long)priv->hw);
-        tasklet_disable(priv->if_ops.ptx_task);
+        
+	card->tx_workq = alloc_workqueue("mwlwifi-tx_workq",
+		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&card->tx_work, mwl_usb_tx_workq);
+	priv->if_ops.ptx_work = &card->tx_work;
+	priv->if_ops.ptx_workq = card->tx_workq;
+
 
 	printk(KERN_ALERT"Registering device\n");
 	return 0;
@@ -719,17 +731,16 @@ static void mwl_usb_tx_complete(struct urb *urb)
         if (context->ep == card->tx_cmd_ep) {
                 atomic_dec(&card->tx_cmd_urb_pending);
         } else {
-                mwl_write_data_complete(adapter, context->skb);
-                for (i = 0; i < MWIFIEX_TX_DATA_PORT; i++) {
-                        port = &card->port[i];
-                        if (context->ep == port->tx_data_ep) {
-                                atomic_dec(&port->tx_data_urb_pending);
-                                port->block_status = false;
-                                break;
+			mwl_write_data_complete(adapter, context->skb);
+			for (i = 0; i < MWIFIEX_TX_DATA_PORT; i++) {
+				port = &card->port[i];
+				if (context->ep == port->tx_data_ep) {
+					atomic_dec(&port->tx_data_urb_pending);
+					port->block_status = false;
+					break;
+				}
 			}
-                }
-
-		tasklet_schedule(adapter->if_ops.ptx_task);
+			queue_work(adapter->if_ops.ptx_workq, adapter->if_ops.ptx_work);
         }
 
 #if 0
@@ -1443,7 +1454,6 @@ static struct mwl_if_ops usb_ops1 = {
 	.cmd_resp_wait_completed=	mwl_usb_cmd_resp_wait_completed,
 	.host_to_card=		mwl_usb_host_to_card,
 	.is_tx_available=	mwl_usb_is_tx_available,
-	.ptx_task=		&tx_task,
 };
 
 module_usb_driver(mwl_usb_driver);

@@ -51,16 +51,10 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 	struct mwl_priv *priv = hw->priv;
 	int rc;
 
-	/* Enable TX and RX tasklets. */
-	if (priv->if_ops.ptx_task != NULL)
-		tasklet_enable(priv->if_ops.ptx_task);
-
+	/* Enable tasklets. */
 	tasklet_enable(&priv->rx_task);
 	if (priv->if_ops.ptx_done_task != NULL)
 		tasklet_enable(priv->if_ops.ptx_done_task);
-
-	if (priv->if_ops.pqe_task != NULL)
-		tasklet_enable(priv->if_ops.pqe_task);
 
 	/* Enable interrupts */
 	mwl_fwcmd_int_enable(hw);
@@ -95,14 +89,10 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 
 fwcmd_fail:
 	mwl_fwcmd_int_disable(hw);
-	if (priv->if_ops.ptx_task != NULL)
-		tasklet_disable(priv->if_ops.ptx_task);
 
 	if (priv->if_ops.ptx_done_task != NULL)
 		tasklet_disable(priv->if_ops.ptx_done_task);
 
-	if (priv->if_ops.pqe_task != NULL)
-		tasklet_disable(priv->if_ops.pqe_task);
 	tasklet_disable(&priv->rx_task);
 
 	return rc;
@@ -119,15 +109,10 @@ static void mwl_mac80211_stop(struct ieee80211_hw *hw)
 	/* Disable interrupts */
 	mwl_fwcmd_int_disable(hw);
 
-	/* Disable TX reclaim and RX tasklets. */
-	if (priv->if_ops.ptx_task != NULL)
-		tasklet_disable(priv->if_ops.ptx_task);
-
+	/* Disable tasklets. */
 	if (priv->if_ops.ptx_done_task != NULL)
 		tasklet_disable(priv->if_ops.ptx_done_task);
 
-	if (priv->if_ops.pqe_task != NULL)
-		tasklet_disable(priv->if_ops.pqe_task);
 	tasklet_disable(&priv->rx_task);
 
 	/* Return all skbs to mac80211 */
@@ -557,9 +542,9 @@ static int mwl_mac80211_sta_add(struct ieee80211_hw *hw,
 	INIT_WORK(&sta_info->rc_update_work, mwl_rc_update_work);
 	sta_info->mwl_private = priv;
 
-	spin_lock_bh(&priv->sta_lock);
+	mutex_lock(&priv->sta_mutex);
 	list_add_tail(&sta_info->list, &priv->sta_list);
-	spin_unlock_bh(&priv->sta_lock);
+	mutex_unlock(&priv->sta_mutex);
 
 	if ((vif->type == NL80211_IFTYPE_STATION) ||
 		(vif->type == NL80211_IFTYPE_P2P_CLIENT))
@@ -585,6 +570,12 @@ static int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
 	int rc;
 	struct mwl_sta *sta_info = mwl_dev_get_sta(sta);
 
+	// Take station list lock early to protect
+	// skbuffs, streams etc that are contained in the station 
+	// object.  This is needed to protect that data since the more
+	// granular spinlocks are currently released during the TX process
+	// while the data is still in use.
+	mutex_lock(&priv->sta_mutex);
 	cancel_work_sync(&sta_info->rc_update_work);
 
 	mwl_tx_del_sta_amsdu_pkts(sta);
@@ -593,9 +584,8 @@ static int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
 
 	rc = mwl_fwcmd_set_new_stn_del(hw, vif, sta->addr);
 
-	spin_lock_bh(&priv->sta_lock);
 	list_del(&sta_info->list);
-	spin_unlock_bh(&priv->sta_lock);
+	mutex_unlock(&priv->sta_mutex);
 
 	return rc;
 }
@@ -753,6 +743,9 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 					addr[3], addr[4], addr[5]);
 
 			if (stream->state == AMPDU_STREAM_ACTIVE) {
+				// WARNING - IEEE80211_AMPDU_TX_STOP_CONT means stop aggregating,
+				// but station has not been removed and packets should still 
+				// be transmitted!
 				mwl_tx_del_ampdu_pkts(hw, sta, tid);
 				idx = stream->idx;
 				spin_unlock_bh(&priv->stream_lock);
@@ -761,7 +754,10 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 			}
 
 			mwl_fwcmd_remove_stream(hw, stream);
-			ieee80211_stop_tx_ba_cb_irqsafe(vif, addr, tid);
+
+			if (action == IEEE80211_AMPDU_TX_STOP_CONT)
+				ieee80211_stop_tx_ba_cb_irqsafe(vif, addr, tid);
+
 		} else {
 			rc = -EPERM;
 		}

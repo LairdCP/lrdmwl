@@ -135,6 +135,10 @@ struct usb_card_rec {
 	struct mwl_wait_queue cmd_wait_q;
 	struct sk_buff_head rx_data_q;
 	atomic_t rx_pending;
+	
+	struct workqueue_struct *tx_workq;
+	struct work_struct tx_work;
+
 
 };
 
