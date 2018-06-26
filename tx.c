@@ -22,6 +22,7 @@
 #include "dev.h"
 #include "fwcmd.h"
 #include "tx.h"
+#include "main.h"
 
 
 #define EAGLE_TXD_XMITCTRL_USE_MC_RATE     0x8     /* Use multicast data rate */
@@ -383,7 +384,7 @@ static inline struct sk_buff *mwl_tx_do_amsdu(struct mwl_priv *priv,
 	sta = (struct ieee80211_sta *)tx_ctrl->sta;
 	sta_info = mwl_dev_get_sta(sta);
 
-	if (!sta_info->is_amsdu_allowed)
+	if (!sta_info->is_amsdu_allowed || !tx_amsdu_enable)
 		return tx_skb;
 
 	wh = (struct ieee80211_hdr *)tx_skb->data;
