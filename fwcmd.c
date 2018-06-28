@@ -183,10 +183,6 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	if (priv->recovery_in_progress)
 		return -EIO;
 
-	if (cmd != HOSTCMD_CMD_DEEPSLEEP) {
-		if (priv->ds_state == DS_PENDING) {
-			cancel_work_sync(&priv->ds_work);
-
 	if (!mwl_fwcmd_chk_adapter(priv)) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
 		priv->in_send_cmd = false;
