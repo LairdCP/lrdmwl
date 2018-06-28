@@ -1023,8 +1023,7 @@ void mwl_tx_skbs(unsigned long data)
 	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
 	struct mwl_priv *priv = hw->priv;
 	int num;
-	int next_pkt_len = 0;
-	struct sk_buff *tx_skb, *next_skb;
+	struct sk_buff *tx_skb;
 	struct mwl_sta *sta_info;
 
 /* pr_alert( "%s() called\n", __FUNCTION__); */
@@ -1065,25 +1064,16 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 		}
 
 		/* get next buffer length */
-		next_pkt_len = 0;
-		if (priv->host_if == MWL_IF_SDIO) {
-			next_skb = skb_peek(&priv->txq[num]);
-			if (next_skb != NULL) {
-				next_pkt_len = next_skb->len +
-					sizeof(struct mwl_tx_desc);
-			}
-		} else
-			next_pkt_len = num;
 
 		if (tx_skb) {
 			/* Need to leave spin_lock since bus driver
 			 * may sleep while transferring data
 			 */
 			spin_unlock_bh(&priv->tx_desc_lock);
-			if (mwl_tx_available(priv, next_pkt_len))
+			if (mwl_tx_available(priv, num))
 			{
 				//	wiphy_err(priv->hw->wiphy, "[call mwl_tx_skb1]\n");
-				mwl_tx_skb(priv, next_pkt_len, tx_skb);
+				mwl_tx_skb(priv, num, tx_skb);
 			}
 			else {
 				/* skb consumed. Marking as NULL. This code is not
@@ -1113,12 +1103,11 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 						spin_unlock(&priv->sta_lock);
 						spin_unlock_bh(&priv->tx_desc_lock);
 						//	wiphy_err(priv->hw->wiphy, "[call mwl_tx_skb2]\n");
-						/* Passing 0 or num as argument is HID specific since
-						 * its usage or interpretation varies for different
-						 * HIDs.
-						 */
-						mwl_tx_skb(priv,
-								((priv->host_if == MWL_IF_SDIO)? 0: num),
+                        /* Passing 0 or num as argument is HID specific since
+                         * its usage or interpretation varies for different
+                         * HIDs.
+                         */
+						mwl_tx_skb(priv, num,
 								sta_info->amsdu_ctrl.frag[num].skb);
 						spin_lock_bh(&priv->tx_desc_lock);
 						spin_lock(&priv->sta_lock);
