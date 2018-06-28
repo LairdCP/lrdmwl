@@ -2155,19 +2155,27 @@ static void mwl_sdio_tx_workq(struct work_struct *work)
  */
 static int mwl_host_to_card_mp_aggr(struct mwl_priv *priv,
 					u8 *payload, u32 pkt_len, u32 port,
-					u32 next_pkt_len)
+					u32 desc_num)
 {
 	struct mwl_sdio_card *card = priv->intf;
 	int ret = 0;
+	struct sk_buff *next_skb;
 	s32 f_send_aggr_buf = 0;
 	s32 f_send_cur_buf = 0;
 	s32 f_precopy_cur_buf = 0;
 	s32 f_postcopy_cur_buf = 0;
 	u32 mport;
-	u32 port_count;
+	u32 port_count, next_pkt_len;
 	int i;
 
 //	wiphy_err(priv->hw->wiphy, "%s() called\n", __FUNCTION__);
+	next_skb = skb_peek(&priv->txq[desc_num]);
+	if (next_skb != NULL) {
+		next_pkt_len = next_skb->len +
+			sizeof(struct mwl_tx_desc);
+	}
+	else
+		next_pkt_len = 0;
 
 	if (next_pkt_len) {
 		/* More pkt in TX queue */
@@ -2360,7 +2368,7 @@ mwl_process_txdesc(struct mwl_priv *priv,
 
 */
 static int mwl_sdio_host_to_card(struct mwl_priv *priv,
-	int next_pkt_len, struct sk_buff *tx_skb)
+	int desc_num, struct sk_buff *tx_skb)
 {
 	struct mwl_sdio_card *card = priv->intf;
 	int ret;
@@ -2402,7 +2410,7 @@ static int mwl_sdio_host_to_card(struct mwl_priv *priv,
 
 	pkt_len = buf_block_len * blk_size;
 	ret = mwl_host_to_card_mp_aggr(priv, payload, pkt_len,
-						   port, next_pkt_len);
+						   port, desc_num);
 
 	if (ret != 0) {
 		card->curr_wr_port = port;
