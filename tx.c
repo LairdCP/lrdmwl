@@ -22,6 +22,7 @@
 #include "dev.h"
 #include "fwcmd.h"
 #include "tx.h"
+#include "main.h"
 
 
 #define EAGLE_TXD_XMITCTRL_USE_MC_RATE     0x8     /* Use multicast data rate */
