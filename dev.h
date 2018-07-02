@@ -56,6 +56,10 @@
 #define MACREG_REG_INT_CODE                 0x00000C14
 
 /* Bit definition for MACREG_REG_A2H_INTERRUPT_CAUSE (A2HRIC) */
+#define MACREG_A2HRIC_BIT_NUM_TX_DONE           (0)
+#define MACREG_A2HRIC_BIT_NUM_RX_RDY            (1)
+#define MACREG_A2HRIC_BIT_NUM_QUE_EMPTY         (10)
+
 #define MACREG_A2HRIC_BIT_TX_DONE           BIT(0)
 #define MACREG_A2HRIC_BIT_RX_RDY            BIT(1)
 #define MACREG_A2HRIC_BIT_OPC_DONE          BIT(2)
