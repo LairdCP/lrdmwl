@@ -25,6 +25,7 @@
 struct mwl_pcie_card {
 	struct mwl_priv *priv;
 	struct pci_dev *pdev;
+	bool surprise_removed;
 	int chip_type;
 	void __iomem *iobase0; /* MEM Base Address Register 0  */
 	void __iomem *iobase1; /* MEM Base Address Register 1  */
@@ -32,6 +33,7 @@ struct mwl_pcie_card {
 	struct mwl_desc_data desc_data[SYSADPT_NUM_OF_DESC_DATA];
 	/* number of descriptors owned by fw at any one time */
 	int fw_desc_cnt[SYSADPT_NUM_OF_DESC_DATA];
+	int intr_mode;
 };
 
 void mwl_pcie_tx_done(unsigned long data);
