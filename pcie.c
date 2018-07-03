@@ -32,6 +32,9 @@
 #define MWL_FW_ROOT     "lrdmwl"
 #endif
 
+/* PCIe interrupt mode = legacy (default) */
+int pcie_intr_mode = 0;
+
 static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8864] = {
 		.part_name	= "88W8864",
@@ -865,16 +868,8 @@ static int mwl_pcie_init(struct mwl_priv *priv)
 		goto err_mwl_rx_init;
 	}
 
-	rc = request_irq(card->pdev->irq, mwl_pcie_isr,
-			 IRQF_SHARED, MWL_DRV_NAME, priv->hw);
-	if (rc) {
-		priv->irq = -1;
-		wiphy_err(priv->hw->wiphy, "%s: fail to register IRQ handler\n",
-			  MWL_DRV_NAME);
-		goto err_mwl_rx_init;
-	}
-	priv->irq = card->pdev->irq;
 	return rc;
+
 err_mwl_rx_init:
 	mwl_tx_deinit(hw);
 
@@ -891,6 +886,75 @@ err_enable_dev:
 	return rc;
 }
 
+
+static int mwl_pcie_intr_init(struct mwl_priv *priv)
+{
+	int rc = 0, try_legacy_irq = 1;
+	struct mwl_pcie_card *card = priv->intf;
+	struct ieee80211_hw *hw = priv->hw;
+
+	card->intr_mode = 0;
+
+	if (pcie_intr_mode == 1) {
+
+		rc = pci_enable_msi(card->pdev);
+
+		if (rc) {
+			wiphy_err(hw->wiphy, "%s: pci_enable_msi failed %d\n",
+					MWL_DRV_NAME, rc);
+		} else {
+			rc = request_irq(card->pdev->irq, mwl_pcie_isr,
+					0, MWL_DRV_NAME, priv->hw);
+			if (rc == 0) {
+				card->intr_mode = 1;
+				try_legacy_irq = 0;
+			} else {
+				wiphy_err(hw->wiphy,
+					"%s: request_irq MSI failed %d\n",
+					MWL_DRV_NAME, rc);
+
+				pci_disable_msi(card->pdev);
+
+			}
+		}
+	}
+
+	if (try_legacy_irq) {
+		rc = request_irq(card->pdev->irq, mwl_pcie_isr,
+				IRQF_SHARED, MWL_DRV_NAME, priv->hw);
+		if (rc) {
+			priv->irq = -1;
+			wiphy_err(hw->wiphy,
+					"%s: request_irq Legacy failed %d\n",
+					MWL_DRV_NAME, rc);
+
+			return rc;
+		}
+	}
+
+	priv->irq = card->pdev->irq;
+
+	return 0;
+}
+
+
+static int mwl_pcie_intr_deinit(struct mwl_priv *priv)
+{
+	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
+
+	if (priv->irq != -1) {
+		free_irq(priv->irq, priv->hw);
+		priv->irq = -1;
+
+		if(card->intr_mode == 1) {
+			pci_disable_msi(card->pdev);
+			card->intr_mode = 0;
+		}
+	}
+
+	return 0;
+}
+
 static void mwl_pcie_cleanup(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card = priv->intf;
@@ -898,6 +962,8 @@ static void mwl_pcie_cleanup(struct mwl_priv *priv)
 
 	mwl_rx_deinit(priv->hw);
 	mwl_tx_deinit(priv->hw);
+
+	mwl_pcie_intr_deinit(priv);
 
 	mwl_free_pci_resource(priv);
 	if (pdev) {
@@ -1533,6 +1599,10 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
 	unsigned int int_status;
 
+	if (card->surprise_removed) {
+		return IRQ_HANDLED;
+	}
+
 	int_status_mask = card->iobase1 +
 		MACREG_REG_A2H_INTERRUPT_STATUS_MASK;
 
@@ -1592,12 +1662,10 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 		}
 
 		if (int_status & MACREG_A2HRIC_BIT_CHAN_SWITCH)
-				ieee80211_queue_work(hw,
-					&priv->chnl_switch_handle);
+			ieee80211_queue_work(hw, &priv->chnl_switch_handle);
 
 		if (int_status & MACREG_A2HRIC_BA_WATCHDOG)
-				ieee80211_queue_work(hw,
-					&priv->watchdog_ba_handle);
+			ieee80211_queue_work(hw, &priv->watchdog_ba_handle);
 	}
 
 	return IRQ_HANDLED;
@@ -1632,6 +1700,12 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 	int i;
 
 	card = (struct mwl_pcie_card *)priv->intf;
+
+	rc = mwl_pcie_intr_init(priv);
+
+	if (rc) {
+		return rc;
+	}
 
 #ifndef NEW_DP
 	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs,
@@ -1668,10 +1742,13 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 
 static void mwl_pcie_unregister_dev(struct mwl_priv *priv)
 {
-	if (priv->irq != -1) {
-		free_irq(priv->irq, priv->hw);
-		priv->irq = -1;
-	}
+	wiphy_warn(priv->hw->wiphy,
+			"%s(): tasklet_pending[txd=%d rx=%d qe=%d]\n",
+			__FUNCTION__,
+			priv->is_tx_done_schedule,
+			priv->is_rx_schedule,
+			priv->is_qe_schedule);
+
 #ifndef NEW_DP
 	if (priv->if_ops.ptx_task != NULL)
 		tasklet_kill(priv->if_ops.ptx_task);
@@ -1682,6 +1759,7 @@ static void mwl_pcie_unregister_dev(struct mwl_priv *priv)
 	if (priv->if_ops.pqe_task != NULL)
 		tasklet_kill(priv->if_ops.pqe_task);
 #endif /* NEW_DP */
+
 }
 
 static void mwl_pcie_tx_flush_amsdu(unsigned long data)
@@ -1837,6 +1915,8 @@ static int mwl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	card->chip_type = id->driver_data;
 	card->pdev = pdev;
+	card->surprise_removed = false;
+
 	memcpy(&pcie_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
 		sizeof(struct mwl_chip_info));
 	rc = mwl_add_card(card, &pcie_ops);
@@ -1857,11 +1937,15 @@ static void mwl_remove(struct pci_dev *pdev)
 {
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
 	struct mwl_priv *priv;
+	struct mwl_pcie_card *card;
 
 	if (!hw)
 		return;
 
 	priv = hw->priv;
+	card = (struct mwl_pcie_card *)priv->intf;
+
+	card->surprise_removed = true;
 
 	mwl_wl_deinit(priv);
 
@@ -1916,4 +2000,6 @@ MODULE_VERSION(LRD_PCIE_VERSION);
 MODULE_AUTHOR(LRD_AUTHOR);
 MODULE_LICENSE("GPL v2");
 
+module_param(pcie_intr_mode, int, 0);
+MODULE_PARM_DESC(pcie_intr_mode, "0: Legacy, 1: MSI");
 
