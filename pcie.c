@@ -1221,7 +1221,7 @@ static int mwl_pcie_cmd_resp_wait_completed(struct mwl_priv *priv,
 	unsigned short int_code = 0;
 
 	do {
-        usleep_range(250, 500);        
+        usleep_range(250, 500);
 		int_code = le16_to_cpu(*((__le16 *)&priv->pcmd_buf[
 				INTF_CMDHEADER_LEN(INTF_HEADER_LEN)+0]));
 	} while ((int_code != cmd) && (--curr_iteration));
@@ -1589,7 +1589,7 @@ void mwl_pfu_tx_done(unsigned long data)
 
 		tasklet_schedule(priv->if_ops.ptx_task);
 		priv->is_tx_done_schedule = false;
-	}	
+	}
 }
 
 void mwl_pcie_tx_done(unsigned long data)
@@ -1881,8 +1881,30 @@ static int mwl_pcie_debugfs_reg_access(struct mwl_priv *priv, bool write)
 	return ret;
 }
 
+static int mwl_pcie_wakeup_card(struct mwl_priv *priv)
+{
+	return 0;
+}
+
+static int mwl_pcie_is_deepsleep(struct mwl_priv * priv)
+{
+	return 0;
+}
+
+static void mwl_pcie_enter_deepsleep(struct mwl_priv *priv)
+{
+	return;
+}
+
+static struct tasklet_struct tx_task;
+static struct tasklet_struct tx_done_task;
+static struct tasklet_struct qe_task;
+
 static struct mwl_if_ops pcie_ops = {
 	.inttf_head_len = INTF_HEADER_LEN,
+	.ptx_task          = &tx_task,
+	.ptx_done_task     = &tx_done_task,
+	.pqe_task          = &qe_task,
 	.init_if =			mwl_pcie_init,
 	.cleanup_if =		mwl_pcie_cleanup,
 	.check_card_status =		mwl_pcie_check_card_status,
@@ -1891,16 +1913,19 @@ static struct mwl_if_ops pcie_ops = {
 	.disable_int =  mwl_pcie_disable_int,
 	.send_cmd =     mwl_pcie_send_command,
 	.cmd_resp_wait_completed = mwl_pcie_cmd_resp_wait_completed,
-	.card_reset =   mwl_pcie_card_reset,
-	.register_dev =			mwl_pcie_register_dev,
-	.unregister_dev =		mwl_pcie_unregister_dev,
-	.is_tx_available = mwl_pcie_is_tx_available,
-	.host_to_card =			mwl_pcie_host_to_card,
-	.read_reg = mwl_pcie_read_register,
-	.write_reg = mwl_pcie_write_register,
-	.tx_done = mwl_pcie_tx_done,
-	.dbg_info = mwl_pcie_dbg_info,
-	.dbg_reg_access = mwl_pcie_debugfs_reg_access,
+	.card_reset        = mwl_pcie_card_reset,
+	.register_dev      = mwl_pcie_register_dev,
+	.unregister_dev    = mwl_pcie_unregister_dev,
+	.is_tx_available   = mwl_pcie_is_tx_available,
+	.host_to_card      = mwl_pcie_host_to_card,
+	.read_reg          = mwl_pcie_read_register,
+	.write_reg         = mwl_pcie_write_register,
+	.tx_done           = mwl_pcie_tx_done,
+	.dbg_info          = mwl_pcie_dbg_info,
+	.dbg_reg_access    = mwl_pcie_debugfs_reg_access,
+	.enter_deepsleep   = mwl_pcie_enter_deepsleep,
+	.wakeup_card       = mwl_pcie_wakeup_card,
+	.is_deepsleep      = mwl_pcie_is_deepsleep,
 };
 
 
