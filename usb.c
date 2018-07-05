@@ -48,12 +48,12 @@ static const struct usb_device_id mwl_usb_table[] = {
 MODULE_DEVICE_TABLE(usb, mwl_usb_table);
 
 static struct mwl_chip_info mwl_chip_tbl[] = {
-        [MWL8997] = {
-                .part_name      = "88W8997",
-                .fw_image       = MWL_FW_ROOT"/88W8997_usb.bin",
-                .antenna_tx     = ANTENNA_TX_2,
-                .antenna_rx     = ANTENNA_RX_2,
-        },
+	[MWL8997] = {
+		.part_name      = "88W8997",
+		.fw_image       = MWL_FW_ROOT"/88W8997_usb.bin",
+		.antenna_tx     = ANTENNA_TX_2,
+		.antenna_rx     = ANTENNA_RX_2,
+	},
 };
 
 
@@ -76,23 +76,23 @@ static void mwl_usb_submit_rem_rx_urbs(struct mwl_priv *priv);
 static void mwifiex_dbg(const struct mwl_priv *adapter, int mask,
                   const char *fmt, ...)
 {
-        struct va_format vaf;
-        va_list args;
-        
-       // if (!(adapter->debug_mask & mask))
-          ///      return;
+	struct va_format vaf;
+	va_list args;
 
-        va_start(args, fmt);
+   // if (!(adapter->debug_mask & mask))
+	  ///      return;
 
-        vaf.fmt = fmt;
-        vaf.va = &args;        
-                               
-        if (adapter->dev)
-                dev_info(adapter->dev, "%pV", &vaf);
-        else
-                pr_info("%pV", &vaf);
+	va_start(args, fmt);
 
-        va_end(args);
+	vaf.fmt = fmt;
+	vaf.va = &args;
+
+	if (adapter->dev)
+			dev_info(adapter->dev, "%pV", &vaf);
+	else
+			pr_info("%pV", &vaf);
+
+	va_end(args);
 }
 
 
@@ -227,38 +227,38 @@ static int mwl_usb_probe(struct usb_interface *intf,
 
 static void mwl_usb_free(struct usb_card_rec *card)
 {
-        struct usb_tx_data_port *port;
-        int i, j;
+	struct usb_tx_data_port *port;
+	int i, j;
 
-        if (atomic_read(&card->rx_cmd_urb_pending) && card->rx_cmd.urb)
-                usb_kill_urb(card->rx_cmd.urb);
+	if (atomic_read(&card->rx_cmd_urb_pending) && card->rx_cmd.urb)
+		usb_kill_urb(card->rx_cmd.urb);
 
-        usb_free_urb(card->rx_cmd.urb);
-        card->rx_cmd.urb = NULL;
+	usb_free_urb(card->rx_cmd.urb);
+	card->rx_cmd.urb = NULL;
 
-        if (atomic_read(&card->rx_data_urb_pending))
-                for (i = 0; i < MWIFIEX_RX_DATA_URB; i++)
-                        if (card->rx_data_list[i].urb)
-                                usb_kill_urb(card->rx_data_list[i].urb);
+	if (atomic_read(&card->rx_data_urb_pending))
+		for (i = 0; i < MWIFIEX_RX_DATA_URB; i++)
+			if (card->rx_data_list[i].urb)
+				usb_kill_urb(card->rx_data_list[i].urb);
 
-        for (i = 0; i < MWIFIEX_RX_DATA_URB; i++) {
-                usb_free_urb(card->rx_data_list[i].urb);
-                card->rx_data_list[i].urb = NULL;
-        }
+	for (i = 0; i < MWIFIEX_RX_DATA_URB; i++) {
+		usb_free_urb(card->rx_data_list[i].urb);
+		card->rx_data_list[i].urb = NULL;
+	}
 
-        for (i = 0; i < MWIFIEX_TX_DATA_PORT; i++) {
-                port = &card->port[i];
-                for (j = 0; j < MWIFIEX_TX_DATA_URB; j++) {
-                        usb_kill_urb(port->tx_data_list[j].urb);
-                        usb_free_urb(port->tx_data_list[j].urb);
-                        port->tx_data_list[j].urb = NULL;
-                }
-        }
+	for (i = 0; i < MWIFIEX_TX_DATA_PORT; i++) {
+		port = &card->port[i];
+		for (j = 0; j < MWIFIEX_TX_DATA_URB; j++) {
+			usb_kill_urb(port->tx_data_list[j].urb);
+			usb_free_urb(port->tx_data_list[j].urb);
+			port->tx_data_list[j].urb = NULL;
+		}
+	}
 
-        usb_free_urb(card->tx_cmd.urb);
-        card->tx_cmd.urb = NULL;
+	usb_free_urb(card->tx_cmd.urb);
+	card->tx_cmd.urb = NULL;
 
-        return;
+	return;
 }
 
 
@@ -309,12 +309,12 @@ static struct tasklet_struct tx_task;
 
 static bool mwl_usb_check_card_status(struct mwl_priv *priv)
 {
-        return true;
+	return true;
 }
 
 static void mwl_usb_tx_aggr_tmo(unsigned long context)
 {
-   printk(KERN_ALERT"Dummy function %s\n",__FUNCTION__);
+	printk(KERN_ALERT"Dummy function %s\n",__FUNCTION__);
 }
 
 /*
@@ -335,7 +335,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 
 	pdesc = (struct mwl_rx_desc *)prx_skb->data;
 	pkt_len = le16_to_cpu(pdesc->pkt_len);
-	
+
 	/* => todo:
 	// Save the rate info back to card
 	//card->rate_info = pdesc->rate;
@@ -350,7 +350,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	}
 
 	if ((pdesc->channel != hw->conf.chandef.chan->hw_value) &&
-		!(priv->roc.tmr_running && priv->roc.in_progress && 
+		!(priv->roc.tmr_running && priv->roc.in_progress &&
 			(pdesc->channel == priv->roc.chan))) {
 		dev_kfree_skb_any(prx_skb);
 		wiphy_debug(priv->hw->wiphy,
@@ -416,7 +416,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	wh = (struct ieee80211_hdr *)prx_skb->data;
 
 #if KERNEL_VERSION(4, 6, 0) > LINUX_VERSION_CODE
-	
+
 	if (ieee80211_is_mgmt(wh->frame_control)) {
 		struct ieee80211_mgmt *mgmt;
 		__le16 capab;
@@ -456,7 +456,6 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 
 static void mwl_usb_rx_recv(unsigned long data)
 {
-
 	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
 	struct mwl_priv *priv = hw->priv;
 	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
@@ -470,9 +469,10 @@ static void mwl_usb_rx_recv(unsigned long data)
 			break;
 		}
 		atomic_dec(&card->rx_pending);
-                if(atomic_read(&card->rx_pending) < LOW_RX_PENDING) {
-                               mwl_usb_submit_rem_rx_urbs(priv);
+		if(atomic_read(&card->rx_pending) < LOW_RX_PENDING) {
+			mwl_usb_submit_rem_rx_urbs(priv);
 		}
+
 		rx_info = MWL_SKB_RXCB(prx_skb);
 		mwl_handle_rx_packet(priv, prx_skb);
 		work_done++;
@@ -484,37 +484,38 @@ static void mwl_usb_rx_recv(unsigned long data)
 
 static int mwl_usb_init(struct mwl_priv *priv)
 {
-        struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
-        int num;
+	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
+	int num;
+
 	card->priv = priv;
+	priv->host_if = MWL_IF_USB;
+
 	priv->dev = &card->udev->dev;
-	priv->chip_type = card->chip_type;                            
-        priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);           
-        if (!priv->pcmd_buf) {
-                wiphy_err(priv->hw->wiphy,                            
-                          "%s: cannot alloc memory for command buffer\n",              
-                          MWL_DRV_NAME);                              
-                return -ENOMEM;                                       
-        }                                                             
-        wiphy_debug(priv->hw->wiphy,
-                    "priv->pcmd_buf = %p\n",
-                    priv->pcmd_buf);
-        memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
+	priv->chip_type = card->chip_type;
+	priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
+
+	if (!priv->pcmd_buf) {
+		wiphy_err(priv->hw->wiphy,
+				  "%s: cannot alloc memory for command buffer\n",
+				  MWL_DRV_NAME);
+		return -ENOMEM;
+	}
+
+	wiphy_debug(priv->hw->wiphy, "priv->pcmd_buf = %p\n", priv->pcmd_buf);
+
+	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 	init_waitqueue_head(&card->cmd_wait_q.wait);
-        card->cmd_wait_q.status = 0;
+	card->cmd_wait_q.status = 0;
 	skb_queue_head_init(&card->rx_data_q);
 
 	/* Init the tasklet first in case there are tx/rx interrupts */
-        tasklet_init(&priv->rx_task, (void *)mwl_usb_rx_recv,
-                (unsigned long)priv->hw);
-        tasklet_disable(&priv->rx_task);
+	tasklet_init(&priv->rx_task, (void *)mwl_usb_rx_recv, (unsigned long)priv->hw);
+	tasklet_disable(&priv->rx_task);
 
-        for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++)
-                skb_queue_head_init(&priv->txq[num]);
-
+	for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++)
+		skb_queue_head_init(&priv->txq[num]);
 
 	return 0;
-
 }
 
 static int mwl_register_dev(struct mwl_priv *priv)
@@ -553,9 +554,8 @@ static int mwl_register_dev(struct mwl_priv *priv)
         adapter->usb_mc_status = false;
         adapter->usb_mc_setup = false;
 #endif
-	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs,
-                (unsigned long)priv->hw);
-        tasklet_disable(priv->if_ops.ptx_task);
+	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs, (unsigned long)priv->hw);
+	tasklet_disable(priv->if_ops.ptx_task);
 
 	printk(KERN_ALERT"Registering device\n");
 	return 0;
@@ -590,7 +590,7 @@ static int mwl_usb_recv(struct mwl_priv *adapter,
 
 		switch (recv_type) {
 		case MWIFIEX_USB_TYPE_CMD:
-			skb_copy_from_linear_data(skb, adapter->pcmd_buf, skb->len); 
+			skb_copy_from_linear_data(skb, adapter->pcmd_buf, skb->len);
 			card->cmd_wait_q.status = 0;
 			card->cmd_cond = true;
 			wake_up_interruptible(&card->cmd_wait_q.wait);
@@ -820,7 +820,7 @@ static void mwl_usb_rx_complete(struct urb *urb)
 		else
 			skb_put(skb, recv_length - skb->len);
 
-	 	status = mwl_usb_recv(adapter, skb, context->ep); 
+	 	status = mwl_usb_recv(adapter, skb, context->ep);
 
 		skb_copy_from_linear_data(skb, &tmp, INTF_HEADER_LEN);
 
@@ -832,7 +832,7 @@ static void mwl_usb_rx_complete(struct urb *urb)
 			 */
 			if (card->rx_cmd_ep == context->ep)
 				goto setup_for_next;
-			
+
 		} else {
 			if (status == -1)
 				pr_debug("received data processing failed!\n");
@@ -869,7 +869,7 @@ setup_for_next:
 
 		if (atomic_read(&card->rx_pending) <= HIGH_RX_PENDING) {
 			mwl_usb_submit_rx_urb(context, size);
-		} else {   
+		} else {
 			context->skb = NULL;
 		}
 	}
@@ -901,7 +901,7 @@ static int mwl_usb_submit_rx_urb(struct urb_context *ctx, int size)
                                  usb_rcvintpipe(card->udev, ctx->ep),
                                  ctx->skb->data, size, mwl_usb_rx_complete,
                                  (void *)ctx, card->rx_cmd_interval);
-		
+
 	}
         else
 	{
@@ -1168,7 +1168,7 @@ static int mwl_usb_dnld_fw(struct mwl_priv *priv)
 		{
                         return -1;
         	}
-		
+
 	}
 
         ret = mwl_usb_rx_init(priv);
@@ -1210,7 +1210,7 @@ static void mwl_usb_send_cmd(struct mwl_priv * priv)
         tx_urb = usb_alloc_urb(0, GFP_KERNEL);
 	len = le16_to_cpu(cmd_hdr->len)  +
                INTF_CMDHEADER_LEN(INTF_HEADER_LEN)*sizeof(unsigned short);
-	
+
 	*pbuf=cpu_to_le32(MWIFIEX_USB_TYPE_CMD);
 
 
@@ -1221,7 +1221,7 @@ static void mwl_usb_send_cmd(struct mwl_priv * priv)
                                  len, mwl_usb_tx_complete,
                                  (void *)context, card->tx_cmd_interval);
 	}
-        else 
+        else
                 usb_fill_bulk_urb(tx_urb, card->udev,
                                   usb_sndbulkpipe(card->udev, card->tx_cmd_ep ),
                                   priv->pcmd_buf, len,
@@ -1236,7 +1236,7 @@ static void mwl_usb_send_cmd(struct mwl_priv * priv)
                         atomic_dec(&card->tx_cmd_urb_pending);
                 ret = -1;
         }
-                         
+
 	return;
 }
 
@@ -1329,9 +1329,9 @@ static int mwl_usb_host_to_card(struct mwl_priv *priv, int desc_num,
         int idx, ret = -EINPROGRESS;
 
 	struct usb_card_rec *card =  (struct usb_card_rec *) (priv->intf);
-	
+
 	mwl_process_txdesc(priv,tx_skb);
-                        
+
 
 
 /* TODO if (card->is_suspended) {
@@ -1399,11 +1399,11 @@ static int mwl_usb_host_to_card(struct mwl_priv *priv, int desc_num,
 static bool mwl_usb_is_tx_available(struct mwl_priv *priv, int desc_num)
 {
 	struct usb_tx_data_port *port = NULL;
-        int idx;
+	int idx;
 
-        struct usb_card_rec *card =  (struct usb_card_rec *) (priv->intf);
+	struct usb_card_rec *card =  (struct usb_card_rec *) (priv->intf);
 
-        for (idx = 0; idx < MWIFIEX_TX_DATA_PORT; idx++) {
+	for (idx = 0; idx < MWIFIEX_TX_DATA_PORT; idx++) {
 		if (MWIFIEX_USB_EP_DATA == card->port[idx].tx_data_ep) {
 			port = &card->port[idx];
 			if (atomic_read(&port->tx_data_urb_pending)
@@ -1418,32 +1418,50 @@ static bool mwl_usb_is_tx_available(struct mwl_priv *priv, int desc_num)
 
 static void mwl_usb_submit_rem_rx_urbs(struct mwl_priv *priv)
 {
-        struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
-        int i;
-        struct urb_context *ctx;
+	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
+	int i;
+	struct urb_context *ctx;
 
-        for (i = 0; i < MWIFIEX_RX_DATA_URB; i++) {
-                if (card->rx_data_list[i].skb)
-                        continue;
-                ctx = &card->rx_data_list[i];
-                mwl_usb_submit_rx_urb(ctx, MWIFIEX_RX_DATA_BUF_SIZE);
-        }
+	for (i = 0; i < MWIFIEX_RX_DATA_URB; i++) {
+		if (card->rx_data_list[i].skb)
+				continue;
+		ctx = &card->rx_data_list[i];
+		mwl_usb_submit_rx_urb(ctx, MWIFIEX_RX_DATA_BUF_SIZE);
+	}
 }
 
 
+static void mwl_usb_enter_deepsleep(struct mwl_priv *priv)
+{
+	return;
+}
+
+static int mwl_usb_wakeup_card(struct mwl_priv *priv)
+{
+	return 0;
+}
+
+static int mwl_usb_is_deepsleep(struct mwl_priv * priv)
+{
+	return 0;
+}
+
 
 static struct mwl_if_ops usb_ops1 = {
-	.inttf_head_len=	INTF_HEADER_LEN,
-	.register_dev =		mwl_register_dev,
-	.cleanup_if =           mwl_usb_cleanup,
-	.prog_fw =		mwl_usb_dnld_fw,
-	.init_if=		mwl_usb_init,
-	.check_card_status=	mwl_usb_check_card_status,
-	.send_cmd=		mwl_usb_send_cmd,
-	.cmd_resp_wait_completed=	mwl_usb_cmd_resp_wait_completed,
-	.host_to_card=		mwl_usb_host_to_card,
-	.is_tx_available=	mwl_usb_is_tx_available,
-	.ptx_task=		&tx_task,
+	.inttf_head_len    = INTF_HEADER_LEN,
+	.register_dev      = mwl_register_dev,
+	.cleanup_if        = mwl_usb_cleanup,
+	.prog_fw           = mwl_usb_dnld_fw,
+	.init_if           = mwl_usb_init,
+	.check_card_status = mwl_usb_check_card_status,
+	.send_cmd          = mwl_usb_send_cmd,
+	.cmd_resp_wait_completed = mwl_usb_cmd_resp_wait_completed,
+	.host_to_card      = mwl_usb_host_to_card,
+	.is_tx_available   = mwl_usb_is_tx_available,
+	.ptx_task          = &tx_task,
+	.enter_deepsleep   = mwl_usb_enter_deepsleep,
+	.wakeup_card       = mwl_usb_wakeup_card,
+	.is_deepsleep      = mwl_usb_is_deepsleep,
 };
 
 module_usb_driver(mwl_usb_driver);
