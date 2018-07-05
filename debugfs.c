@@ -1014,11 +1014,15 @@ static ssize_t mwl_debugfs_ds_ctrl_write(struct file *file,
 		return -EINVAL;
 	}
 
+	if (priv->host_if != MWL_IF_SDIO ) {
+		ret = -EACCES;
+		return ret;
+	}
+
 	if (copy_from_user(&deepsleep, ubuf, 1)) {
 		ret = -EFAULT;
 		return ret;
 	}
-
 
 	switch(deepsleep)
 	{
