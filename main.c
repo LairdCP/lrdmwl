@@ -967,10 +967,9 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
 
-	if (priv->mfg_mode) {
-		priv->ds_enable = DS_ENABLE_OFF;
-	}
-	else {
+	priv->ds_enable = DS_ENABLE_OFF;
+
+	if (priv->host_if == MWL_IF_SDIO && !priv->mfg_mode) {
 		priv->ds_enable =  ds_enable ? DS_ENABLE_ON : DS_ENABLE_OFF;
 	}
 
