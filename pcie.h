@@ -2,7 +2,6 @@
 #define _PCIE_H_
 
 #include <linux/pci.h>
-#include <linux/pcieport_if.h>
 #include <linux/interrupt.h>
 
 #include "main.h"
