@@ -1131,6 +1131,8 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 		}
 
 		if (priv->wow.state & WOWLAN_STATE_ENABLED) {
+			wiphy_info(hw->wiphy, "Enabling WOW for conditions 0x%x\n", priv->wow.wowlanCond);
+
 			/*Configure AP detect settings */
 			if (priv->wow.wowlanCond & MWL_WOW_CND_AP_INRANGE) {
 				mwl_fwcmd_wowlan_apinrange_config(priv->hw);
