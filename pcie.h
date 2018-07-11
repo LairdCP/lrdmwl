@@ -33,6 +33,7 @@ struct mwl_pcie_card {
 	/* number of descriptors owned by fw at any one time */
 	int fw_desc_cnt[SYSADPT_NUM_OF_DESC_DATA];
 	int intr_mode;
+	spinlock_t intr_status_lock;
 };
 
 void mwl_pcie_tx_done(unsigned long data);

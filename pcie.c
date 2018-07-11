@@ -68,7 +68,8 @@ static int mwl_tx_ring_alloc(struct mwl_priv *priv);
 static int mwl_tx_ring_init(struct mwl_priv *priv);
 static void mwl_tx_ring_cleanup(struct mwl_priv *priv);
 static void mwl_tx_ring_free(struct mwl_priv *priv);
-
+static void mwl_set_bit(struct mwl_priv *priv, int bit_num, volatile void * addr);
+static void mwl_clear_bit(struct mwl_priv *priv, int bit_num, volatile void * addr);
 #define MAX_WAIT_FW_COMPLETE_ITERATIONS         8000
 
 static irqreturn_t mwl_pcie_isr(int irq, void *dev_id);
@@ -391,6 +392,31 @@ static int mwl_rx_refill(struct mwl_priv *priv, struct mwl_rx_hndl *rx_hndl)
 	return 0;
 }
 
+
+static void mwl_set_bit(struct mwl_priv *priv, int bit_num, volatile void * addr)
+{
+	struct mwl_pcie_card *card = priv->intf;
+	u32 intr_status;
+	unsigned long flags;
+	spin_lock_irqsave(&card->intr_status_lock,flags);
+	intr_status = readl(addr);
+	intr_status = intr_status | (1 << bit_num);
+	writel(intr_status, addr);
+	spin_unlock_irqrestore(&card->intr_status_lock,flags);
+}
+
+static void mwl_clear_bit(struct mwl_priv *priv, int bit_num, volatile void *addr)
+{
+	struct mwl_pcie_card *card = priv->intf;
+	u32 intr_status;
+	unsigned long flags;
+	spin_lock_irqsave(&card->intr_status_lock, flags);
+	intr_status = readl(addr);
+	intr_status = intr_status & ~(1 << bit_num);
+	writel(intr_status, addr);
+	spin_unlock_irqrestore(&card->intr_status_lock, flags);
+}
+
 void mwl_pcie_rx_recv(unsigned long data)
 {
 	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
@@ -410,8 +436,7 @@ void mwl_pcie_rx_recv(unsigned long data)
 	curr_hndl = desc->pnext_rx_hndl;
 
 	if (!curr_hndl) {
-		set_bit(MACREG_A2HRIC_BIT_NUM_RX_RDY,
-		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+		mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_RX_RDY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 		priv->is_rx_schedule = false;
 		wiphy_warn(hw->wiphy, "busy or no receiving packets\n");
@@ -556,8 +581,7 @@ out:
 
 	desc->pnext_rx_hndl = curr_hndl;
 
-	set_bit(MACREG_A2HRIC_BIT_NUM_RX_RDY,
-	(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+	mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_RX_RDY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 	priv->is_rx_schedule = false;
 	return;
@@ -854,6 +878,7 @@ static int mwl_pcie_init(struct mwl_priv *priv)
 		goto err_alloc_resource;
 	}
 
+	spin_lock_init(&card->intr_status_lock);
 	rc = mwl_tx_init(hw);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to initialize TX\n",
@@ -1430,8 +1455,7 @@ void mwl_non_pfu_tx_done(unsigned long data)
 
 	if (priv->is_tx_done_schedule) {
 
-		set_bit(MACREG_A2HRIC_BIT_NUM_TX_DONE,
-		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+		mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_TX_DONE, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 		tasklet_schedule(priv->if_ops.ptx_task);
 		priv->is_tx_done_schedule = false;
@@ -1566,8 +1590,7 @@ void mwl_pfu_tx_done(unsigned long data)
 	spin_unlock_bh(&priv->tx_desc_lock);
 	 if (priv->is_tx_done_schedule) {
 
-		set_bit(MACREG_A2HRIC_BIT_NUM_TX_DONE,
-		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+		mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_TX_DONE, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 		tasklet_schedule(priv->if_ops.ptx_task);
 		priv->is_tx_done_schedule = false;
@@ -1622,8 +1645,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 
 		if (int_status & MACREG_A2HRIC_BIT_TX_DONE) {
 			if (!priv->is_tx_done_schedule) {
-				clear_bit(MACREG_A2HRIC_BIT_NUM_TX_DONE,
-				(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+				mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_TX_DONE, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 
 					tasklet_schedule(
@@ -1634,8 +1656,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 
 		if (int_status & MACREG_A2HRIC_BIT_RX_RDY) {
 			if (!priv->is_rx_schedule) {
-				clear_bit(MACREG_A2HRIC_BIT_NUM_RX_RDY,
-					(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+				mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_RX_RDY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 				tasklet_schedule(&priv->rx_task);
 				priv->is_rx_schedule = true;
 			}
@@ -1650,8 +1671,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 			if (!priv->is_qe_schedule) {
 				if (time_after(jiffies,
 					       (priv->qe_trigger_time + 1))) {
-					clear_bit(MACREG_A2HRIC_BIT_NUM_QUE_EMPTY,
-		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+					mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_QUE_EMPTY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 						tasklet_schedule(
 						    priv->if_ops.pqe_task);
 					priv->qe_trigger_num++;
@@ -1799,8 +1819,7 @@ static void mwl_pcie_tx_flush_amsdu(unsigned long data)
 	spin_unlock(&priv->sta_lock);
 	spin_unlock(&priv->tx_desc_lock);
 
-	set_bit(MACREG_A2HRIC_BIT_NUM_QUE_EMPTY,
-		(card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK));
+	mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_QUE_EMPTY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 	priv->is_qe_schedule = false;
 }
