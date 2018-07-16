@@ -67,7 +67,7 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 static int
 mwl_write_data_sync(struct mwl_priv *priv,
 			u8 *buffer, u32 pkt_len, u32 port);
-static int mwl_sdio_enable_int(struct mwl_priv *priv);
+static int mwl_sdio_enable_int(struct mwl_priv *priv, bool enable);
 static int mwl_sdio_complete_cmd(struct mwl_priv *priv);
 static int mwl_sdio_event(struct mwl_priv *priv);
 static void mwl_sdio_tx_workq(struct work_struct *work);
@@ -353,7 +353,7 @@ err_init_ioport:
 	return rc;
 }
 
-static int mwl_sdio_enable_int(struct mwl_priv *priv)
+static int mwl_sdio_enable_int(struct mwl_priv *priv, bool enable)
 {
 	struct mwl_sdio_card *card = priv->intf;
 	struct sdio_func *func = card->func;
@@ -361,7 +361,9 @@ static int mwl_sdio_enable_int(struct mwl_priv *priv)
 
 	sdio_claim_host(func);
 	sdio_writeb(func, card->reg->host_int_enable,
-				       card->reg->host_int_mask_reg, &ret);
+				       card->reg->host_int_mask_reg ^
+					   (enable ? 0 : card->reg->host_int_mask_reg),
+					   &ret);
 	if (ret) {
 		wiphy_err(priv->hw->wiphy,
 			    "=>%s(): enable host interrupt failed\n", __func__);
@@ -539,7 +541,7 @@ static int mwl_write_data_to_card(struct mwl_priv *priv,
 
 	do {
 		ret = mwl_write_data_sync(priv, payload, pkt_len, port);
-		if (ret) {
+		if (ret && ret != -ENOMEDIUM) {
 			i++;
 			wiphy_err(priv->hw->wiphy,
 				    "host_to_card, write iomem\t"
@@ -556,7 +558,7 @@ static int mwl_write_data_to_card(struct mwl_priv *priv,
 	return ret;
 }
 
-static void mwl_sdio_send_command(struct mwl_priv *priv)
+static int mwl_sdio_send_command(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
 	struct cmd_header *cmd_hdr = (struct cmd_header *)&priv->pcmd_buf[
@@ -581,7 +583,7 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
             wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
             priv->in_send_cmd = false;
             priv->cmd_timeout = true;
-            return;
+            return -1;
         }
         else {
 		spin_lock_irqsave(&card->int_lock, flags);
@@ -605,7 +607,8 @@ static void mwl_sdio_send_command(struct mwl_priv *priv)
 
 	rc = mwl_write_data_to_card(priv, (u8 *)&priv->pcmd_buf[0],
 		pkt_len, (card->ioport + port));
-	return;
+
+	return rc;
 }
 
 
@@ -666,7 +669,7 @@ mwl_write_data_sync(struct mwl_priv *priv,
 	ret = sdio_writesb(card->func, ioport, buffer, blk_cnt * blk_size);
 	sdio_release_host(card->func);
 
-	if (ret) {
+	if (ret && ret != -ENOMEDIUM) {
 		wiphy_err(priv->hw->wiphy," %s : sdio_writesb failed,buffer ptr = 0x%p ioport = 0x%x,"
 				" size = %d, error = %d\n", __func__, buffer, ioport, blk_cnt * blk_size,ret);
 	}
@@ -785,6 +788,8 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -ENOMEM;
 	}
 
+	mwl_sdio_enable_int(priv, false);
+
 	sdio_claim_host(card->func);
 
 	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
@@ -797,6 +802,9 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 			ret = mwl_sdio_reset_gpio(priv);
 			if (ret) {
 				wiphy_err(priv->hw->wiphy, "Unable to reset radio!\n");
+
+				sdio_release_host(card->func);
+				goto done_dnld;
 			}
 			ret = -1;
 			goto err_dnld;
@@ -917,10 +925,11 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy,
 			"FW status is not ready\n");
 	}
+done_dnld:
 	/* Enabling interrupt after firmware is ready.
 	 * Otherwise there may be abnormal interrupt DN_LD_HOST_INT_MASK
 	 */
-	mwl_sdio_enable_int(priv);
+	mwl_sdio_enable_int(priv, true);
 	kfree(fwbuf);
 
 	return ret;
@@ -2668,25 +2677,26 @@ static int mwl_sdio_init_gpio(void)
 		pr_info("lrdmwl: Reset GPIO %d configured\n", reset_pwd_gpio);
 
 		/* Request the reset GPIO in de-asserted state
-		 * It is the responsibility of device tree to ensure module is 
+		 * It is the responsibility of device tree to ensure module is
 		 * reset up to this point if necessary
-		 * Guarantee minimum of 50ms assertion
+		 * Guarantee minimum of 50 ms assertion
 		 */
 		msleep(50);
-		ret = gpio_request_one(reset_pwd_gpio,
-				       GPIOF_INIT_HIGH |
-				       GPIOF_EXPORT_DIR_FIXED,
-				       "WIFI_RESET");
+		ret = gpio_request_one(reset_pwd_gpio, GPIOF_INIT_HIGH, "WIFI_RESET");
 
-		/* Only return failure code if GPIO is configured but 
+		/* Only return failure code if GPIO is configured but
 		 * request fails
 		 */
 		if (ret) {
 			pr_err("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
 		}
+		else {
+			gpio_export(reset_pwd_gpio, false);
+		}
 	}
-	else
+	else {
 		pr_info("lrdmwl: No reset GPIO configured\n");
+	}
 
 	return ret;
 }
