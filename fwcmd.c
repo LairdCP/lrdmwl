@@ -183,10 +183,6 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 	if (priv->recovery_in_progress)
 		return -EIO;
 
-	if (cmd != HOSTCMD_CMD_DEEPSLEEP) {
-		if (priv->ds_state == DS_PENDING) {
-			cancel_work_sync(&priv->ds_work);
-
 	if (!mwl_fwcmd_chk_adapter(priv)) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
 		priv->in_send_cmd = false;
@@ -321,7 +317,7 @@ int mwl_fwcmd_config_EDMACCtrl(struct ieee80211_hw *hw, int EDMAC_Ctrl)
 						>> EDMAC_2G_ENABLE_SHIFT);
 	pcmd->ed_ctrl_5g = ((EDMAC_Ctrl & EDMAC_5G_ENABLE_MASK)
 						>> EDMAC_5G_ENABLE_SHIFT);
-	pcmd->ed_offset_2g = (s8)((EDMAC_Ctrl & EDMAC_2G_THRESHOLD_OFFSET_MASK) 
+	pcmd->ed_offset_2g = (s8)((EDMAC_Ctrl & EDMAC_2G_THRESHOLD_OFFSET_MASK)
 						>> EDMAC_2G_THRESHOLD_OFFSET_SHIFT);
 	pcmd->ed_offset_5g = (s8)((EDMAC_Ctrl & EDMAC_5G_THRESHOLD_OFFSET_MASK)
 						>> EDMAC_5G_THRESHOLD_OFFSET_SHIFT);
@@ -3668,10 +3664,10 @@ int mwl_fwcmd_get_survey(struct ieee80211_hw *hw, int rstReg)
 					SURVEY_INFO_TIME_TX |
 					SURVEY_INFO_NOISE_DBM;
 
-    	survey_info->time_period += last_read_val;
-    	survey_info->time_busy += cca_cnt_val;
-    	survey_info->time_tx += txpe_cnt_val;
-    	survey_info->noise = priv->noise;
+		survey_info->time_period += last_read_val;
+		survey_info->time_busy += cca_cnt_val;
+		survey_info->time_tx += txpe_cnt_val;
+		survey_info->noise = priv->noise;
 	}
 	return 0;
 }

@@ -153,6 +153,7 @@ int EDMAC_Ctrl = 0x0;
 int tx_amsdu_enable = 0;
 
 int SISO_mode = 0;
+
 int lrd_debug = 0;
 
 static bool mwl_is_world_mode(struct mwl_priv *priv)
@@ -830,8 +831,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
-
-	mwl_process_of_dts(priv);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
