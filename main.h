@@ -17,7 +17,7 @@ extern int tx_amsdu_enable;
 int mwl_add_card(void *, struct mwl_if_ops *);
 void mwl_wl_deinit(struct mwl_priv *);
 void mwl_set_caps(struct mwl_priv *priv);
-extern void timer_routine(unsigned long data);
+extern void timer_routine(struct timer_list *t);
 
 #ifdef CONFIG_PM
 extern void lrd_report_wowlan_wakeup(struct mwl_priv *priv);
