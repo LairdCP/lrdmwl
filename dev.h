@@ -455,7 +455,7 @@ struct mwl_if_ops {
 	int (*dbg_reg_access)(struct mwl_priv *, bool);
 
 	/* Interface specific functions */
-	void (*send_cmd) (struct mwl_priv *);
+	int (*send_cmd) (struct mwl_priv *);
 	bool (*is_tx_available) (struct mwl_priv *, int);
 	void (*read_reg) (struct mwl_priv *, int, int, u32 *);
 	void (*write_reg) (struct mwl_priv *, int, int, u32);
