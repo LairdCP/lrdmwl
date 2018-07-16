@@ -1188,17 +1188,17 @@ static int mwl_usb_dnld_fw(struct mwl_priv *priv)
 
 }
 
-static void mwl_usb_send_cmd(struct mwl_priv * priv)
+static int mwl_usb_send_cmd(struct mwl_priv * priv)
 {
 	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
-        struct urb_context *context = NULL;
-        int len;
-        int ret = -EINPROGRESS;
-        struct urb *tx_urb;
+	struct urb_context *context = NULL;
+	int len;
+	int ret;
+	struct urb *tx_urb;
+
 	__le32 *pbuf = (__le32 *)priv->pcmd_buf;
 	struct cmd_header *cmd_hdr = (struct cmd_header *)&priv->pcmd_buf[
                 INTF_CMDHEADER_LEN(INTF_HEADER_LEN)];
-
 
 /* TODO if (card->is_suspended) {
                 mwifiex_dbg(adapter, ERROR,
@@ -1212,40 +1212,39 @@ static void mwl_usb_send_cmd(struct mwl_priv * priv)
         }
 */
 
-        context = &card->tx_cmd;
-        context->priv = priv;
-        context->ep = card->tx_cmd_ep;
-        tx_urb = usb_alloc_urb(0, GFP_KERNEL);
+	context = &card->tx_cmd;
+	context->priv = priv;
+	context->ep = card->tx_cmd_ep;
+	tx_urb = usb_alloc_urb(0, GFP_KERNEL);
 	len = le16_to_cpu(cmd_hdr->len)  +
-               INTF_CMDHEADER_LEN(INTF_HEADER_LEN)*sizeof(unsigned short);
-	
+		INTF_CMDHEADER_LEN(INTF_HEADER_LEN)*sizeof(unsigned short);
+
 	*pbuf=cpu_to_le32(MWIFIEX_USB_TYPE_CMD);
 
-
-        if (card->tx_cmd_ep_type == USB_ENDPOINT_XFER_INT)
+	if (card->tx_cmd_ep_type == USB_ENDPOINT_XFER_INT)
 	{
-                usb_fill_int_urb(tx_urb, card->udev,
-                                 usb_sndintpipe(card->udev,card->tx_cmd_ep), priv->pcmd_buf,
-                                 len, mwl_usb_tx_complete,
-                                 (void *)context, card->tx_cmd_interval);
+		usb_fill_int_urb(tx_urb, card->udev,
+		                 usb_sndintpipe(card->udev,card->tx_cmd_ep), priv->pcmd_buf,
+		                 len, mwl_usb_tx_complete,
+		                 (void *)context, card->tx_cmd_interval);
 	}
-        else 
-                usb_fill_bulk_urb(tx_urb, card->udev,
-                                  usb_sndbulkpipe(card->udev, card->tx_cmd_ep ),
-                                  priv->pcmd_buf, len,
-                                  mwl_usb_tx_complete, (void *)context);
+	else
+		usb_fill_bulk_urb(tx_urb, card->udev,
+		                  usb_sndbulkpipe(card->udev, card->tx_cmd_ep ),
+		                                  priv->pcmd_buf, len,
+		                  mwl_usb_tx_complete, (void *)context);
 
-        tx_urb->transfer_flags |= URB_ZERO_PACKET;
+	tx_urb->transfer_flags |= URB_ZERO_PACKET;
 	atomic_inc(&card->tx_cmd_urb_pending);
 	card->cmd_cond = false;
-        if (usb_submit_urb(tx_urb, GFP_ATOMIC)) {
-                mwifiex_dbg(priv, ERROR,
-                            "%s: usb_submit_urb failed\n", __func__);
-                        atomic_dec(&card->tx_cmd_urb_pending);
-                ret = -1;
-        }
-                         
-	return;
+
+	ret = usb_submit_urb(tx_urb, GFP_ATOMIC);
+	if (ret) {
+		mwifiex_dbg(priv, ERROR, "%s: usb_submit_urb failed\n", __func__);
+		atomic_dec(&card->tx_cmd_urb_pending);
+	}
+
+	return ret;
 }
 
 static int mwl_usb_cmd_resp_wait_completed(struct mwl_priv *priv,

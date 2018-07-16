@@ -43,9 +43,9 @@ static bool mwl_fwcmd_chk_adapter(struct mwl_priv *priv)
 	return rc;
 }
 
-static void mwl_fwcmd_send_cmd(struct mwl_priv *priv)
+static int mwl_fwcmd_send_cmd(struct mwl_priv *priv)
 {
-	priv->if_ops.send_cmd(priv);
+	return priv->if_ops.send_cmd(priv);
 }
 
 #define ENTRY(a) { case a: ptr= #a; break; }
@@ -214,7 +214,15 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 			mwl_hex_dump((char*)pcmd, pcmd->len);
 		}
 
-		mwl_fwcmd_send_cmd(priv);
+		rc = mwl_fwcmd_send_cmd(priv);
+		if (rc != 0) {
+			if (rc != -ENOMEDIUM)
+				wiphy_err(priv->hw->wiphy, "CMD_SEND (# %02x)=> (%04xh, %s) timeout\n",
+					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+
+			return rc;
+		}
+
 		if(priv->cmd_timeout) {
 			if (lrd_debug) {
 				lrd_debug--;

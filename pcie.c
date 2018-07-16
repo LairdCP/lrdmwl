@@ -1203,13 +1203,14 @@ static void mwl_pcie_disable_int(struct mwl_priv *priv)
 		       card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
 }
 
-static void mwl_pcie_send_command(struct mwl_priv *priv)
+static int mwl_pcie_send_command(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
 
 	writel(priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_GEN_PTR);
 	writel(MACREG_H2ARIC_BIT_DOOR_BELL,
 	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
+	return 0;
 }
 
 /* Check command response back or not */
