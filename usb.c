@@ -1019,11 +1019,11 @@ static int mwl_prog_fw_w_helper(struct mwl_priv * priv)
 {
 	int ret = 0;
 	const u8 *firmware = priv->fw_ucode->data;
-	u8 *recv_buff;
+	u8 *recv_buff = NULL;
 	u32 retries = USB8XXX_FW_MAX_RETRY + 1;
 	u32 dlen;
 	u32 fw_seqnum = 0, tlen = 0, dnld_cmd = 0;
-	struct fw_data *fwdata;
+	struct fw_data *fwdata = NULL;
 	struct fw_sync_header sync_fw;
 	u8 check_winner = 1;
 
@@ -1065,6 +1065,13 @@ static int mwl_prog_fw_w_helper(struct mwl_priv * priv)
 			/* Command 7 doesn't have data length field */
 			if (dnld_cmd == FW_CMD_7)
 				dlen = 0;
+
+			if (dlen > (FW_DNLD_TX_BUF_SIZE - (sizeof(struct fw_data) - 1)))
+			{
+				pr_err("Firmware data length chunk (%d bytes) too large!\n", dlen);
+				ret = -1;
+				goto cleanup;
+			}
 
 			memcpy(fwdata->data, &firmware[tlen], dlen);
 
@@ -1141,14 +1148,15 @@ static int mwl_prog_fw_w_helper(struct mwl_priv * priv)
 
 cleanup:
 	mwifiex_dbg(priv, MSG,
-		    "info: FW download over, size %d bytes\n", tlen);
+		    "info: FW download over, size %d bytes, ret %d\n", tlen, ret);
 	printk(KERN_ALERT"retries = %d\n",retries);
 
-	kfree(recv_buff);
-	kfree(fwdata);
+	if (recv_buff)
+		kfree(recv_buff);
 
-	if (retries)
-		ret = 0;
+	if (fwdata)
+		kfree(fwdata);
+
 fw_exit:
 	return ret;
 }
