@@ -462,7 +462,9 @@ struct wowlan_apinrange_ssidIe {
 /* HOSTCMD_CMD_HOSTSLEEP_CTRL */
 struct hostcmd_cmd_hostsleep_ctrl {
 	struct hostcmd_header cmd_hdr;
-	u8 HSActivateReq; /*1: HS activate 0: HS deactivate*/
+	u8 HS_enable:1; /**/
+	u8 DS_enable:1; /**/
+	u8 reserved:6;  /**/
 	u8 wakeupSignal;  /*1: active high   0: active low */
 	__le16 gap;       /* Time in ms Fw needs to wait before sending Evnts or frames */
 	__le32 wakeUpConditions;
