@@ -281,7 +281,7 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void* data, int len, void** rsp
 int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
 
 #ifdef CONFIG_PM
-int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCond);
+int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, bool hs_enable, bool ds_enable, int wakeupCond);
 int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw);
 #endif
 

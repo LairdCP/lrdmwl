@@ -1131,7 +1131,9 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 		}
 
 		if (priv->wow.state & WOWLAN_STATE_ENABLED) {
-			wiphy_info(hw->wiphy, "Enabling WOW for conditions 0x%x\n", priv->wow.wowlanCond);
+			bool ds_status = priv->ds_state ? true : false;
+
+			wiphy_info(hw->wiphy, "Enabling WOW for conditions 0x%x, 0x%x\n", priv->wow.wowlanCond, ds_status);
 
 			/*Configure AP detect settings */
 			if (priv->wow.wowlanCond & MWL_WOW_CND_AP_INRANGE) {
@@ -1142,8 +1144,15 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 			memset(&priv->wow.results, 0, sizeof(struct mwl_wowlan_result));
 
 			/* Enable the Host Sleep */
-			mwl_fwcmd_hostsleep_control(priv->hw, 1, priv->wow.wowlanCond);
+			mwl_fwcmd_hostsleep_control(priv->hw, true, ds_status, priv->wow.wowlanCond) ;
 			priv->wow.state |= WOWLAN_STATE_HS_SENT;
+
+			if(ds_status == DS_SLEEP)
+			{
+				mwl_delete_ds_timer(priv);
+				priv->if_ops.enter_deepsleep(priv);
+			}
+			priv->ds_state = ds_status;
 		}
 	}
 
@@ -1156,7 +1165,7 @@ int mwl_mac80211_resume(struct ieee80211_hw *hw)
 
 	if (priv->wow.state & WOWLAN_STATE_ENABLED) {
 		/* Disable the Host Sleep */
-		mwl_fwcmd_hostsleep_control(priv->hw, 0, priv->wow.wowlanCond);
+		mwl_fwcmd_hostsleep_control(priv->hw, 0, 0, priv->wow.wowlanCond);
 		priv->wow.state &= ~WOWLAN_STATE_HS_SENT;
 
 		if (priv->wow.results.mwl_vif) {
