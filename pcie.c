@@ -1232,8 +1232,8 @@ static int mwl_pcie_cmd_resp_wait_completed(struct mwl_priv *priv,
 		return -EIO;
 	}
 
-    if (priv->chip_type != MWL8997)
-        usleep_range(3000, 5000);
+	if (priv->chip_type != MWL8997)
+		usleep_range(3000, 5000);
 
 	return 0;
 }
