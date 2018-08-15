@@ -149,10 +149,10 @@ static int
 lrd_vendor_cmd_lru_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const void *data, int data_len)
 {
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct sk_buff    *msg = NULL;
-	struct cmd_header *rsp = NULL;
-	int       rc = -ENOSYS;
+	struct ieee80211_hw     *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct sk_buff         *msg = NULL;
+	struct lrd_vndr_header *rsp = NULL;
+	int                      rc = -ENOSYS;
 
 	//Send
 	rc = lrd_fwcmd_lru_write(hw, (void*)data, data_len, (void*)&rsp);
@@ -168,7 +168,7 @@ lrd_vendor_cmd_lru_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
 
 		if (rsp) {
-			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct cmd_header), ((u8*)rsp) + sizeof(struct cmd_header) );
+			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct lrd_vndr_header), ((u8*)rsp) + sizeof(struct lrd_vndr_header) );
 		}
 
 		rc = cfg80211_vendor_cmd_reply(msg);
@@ -190,10 +190,10 @@ static int
 lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const void *data, int data_len)
 {
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct sk_buff    *msg = NULL;
-	struct cmd_header *rsp = NULL;
-	int                 rc = -ENOSYS;
+	struct ieee80211_hw     *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct sk_buff         *msg = NULL;
+	struct lrd_vndr_header *rsp = NULL;
+	int                      rc = -ENOSYS;
 
 	//Send
 	rc = lrd_fwcmd_lrd_write(hw, (void*)data, data_len, (void*)&rsp);
@@ -209,7 +209,7 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rsp ? rsp->result : 0);
 
 		if (rsp) {
-			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct cmd_header), ((u8*)rsp) + sizeof(struct cmd_header) );
+			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct lrd_vndr_header), ((u8*)rsp) + sizeof(struct lrd_vndr_header) );
 		}
 
 		rc = cfg80211_vendor_cmd_reply(msg);
