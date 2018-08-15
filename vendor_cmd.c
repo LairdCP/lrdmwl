@@ -165,7 +165,7 @@ lrd_vendor_cmd_lru_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t) + (rsp ? rsp->len:0));
 
 	if (msg) {
-		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
+		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rsp ? rsp->result : 0);
 
 		if (rsp) {
 			nla_put(msg, LRD_ATTR_DATA, rsp->len - sizeof(struct lrd_vndr_header), ((u8*)rsp) + sizeof(struct lrd_vndr_header) );
