@@ -1187,14 +1187,6 @@ struct hostcmd_cmd_lru
 	u8 data[0];
 }__packed;
 
-struct hostcmd_cmd_lrd
-{
-	struct hostcmd_header cmd_hdr;
-	__le16 cmd;
-	__le16 result;
-	__le32 reserved;
-}__packed;
-
 struct lrdcmd_header
 {
 	__le16 lrd_cmd;
