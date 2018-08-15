@@ -30,7 +30,7 @@ enum lrd_vendor_commands {
 };
 
 enum lrd_nlattrs {
-	LRD_ATTR_CMD_RSP,
+	LRD_ATTR_CMD_RSP = 1,    //BZ13280 Some Android NL libraries discard attributes that are 0
 	LRD_ATTR_DATA,
 	LRD_ATTR_MAX
 };
