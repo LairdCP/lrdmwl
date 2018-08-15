@@ -3968,8 +3968,7 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 
 	memcpy(((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header), data, len);
 
-	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MFG) ||
-	    pcmd->result != HOSTCMD_RESULT_OK) {
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MFG)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed execution %x\n", pcmd->result);
 		return -EIO;
@@ -3990,7 +3989,6 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 		}
 
 		((struct lrd_vndr_header*)*rsp)->command = pcmd->cmd;
-		//Note: this field added after lru implemented so must continue to use result check above
 		((struct lrd_vndr_header*)*rsp)->result  = pcmd->result;
 		((struct lrd_vndr_header*)*rsp)->len     = len;
 		memcpy(((u8*)*rsp) + (u8)sizeof(struct lrd_vndr_header), ((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header) , len - sizeof(struct lrd_vndr_header));
