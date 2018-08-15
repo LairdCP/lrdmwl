@@ -63,9 +63,15 @@ enum encr_type {
 
 struct cmd_header {
 	__le16 command;
-	__le16 result;
 	__le16 len;
 } __packed;
+
+struct lrd_vndr_header
+{
+	__le16 command;
+	__le16 result;
+	__le16 len;
+}__packed;
 
 void mwl_fwcmd_reset(struct ieee80211_hw *hw);
 

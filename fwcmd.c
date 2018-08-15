@@ -4056,9 +4056,9 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 	if (pcmd->len) {
 		/* To keep structures somewhat encapsulated we are going to squash
 		 * part of the hostcmd_mfgfw_header so that we are left only with
-		 * cmd_header and data response
+		 * lrd_vndr_header and data response
 		 */
-		u16 len =  pcmd->len - sizeof(struct hostcmd_mfgfw_header) + sizeof(struct cmd_header);
+		u16 len =  pcmd->len - sizeof(struct hostcmd_mfgfw_header) + sizeof(struct lrd_vndr_header);
 
 		*rsp = kzalloc(len, GFP_KERNEL);
 		if (!*rsp) {
@@ -4067,11 +4067,11 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 			return -EIO;
 		}
 
-		((struct cmd_header*)*rsp)->command = pcmd->cmd;
+		((struct lrd_vndr_header*)*rsp)->command = pcmd->cmd;
 		//Note: this field added after lru implemented so must continue to use result check above
-		((struct cmd_header*)*rsp)->result  = pcmd->result;
-		((struct cmd_header*)*rsp)->len     = len;
-		memcpy(((u8*)*rsp) + (u8)sizeof(struct cmd_header), ((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header) , len - sizeof(struct cmd_header));
+		((struct lrd_vndr_header*)*rsp)->result  = pcmd->result;
+		((struct lrd_vndr_header*)*rsp)->len     = len;
+		memcpy(((u8*)*rsp) + (u8)sizeof(struct lrd_vndr_header), ((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header) , len - sizeof(struct lrd_vndr_header));
 	}
 
 	mutex_unlock(&priv->fwcmd_mutex);
@@ -4104,9 +4104,9 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 	if (pcmd->len) {
 		/* To keep structures somewhat encapsulated we are going to squash
 		 * part of the hostcmd_cmd_lrd so that we are left only with
-		 * cmd_header and data response
+		 * lrd_vndr_header and data response
 		 */
-		u16 len =  pcmd->len - sizeof(struct hostcmd_header) + sizeof(struct cmd_header);
+		u16 len =  pcmd->len - sizeof(struct hostcmd_header) + sizeof(struct lrd_vndr_header);
 
 		*rsp = kzalloc(len, GFP_KERNEL);
 		if (!*rsp) {
@@ -4115,12 +4115,11 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 			return -EIO;
 		}
 
-		((struct cmd_header*)*rsp)->command      = pcmd->cmd;
-		((struct cmd_header*)*rsp)->result       = pcmd->result;
-		((struct hostcmd_cmd_lrd*)*rsp)->result  = pcmd->result;
-		((struct cmd_header*)*rsp)->len          = len;
+		((struct lrd_vndr_header*)*rsp)->command = pcmd->cmd;
+		((struct lrd_vndr_header*)*rsp)->result  = pcmd->result;
+		((struct lrd_vndr_header*)*rsp)->len     = len;
 
-		memcpy(((u8*)*rsp) + (u8)sizeof(struct cmd_header), ((u8*)pcmd) + sizeof(struct hostcmd_header) , len - sizeof(struct cmd_header));
+		memcpy(((u8*)*rsp) + sizeof(struct lrd_vndr_header), ((u8*)pcmd) + sizeof(struct hostcmd_header) , len - sizeof(struct lrd_vndr_header));
 	}
 
 	mutex_unlock(&priv->fwcmd_mutex);
