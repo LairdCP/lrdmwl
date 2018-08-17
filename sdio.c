@@ -79,6 +79,7 @@ static int mwl_sdio_read_fw_status(struct mwl_priv *priv, u16 *dat);
 static int mwl_sdio_init_gpio(void);
 static int mwl_sdio_release_gpio(void);
 static int mwl_sdio_reset_gpio(struct mwl_priv *priv);
+static int mwl_sdio_reset(struct mwl_priv *priv);
 
 /* Device ID for SD8897 */
 #define SDIO_DEVICE_ID_MARVELL_8897   (0x912d)
@@ -364,14 +365,12 @@ static int mwl_sdio_enable_int(struct mwl_priv *priv, bool enable)
 				       card->reg->host_int_mask_reg ^
 					   (enable ? 0 : card->reg->host_int_mask_reg),
 					   &ret);
-	if (ret) {
-		wiphy_err(priv->hw->wiphy,
-			    "=>%s(): enable host interrupt failed\n", __func__);
-	} else {
-		wiphy_info(priv->hw->wiphy,
-				"=>%s(): enable host interrupt ok\n", __func__);
-	}
 	sdio_release_host(func);
+
+	wiphy_info(priv->hw->wiphy,
+			"=>%s(): %s host interrupt %s\n", __func__,
+			enable ? "enable" : "disable", ret ? "failed" : "ok");
+
 	return ret;
 }
 
@@ -409,6 +408,18 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 #ifdef CONFIG_PM
 	mmc_pm_flag_t pm_flag = 0;
 #endif
+
+	/* not sure this patch is needed or not?? */
+	func->card->quirks |= MMC_QUIRK_BLKSZ_FOR_BYTE_MODE;
+
+	sdio_claim_host(func);
+	rc = sdio_enable_func(func);
+	sdio_release_host(func);
+
+	if (rc != 0) {
+		pr_err("%s: failed to enable sdio function\n", __func__);
+		return rc;
+	}
 
 	priv->host_if = MWL_IF_SDIO;
 	card->priv = priv;
@@ -570,27 +581,26 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 	u32 port;
 	int rc;
 	__le16 *pbuf = (__le16 *)priv->pcmd_buf;
-    int status;
-    unsigned long flags;
+	int status;
+	unsigned long flags;
 
-    /* Wait till the card informs CMD_DNLD_RDY interrupt except
-     * for get HW spec command */
-    if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
-        status = wait_event_timeout(card->cmd_wait_q.wait,
-                        (card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
-                        (12 * HZ));
-        if(status <= 0) {
-            wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
-            priv->in_send_cmd = false;
-            priv->cmd_timeout = true;
-            return -1;
-        }
-        else {
-		spin_lock_irqsave(&card->int_lock, flags);
-		card->int_status &= ~DN_LD_CMD_PORT_HOST_INT_STATUS;
-		spin_unlock_irqrestore(&card->int_lock, flags);
-        }
-    }
+	/* Wait till the card informs CMD_DNLD_RDY interrupt except
+	 * for get HW spec command */
+	if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
+		status = wait_event_timeout(card->cmd_wait_q.wait,
+			(card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
+			(12 * HZ));
+		if (status <= 0) {
+			wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
+			priv->in_send_cmd = false;
+			priv->cmd_timeout = true;
+			return -1;
+		} else {
+			spin_lock_irqsave(&card->int_lock, flags);
+			card->int_status &= ~DN_LD_CMD_PORT_HOST_INT_STATUS;
+			spin_unlock_irqrestore(&card->int_lock, flags);
+		}
+	}
 
 	len = le16_to_cpu(cmd_hdr->len) +
 		INTF_CMDHEADER_LEN(INTF_HEADER_LEN)*sizeof(unsigned short);
@@ -622,6 +632,9 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	sdio_release_irq(card->func);
 	sdio_release_host(card->func);
 
+	tasklet_enable(&priv->rx_task);
+	tasklet_kill(&priv->rx_task);
+
 	/* Free Tx bufs */
 	for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++) {
 		skb_queue_purge(&priv->txq[num]);
@@ -631,7 +644,13 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	/* Free Rx bufs */
 	skb_queue_purge(&card->rx_data_q);
 	mwl_free_sdio_mpa_buffers(priv);
-	return;
+	kfree(card->mpa_rx.skb_arr); card->mpa_rx.skb_arr = NULL;
+	kfree(card->mpa_rx.len_arr); card->mpa_rx.len_arr = NULL;
+	kfree(card->mp_regs); card->mp_regs = NULL;
+
+	sdio_claim_host(card->func);
+	sdio_disable_func(card->func);
+	sdio_release_host(card->func);
 }
 
 static bool mwl_sdio_check_card_status(struct mwl_priv *priv)
@@ -718,7 +737,7 @@ static int mwl_check_fw_status(struct mwl_priv *priv,
 		ret = mwl_sdio_read_fw_status(priv, &firmware_stat);
 		if (ret)
 		{
-			if(!(tries % 10) ){
+			if (!(tries % 10) ) {
 				wiphy_err(priv->hw->wiphy,"fw read failed %d\n", ret);
 			}
 			continue;
@@ -774,12 +793,26 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 
 	if (!fw_len) {
 		wiphy_err(priv->hw->wiphy,
-			    "firmware image not found! Terminating download\n");
+			    "Firmware image not found! Terminating download\n");
 		return -1;
 	}
 
 	wiphy_info(priv->hw->wiphy,
-		    "downloading FW image (%d bytes)\n", fw_len);
+		    "Downloading FW image (%d bytes)\n", fw_len);
+
+	mwl_sdio_enable_int(priv, false);
+
+	sdio_claim_host(card->func);
+	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
+	sdio_release_host(card->func);
+
+	if (ret  == 0 && firmware_status == FIRMWARE_READY_SDIO) {
+		wiphy_err(priv->hw->wiphy,
+			"Firmware already initialized! Resetting radio...\n");
+
+		ret = mwl_sdio_reset(priv);
+		return ret ? ret : -EPROBE_DEFER;
+	}
 
 	/* Assume that the allocated buffer is 8-byte aligned */
 	fwbuf = kzalloc(MWL_UPLD_SIZE, GFP_KERNEL);
@@ -788,28 +821,7 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -ENOMEM;
 	}
 
-	mwl_sdio_enable_int(priv, false);
-
 	sdio_claim_host(card->func);
-
-	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
-
-	if (!ret) {
-		if (firmware_status == FIRMWARE_READY_SDIO) {
-			wiphy_err(priv->hw->wiphy, "Firmware already initialized!\n");
-			wiphy_err(priv->hw->wiphy, "Resetting radio...\n");
-
-			ret = mwl_sdio_reset_gpio(priv);
-			if (ret) {
-				wiphy_err(priv->hw->wiphy, "Unable to reset radio!\n");
-
-				sdio_release_host(card->func);
-				goto done_dnld;
-			}
-			ret = -1;
-			goto err_dnld;
-		}
-	}
 
 	/* Perform firmware data transfer */
 	do {
@@ -925,7 +937,6 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy,
 			"FW status is not ready\n");
 	}
-done_dnld:
 	/* Enabling interrupt after firmware is ready.
 	 * Otherwise there may be abnormal interrupt DN_LD_HOST_INT_MASK
 	 */
@@ -2340,14 +2351,6 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 	cancel_work_sync(&card->tx_work);
 	destroy_workqueue(card->tx_workq);
 
-	tasklet_enable(&priv->rx_task);
-	tasklet_kill(&priv->rx_task);
-
-	if (card) {
-		sdio_claim_host(card->func);
-		sdio_disable_func(card->func);
-		sdio_release_host(card->func);
-	}
 }
 
 static struct mwl_if_ops sdio_ops = {
@@ -2383,8 +2386,7 @@ static int mwl_sdio_probe(struct sdio_func *func,
 
 	card = kzalloc(sizeof(struct mwl_sdio_card), GFP_KERNEL);
 	if (!card) {
-		pr_err("%s: allocate mwl_sdio_card structure failed",
-			MWL_DRV_NAME);
+		pr_err(MWL_DRV_NAME ": allocate mwl_sdio_card structure failed");
 		return -ENOMEM;
 	}
 
@@ -2392,12 +2394,12 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	card->dev_id = id;
 
 	if ((id->driver_data == MWL8897) || (id->driver_data == MWL8997)){
-	if (id->driver_data == MWL8897) {
-		card->reg = &mwl_reg_sd8897;
-		card->chip_type = MWL8897;
-	} else {
-		card->reg = &mwl_reg_sd8997;
-		card->chip_type = MWL8997;
+		if (id->driver_data == MWL8897) {
+			card->reg = &mwl_reg_sd8897;
+			card->chip_type = MWL8897;
+		} else {
+			card->reg = &mwl_reg_sd8997;
+			card->chip_type = MWL8997;
         }
 		card->max_ports = 32;
 		card->mp_agg_pkt_limit = 16;
@@ -2405,17 +2407,6 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		card->mp_tx_agg_buf_size = MWL_MP_AGGR_BUF_SIZE_MAX;
 		card->mp_rx_agg_buf_size = MWL_MP_AGGR_BUF_SIZE_MAX;
 		card->mp_end_port = 0x0020;
-	}
-
-	/* not sure this patch is needed or not?? */
-	func->card->quirks |= MMC_QUIRK_BLKSZ_FOR_BYTE_MODE;
-	sdio_claim_host(func);
-	rc = sdio_enable_func(func);
-	sdio_release_host(func);
-
-	if (rc != 0) {
-		pr_err("%s: failed to enable sdio function\n", __func__);
-		goto err_sdio_enable;
 	}
 
 	card->tx_workq = alloc_workqueue("mwlwifi-tx_workq",
@@ -2428,19 +2419,16 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		sizeof(struct mwl_chip_info));
 
 	rc = mwl_add_card((void *)card, &sdio_ops);
+	if (rc == -EPROBE_DEFER)
+		rc = mwl_add_card((void *)card, &sdio_ops);
+
 	if (rc != 0) {
-		pr_err("%s: failed to add_card\n", __func__);
-		goto err_add_card;
+		pr_err("%s: failed to add_card %d\n", __func__, rc);
+
+		destroy_workqueue(card->tx_workq);
+		kfree(card);
 	}
 
-	return rc;
-err_sdio_enable:
-	kfree(card);
-
-err_add_card:
-	sdio_claim_host(func);
-	sdio_disable_func(func);
-	sdio_release_host(func);
 	return rc;
 }
 
@@ -2464,18 +2452,11 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	mwl_sdio_cleanup(priv);
 	mwl_sdio_unregister_dev(priv);
 
-	// If there are issues with the SDIO interface the mmc host code
-	// triggers a card removal sequence which causes the client driver to
-	// be unloaded.  This typically occurs before recovery logic kicks in
-	// that could recover the interface.
-	// Work around by unconditionally initiating a recovery on card removal
-	// If implemented, this will ensure radio hardware is reset
-	lrd_radio_recovery(priv);
-
 	ieee80211_free_hw(hw);
 
+	mwl_sdio_reset(priv);
+
 	pr_info("lrdmwl: Card removal complete!\n");
-	return;
 }
 
 static void lrd_sdio_host_fixups(struct sdio_func *func)
@@ -2607,8 +2588,6 @@ static void mwl_sdio_flush_amsdu(unsigned long data)
 			}
 		}
 	}
-
-	return;
 }
 
 static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
@@ -2634,10 +2613,7 @@ static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
 			}
 		}
 	}
-
-	return;
 }
-
 
 
 #define module_sdio_driver(__sdio_driver) \
@@ -2670,32 +2646,24 @@ MODULE_PARM_DESC(reset_pwd_gpio, "WIFI CHIP_PWD reset pin GPIO");
 
 static int mwl_sdio_init_gpio(void)
 {
-	int ret = 0;
+	int ret;
 
-	if (gpio_is_valid(reset_pwd_gpio)) {
+	if (!gpio_is_valid(reset_pwd_gpio)) {
+		pr_info("lrdmwl: No reset GPIO configured\n");
+		return 0;
+	}
 
-		pr_info("lrdmwl: Reset GPIO %d configured\n", reset_pwd_gpio);
+	ret = gpio_request_one(reset_pwd_gpio, GPIOF_INIT_HIGH, "WIFI_RESET");
 
-		/* Request the reset GPIO in de-asserted state
-		 * It is the responsibility of device tree to ensure module is
-		 * reset up to this point if necessary
-		 * Guarantee minimum of 50 ms assertion
-		 */
-		msleep(50);
-		ret = gpio_request_one(reset_pwd_gpio, GPIOF_INIT_HIGH, "WIFI_RESET");
-
-		/* Only return failure code if GPIO is configured but
-		 * request fails
-		 */
-		if (ret) {
-			pr_err("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
-		}
-		else {
-			gpio_export(reset_pwd_gpio, false);
-		}
+	/* Only return failure code if GPIO is configured but
+	 * request fails
+	 */
+	if (ret) {
+		pr_err("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
 	}
 	else {
-		pr_info("lrdmwl: No reset GPIO configured\n");
+		pr_info("lrdmwl: Reset GPIO %d configured\n", reset_pwd_gpio);
+		gpio_export(reset_pwd_gpio, false);
 	}
 
 	return ret;
@@ -2705,15 +2673,29 @@ static int mwl_sdio_reset_gpio(struct mwl_priv *priv)
 {
 	if (gpio_is_valid(reset_pwd_gpio)) {
 		gpio_set_value(reset_pwd_gpio, 0);
-
-		msleep(500);
-
+		msleep(1);
 		gpio_set_value(reset_pwd_gpio, 1);
 
 		return 0;
 	}
 
-	return -1;
+	return -ENOSYS;
+}
+
+static int mwl_sdio_reset(struct mwl_priv *priv)
+{
+	struct mwl_sdio_card *card = priv->intf;
+	struct sdio_func *func = card->func;
+	int rc;
+
+	sdio_claim_host(func);
+
+	mwl_sdio_reset_gpio(priv);
+	rc = mmc_hw_reset(func->card->host);
+
+	sdio_release_host(func);
+
+	return rc;
 }
 
 static int mwl_sdio_release_gpio(void)
@@ -2731,21 +2713,15 @@ static int mwl_sdio_release_gpio(void)
 
 static int __init mwl_sdio_driver_init(void)
 {
-	int ret = 0;
+	int ret;
+
+	ret = sdio_register_driver(&mwl_sdio_driver);
+	if (ret)
+		return ret;
 
 	ret = mwl_sdio_init_gpio();
-
-	if (!ret) {
-
-		if (reset_pwd_gpio != ARCH_NR_GPIOS)
-			sdio_ops.hardware_reset = mwl_sdio_reset_gpio;
-
-		ret = sdio_register_driver(&mwl_sdio_driver);
-
-		if (ret) {
-			mwl_sdio_release_gpio();
-		}
-	}
+	if (!ret)
+		sdio_ops.hardware_reset = mwl_sdio_reset_gpio;
 
 	return ret;
 }
@@ -2763,6 +2739,3 @@ MODULE_DESCRIPTION(LRD_SDIO_DESC);
 MODULE_VERSION(LRD_SDIO_VERSION);
 MODULE_AUTHOR(LRD_AUTHOR);
 MODULE_LICENSE("GPL v2");
-
-
-

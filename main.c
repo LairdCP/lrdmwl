@@ -695,7 +695,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 err_wl_init:
 err_thermal_register:
 
-	wiphy_err(hw->wiphy, "init fail %x\n", rc);
+	wiphy_err(hw->wiphy, "init fail %d\n", rc);
 
 	return rc;
 }
@@ -759,7 +759,6 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 			MWL_DRV_NAME);
 
 }
-EXPORT_SYMBOL_GPL(lrd_radio_recovery);
 
 int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 {
