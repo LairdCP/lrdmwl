@@ -121,6 +121,7 @@ char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 		ENTRY(HOSTCMD_CMD_MONITOR_MODE)
 		ENTRY(HOSTCMD_CMD_DEEPSLEEP)
 		ENTRY(HOSTCMD_CMD_CONFIRM_PS)
+		ENTRY(HOSTCMD_CMD_IBSS_START)
 		ENTRY(HOSTCMD_LRD_MFG)
 		ENTRY(HOSTCMD_LRD_REGION_MAPPING)
 
@@ -703,6 +704,8 @@ static void mwl_fwcmd_parse_beacon(struct mwl_priv *priv,
 
 	mgmt = (struct ieee80211_mgmt *)beacon;
 
+	memcpy(vif->bssid, mgmt->bssid, ETH_ALEN);
+
 	baselen = (u8 *)mgmt->u.beacon.variable - (u8 *)mgmt;
 	if (baselen > len)
 		return;
@@ -737,6 +740,10 @@ static void mwl_fwcmd_parse_beacon(struct mwl_priv *priv,
 		case WLAN_EID_SSID:
 			beacon_info->ie_ssid_len = (elen + 2);
 			beacon_info->ie_ssid_ptr = (pos - 2);
+			break;
+		case WLAN_EID_IBSS_PARAMS:
+			beacon_info->ie_ibss_parms_len = (elen + 2);
+			beacon_info->ie_ibss_parms_ptr = (pos - 2);
 			break;
 		case WLAN_EID_COUNTRY:
 			beacon_info->ie_country_len = (elen + 2);
@@ -916,12 +923,15 @@ einval:
 }
 
 static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
-				   struct mwl_vif *mwl_vif,
+				   struct ieee80211_vif *vif,
 				   struct ieee80211_bss_conf *bss_conf)
 {
+	struct mwl_vif *mwl_vif;
 	struct hostcmd_cmd_ap_beacon *pcmd;
 	struct ds_params *phy_ds_param_set;
 
+
+	mwl_vif = mwl_dev_get_vif(vif);
 	/* wmm structure of start command is defined less one byte,
 	 * due to following field country is not used, add byte one
 	 * to bypass the check.
@@ -950,7 +960,13 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->cmd_hdr.macid = mwl_vif->macid;
 
-	ether_addr_copy(pcmd->start_cmd.sta_mac_addr, mwl_vif->bssid);
+	if(vif->type == NL80211_IFTYPE_ADHOC) {
+		ether_addr_copy(pcmd->start_cmd.sta_mac_addr, mwl_vif->sta_mac);
+	}else {
+		ether_addr_copy(pcmd->start_cmd.sta_mac_addr, mwl_vif->bssid);
+	}
+
+	ether_addr_copy(pcmd->start_cmd.Bssid, mwl_vif->bssid);
 	memcpy(pcmd->start_cmd.ssid, bss_conf->ssid, bss_conf->ssid_len);
 	pcmd->start_cmd.bss_type = 1;
 	pcmd->start_cmd.bcn_period  = cpu_to_le16(bss_conf->beacon_int);
@@ -963,6 +979,9 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 
 	pcmd->start_cmd.probe_delay = cpu_to_le16(10);
 	pcmd->start_cmd.cap_info = cpu_to_le16(mwl_vif->beacon_info.cap_info);
+
+	memcpy(&pcmd->start_cmd.ss_param_set.ibss_param_set, mwl_vif->beacon_info.ie_ibss_parms_ptr,
+	       mwl_vif->beacon_info.ie_ibss_parms_len);
 
 	memcpy(&pcmd->start_cmd.wmm_param, mwl_vif->beacon_info.ie_wmm_ptr,
 	       mwl_vif->beacon_info.ie_wmm_len);
@@ -2431,6 +2450,60 @@ int mwl_fwcmd_remove_mac_addr(struct ieee80211_hw *hw,
 	return 0;
 }
 
+int mwl_fwcmd_ibss_start(struct ieee80211_hw *hw,
+            struct ieee80211_vif *vif, bool enable)
+{
+	struct mwl_priv *priv = hw->priv;
+	struct mwl_vif *mwl_vif;
+	struct hostcmd_cmd_bss_start *pcmd;
+	mwl_vif = mwl_dev_get_vif(vif);
+	if(enable)
+	wiphy_debug(priv->hw->wiphy, "CMD IBSS Start Enable,Mac Id %d\n", mwl_vif->macid);
+	else
+	wiphy_debug(priv->hw->wiphy, "CMD IBSS Start Disable\n");
+
+
+	if (enable && (priv->running_bsses & (1 << mwl_vif->macid)))
+		return 0;
+
+	if (!enable && !(priv->running_bsses & (1 << mwl_vif->macid)))
+		return 0;
+
+	pcmd = (struct hostcmd_cmd_bss_start *)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd));
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_IBSS_START);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->cmd_hdr.macid = mwl_vif->macid;
+
+	if (enable) {
+		pcmd->enable = cpu_to_le32(WL_ENABLE);
+	} else {
+		if (mwl_vif->macid == 0)
+			pcmd->enable = cpu_to_le32(WL_DISABLE);
+		else
+			pcmd->enable = cpu_to_le32(WL_DISABLE_VMAC);
+	}
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_IBSS_START)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "failed execution\n");
+		return -EIO;
+	}
+
+	if (enable)
+		priv->running_bsses |= (1 << mwl_vif->macid);
+	else
+		priv->running_bsses &= ~(1 << mwl_vif->macid);
+
+	mutex_unlock(&priv->fwcmd_mutex);
+
+	return 0;
+}
+
 int mwl_fwcmd_bss_start(struct ieee80211_hw *hw,
 			struct ieee80211_vif *vif, bool enable)
 {
@@ -2509,11 +2582,16 @@ int mwl_fwcmd_set_beacon(struct ieee80211_hw *hw,
 	if (mwl_fwcmd_set_wfd_ie(hw, b_inf->ie_wfd_len, b_inf->ie_wfd_ptr))
 		goto err;
 
-	if (mwl_fwcmd_set_ap_beacon(priv, mwl_vif, &vif->bss_conf))
+	if (mwl_fwcmd_set_ap_beacon(priv, vif, &vif->bss_conf))
 		goto err;
 
-	if (mwl_fwcmd_bss_start(hw, vif, true))
-		goto err;
+	if(vif->type == NL80211_IFTYPE_ADHOC) {
+		if (mwl_fwcmd_ibss_start(hw, vif, true))
+			goto err;
+	} else {
+		if (mwl_fwcmd_bss_start(hw, vif, true))
+			goto err;
+	}
 
 	if (b_inf->cap_info & WLAN_CAPABILITY_SPECTRUM_MGMT)
 		rc = mwl_fwcmd_set_spectrum_mgmt(priv, true);
@@ -2575,10 +2653,15 @@ int mwl_fwcmd_set_new_stn_add(struct ieee80211_hw *hw,
 	}
 	ether_addr_copy(pcmd->mac_addr, sta->addr);
 
-	if (hw->conf.chandef.chan->band == NL80211_BAND_2GHZ)
-		rates = sta->supp_rates[NL80211_BAND_2GHZ];
-	else
-		rates = sta->supp_rates[NL80211_BAND_5GHZ] << 5;
+	/* Populating default rates
+	 * To handle scenario where mac80211 adds STA entry even before
+	 * populating supported rate info */
+	if (hw->conf.chandef.chan->band == NL80211_BAND_2GHZ) {
+		//TODO:Handle 11B only scenario
+		rates = ((1 << BAND_24_RATE_NUM) - 1);
+	} else {
+		rates = (((1 << BAND_50_RATE_NUM) - 1) << 5);
+	}
 	pcmd->peer_info.legacy_rate_bitmap = cpu_to_le32(rates);
 
 	if (sta->ht_cap.ht_supported) {
@@ -2931,6 +3014,13 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 
 		if (vif->type == NL80211_IFTYPE_STATION) {
 			ether_addr_copy(mwl_vif->bssid, vif->bss_conf.bssid);
+		} else if(vif->type == NL80211_IFTYPE_ADHOC) {
+			if(!ether_addr_equal(vif->addr, addr)) {
+				/* To handle a race condition when mac80211 doesnt populate
+				 * keys for the newly added STA. Requesting FW to populate
+				 * Keys for all the IBSS STA added till now */
+				pcmd->key_param.cfg_flags = cpu_to_le32(0x1);
+			}
 		}
 		keymlen = key->keylen;
 		action = ENCR_ACTION_TYPE_SET_KEY;
@@ -3007,10 +3097,6 @@ int mwl_fwcmd_encryption_remove_key(struct ieee80211_hw *hw,
 	}
 
 	pcmd->action_type = cpu_to_le32(ENCR_ACTION_TYPE_REMOVE_KEY);
-
-	if (key->cipher == WLAN_CIPHER_SUITE_WEP40 ||
-	    key->cipher == WLAN_CIPHER_SUITE_WEP104)
-		mwl_vif->wep_key_conf[key->keyidx].enabled = 0;
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 		mutex_unlock(&priv->fwcmd_mutex);

@@ -987,6 +987,7 @@ static char *mwl_sdio_event_strn(u16 event_id)
 		{ SDEVENT_BA_WATCHDOG,  "SDEVENT_BA_WATCHDOG" },
 		{ SDEVENT_WAKEUP,       "SDEVENT_WAKEUP" },
 		{ SDEVENT_PS_SLEEP,     "SDEVENT_PS_SLEEP" },
+		{ SDEVENT_IBSS_LAST_BCN,"SDEVENT_IBSS_LAST_BCN_TXTSF" },
 	};
 
 	max_entries = ARRAY_SIZE(events);
@@ -1135,6 +1136,14 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 		break;
 	case SDEVENT_PS_SLEEP:
 		queue_work(card->cmd_workq, &card->cmd_work);
+		break;
+	case SDEVENT_IBSS_LAST_BCN:
+		if(host_event->BcnPayload.event)
+		{
+			u64 *TsfVal;
+			TsfVal = (u64*)(le64_to_cpu(host_event->BcnPayload.bssTsf) );
+			priv->LastBeaconTime = *TsfVal;
+		}
 		break;
 	default:
 		wiphy_info(hw->wiphy,"Unknown event, id=%04xh\n", event_id);
@@ -1921,8 +1930,13 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 		 */
 		if (ieee80211_has_tods(wh->frame_control))
 			mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr1);
-		else
-			mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr2);
+		else {
+            if(ieee80211_is_data(wh->frame_control)
+                && !ieee80211_has_fromds(wh->frame_control))
+			    mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr3);
+            else
+			    mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr2);
+        }
 
 		if  ((mwl_vif && mwl_vif->is_hw_crypto_enabled) ||
 		     is_multicast_ether_addr(wh->addr1) ||

@@ -152,6 +152,9 @@ static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
 	case NL80211_IFTYPE_P2P_CLIENT:
 		macids_supported = priv->sta_macids_supported;
 		break;
+	case NL80211_IFTYPE_ADHOC:
+		macids_supported = priv->adhoc_macids_supported;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -189,6 +192,11 @@ static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
 		mwl_fwcmd_bss_start(hw, vif, true);
 		mwl_fwcmd_set_infra_mode(hw, vif);
 		mwl_fwcmd_set_mac_addr_client(hw, vif, vif->addr);
+		break;
+	case NL80211_IFTYPE_ADHOC:
+		ether_addr_copy(mwl_vif->sta_mac, vif->addr);
+		mwl_fwcmd_set_infra_mode(hw, vif);
+		mwl_fwcmd_set_new_stn_add_self(hw, vif);
 		break;
 	default:
 		return -EINVAL;
@@ -231,6 +239,10 @@ static void mwl_mac80211_remove_interface(struct ieee80211_hw *hw,
 	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_P2P_CLIENT:
 		mwl_fwcmd_remove_mac_addr(hw, vif, vif->addr);
+		break;
+	case NL80211_IFTYPE_ADHOC:
+		mwl_fwcmd_remove_mac_addr(hw, vif, vif->addr);
+		mwl_fwcmd_set_new_stn_del(hw, vif, vif->addr);
 		break;
 	default:
 		break;
@@ -375,45 +387,33 @@ void mwl_mac80211_sta_rc_update(struct ieee80211_hw *hw,
 	/* TODO: VHT OpMode notification related handling here */
 }
 
-
-static void mwl_mac80211_bss_info_changed_sta(struct ieee80211_hw *hw,
-					      struct ieee80211_vif *vif,
-					      struct ieee80211_bss_conf *info,
-					      u32 changed)
+static void mwl_mac80211_bss_info_changed(struct ieee80211_hw *hw,
+					  struct ieee80211_vif *vif,
+					  struct ieee80211_bss_conf *info,
+					  u32 changed)
 {
+	if((vif->type != NL80211_IFTYPE_AP) && (vif->type != NL80211_IFTYPE_P2P_GO) &&
+	   (vif->type != NL80211_IFTYPE_STATION) && (vif->type != NL80211_IFTYPE_P2P_CLIENT) &&
+	   (vif->type != NL80211_IFTYPE_ADHOC) ) {
+		wiphy_err(hw->wiphy,"Unsupported Interface Type\n");
+		return;
+	}
 
+	//TODO Add common functions
 	if (changed & BSS_CHANGED_ERP_SLOT)
 		mwl_fwcmd_set_slot_time(hw, vif->bss_conf.use_short_slot);
 
 	if (changed & BSS_CHANGED_ERP_PREAMBLE)
-		mwl_fwcmd_set_radio_preamble(hw,
-					     vif->bss_conf.use_short_preamble);
-
-	if ((changed & BSS_CHANGED_ASSOC) && vif->bss_conf.assoc)
-		mwl_fwcmd_set_aid(hw, vif, (u8 *)vif->bss_conf.bssid,
-				  vif->bss_conf.aid);
-}
-
-static void mwl_mac80211_bss_info_changed_ap(struct ieee80211_hw *hw,
-					     struct ieee80211_vif *vif,
-					     struct ieee80211_bss_conf *info,
-					     u32 changed)
-{
-
-	if (changed & BSS_CHANGED_ERP_SLOT)
-		mwl_fwcmd_set_slot_time(hw, vif->bss_conf.use_short_slot);
-	if (changed & BSS_CHANGED_ERP_PREAMBLE)
-		mwl_fwcmd_set_radio_preamble(hw,
-					     vif->bss_conf.use_short_preamble);
+		mwl_fwcmd_set_radio_preamble(hw, vif->bss_conf.use_short_preamble);
 
 	if (changed & BSS_CHANGED_BASIC_RATES) {
 		int idx;
 		int rate;
 
 		/* Use lowest supported basic rate for multicasts
-		 * and management frames (such as probe responses --
-		 * beacons will always go out at 1 Mb/s).
-		 */
+		* and management frames (such as probe responses --
+		* beacons will always go out at 1 Mb/s).
+		*/
 		idx = ffs(vif->bss_conf.basic_rates);
 		if (idx)
 			idx--;
@@ -429,6 +429,11 @@ static void mwl_mac80211_bss_info_changed_ap(struct ieee80211_hw *hw,
 	if (changed & (BSS_CHANGED_BEACON_INT | BSS_CHANGED_BEACON)) {
 		struct sk_buff *skb;
 
+		if(changed & BSS_CHANGED_BEACON_INT)
+			wiphy_err(hw->wiphy, "Beacon interval changed\n");
+		if(changed & BSS_CHANGED_BEACON)
+			wiphy_err(hw->wiphy, "Beacon data changed\n");
+
 		skb = ieee80211_beacon_get(hw, vif);
 		if (skb) {
 			mwl_fwcmd_set_beacon(hw, vif, skb->data, skb->len);
@@ -436,26 +441,16 @@ static void mwl_mac80211_bss_info_changed_ap(struct ieee80211_hw *hw,
 		}
 	}
 
-	if (changed & BSS_CHANGED_BEACON_ENABLED)
-		mwl_fwcmd_bss_start(hw, vif, info->enable_beacon);
-}
+	if ((changed & BSS_CHANGED_ASSOC) && vif->bss_conf.assoc) {
+		if (vif->type == NL80211_IFTYPE_STATION || vif->type == NL80211_IFTYPE_P2P_CLIENT)
+			mwl_fwcmd_set_aid(hw, vif, (u8 *)vif->bss_conf.bssid, vif->bss_conf.aid);
+	}
 
-static void mwl_mac80211_bss_info_changed(struct ieee80211_hw *hw,
-					  struct ieee80211_vif *vif,
-					  struct ieee80211_bss_conf *info,
-					  u32 changed)
-{
-	switch (vif->type) {
-	case NL80211_IFTYPE_AP:
-	case NL80211_IFTYPE_P2P_GO:
-		mwl_mac80211_bss_info_changed_ap(hw, vif, info, changed);
-		break;
-	case NL80211_IFTYPE_STATION:
-	case NL80211_IFTYPE_P2P_CLIENT:
-		mwl_mac80211_bss_info_changed_sta(hw, vif, info, changed);
-		break;
-	default:
-		break;
+	if (changed & BSS_CHANGED_BEACON_ENABLED) {
+		if(vif->type == NL80211_IFTYPE_ADHOC)
+			mwl_fwcmd_ibss_start(hw, vif, info->enable_beacon);
+		else
+			mwl_fwcmd_bss_start(hw, vif, info->enable_beacon);
 	}
 }
 
@@ -523,6 +518,11 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 		rc = mwl_fwcmd_encryption_remove_key(hw, vif, addr, key);
 		if (rc)
 			goto out;
+
+		if (key->cipher == WLAN_CIPHER_SUITE_WEP40 ||
+		    key->cipher == WLAN_CIPHER_SUITE_WEP104) {
+			mwl_vif->wep_key_conf[key->keyidx].enabled = 0;
+		}
 	}
 
 out:
@@ -594,13 +594,25 @@ static int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
 {
 	struct mwl_priv *priv = hw->priv;
 	int rc;
+	int i;
+	struct mwl_vif *mwl_vif;
+	struct ieee80211_key_conf *key;
 	struct mwl_sta *sta_info = mwl_dev_get_sta(sta);
 
+	wiphy_err(hw->wiphy,"In mwl_mac80211_sta_remove \n");
+    mwl_vif = mwl_dev_get_vif(vif);
 	cancel_work_sync(&sta_info->rc_update_work);
 
 	mwl_tx_del_sta_amsdu_pkts(sta);
 	mwl_fwcmd_del_sta_streams(hw, sta);
 	mwl_tx_del_pkts_via_sta(hw, sta);
+
+	for (i = 0; i < NUM_WEP_KEYS; i++) {
+		key = (struct ieee80211_key_conf *)mwl_vif->wep_key_conf[i].key;
+
+		if (mwl_vif->wep_key_conf[i].enabled)
+			rc = mwl_fwcmd_encryption_remove_key(hw, vif, sta->addr, key);
+	}
 
 	rc = mwl_fwcmd_set_new_stn_del(hw, vif, sta->addr);
 
@@ -1194,6 +1206,27 @@ void mwl_mac80211_set_wakeup(struct ieee80211_hw *hw, bool enabled)
 
 #endif
 
+static int mwl_join_ibss(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+	return 0;
+}
+
+static void mwl_leave_ibss(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+
+}
+
+static u64 mwl_get_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+	return 0;
+}
+
+static void mwl_set_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+                        u64 tsf)
+{
+
+}
+
 const struct ieee80211_ops mwl_mac80211_ops = {
 	.tx                         = mwl_mac80211_tx,
 	.start                      = mwl_mac80211_start,
@@ -1224,7 +1257,11 @@ const struct ieee80211_ops mwl_mac80211_ops = {
 	.sw_scan_complete           = mwl_mac80211_sw_scan_complete,
 	.set_default_unicast_key    = mwl_mac80211_set_default_uni_key,
 
+	.join_ibss                  = mwl_join_ibss,
+	.leave_ibss                 = mwl_leave_ibss,
+	.get_tsf                    = mwl_get_tsf,
+	.set_tsf                    = mwl_set_tsf,
+
 	.set_antenna                = mwl_mac80211_set_ant,
 	.get_antenna                = mwl_mac80211_get_ant,
-
 };
