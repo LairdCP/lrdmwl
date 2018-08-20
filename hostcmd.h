@@ -91,6 +91,7 @@
 #define HOSTCMD_CMD_MONITOR_MODE                0x1207
 #define HOSTCMD_CMD_DEEPSLEEP                   0x1209
 #define HOSTCMD_CMD_CONFIRM_PS                  0x1210
+#define HOSTCMD_CMD_IBSS_START                  0x1212
 
 
 /* Define general result code for each command */
@@ -736,6 +737,8 @@ struct wmm_param_elem {
 	u8 type;
 	u8 sub_type;
 	u8 version;
+	// Adding QosInfo to make sure FW and Driver sees same structure
+	u8 qos_info;
 	u8 rsvd;
 	struct ac_param_rcd ac_be;
 	struct ac_param_rcd ac_bk;
@@ -756,6 +759,12 @@ struct country {
 	struct channel_info channel_info[40];
 } __packed;
 
+struct power_constraint_ie {
+	u8 elem_id;
+	u8 len;
+	u8 local_constraint;
+} __packed;
+
 struct start_cmd {
 	u8 sta_mac_addr[ETH_ALEN];
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
@@ -773,6 +782,8 @@ struct start_cmd {
 	struct wmm_param_elem wmm_param;
 	struct country country;
 	__le32 ap_rf_type;           /* 0->B, 1->G, 2->Mixed, 3->A, 4->11J */
+	struct power_constraint_ie power_constraint;
+	u8 Bssid[ETH_ALEN];
 } __packed;
 
 struct hostcmd_cmd_ap_beacon {
@@ -894,6 +905,7 @@ struct key_param_set {
 	/* Key material (variable size array) */
 	union mwl_key_type key;
 	u8 mac_addr[ETH_ALEN];
+	__le32 cfg_flags;
 } __packed;
 
 struct hostcmd_cmd_set_key {
@@ -1158,8 +1170,8 @@ struct hostcmd_cmd_post_scan {
 } __packed;
 
 struct hostcmd_cmd_monitor_mode {
-    struct hostcmd_header cmd_hdr;
-    u8 enableFlag;
+	struct hostcmd_header cmd_hdr;
+	u8 enableFlag;
 } __packed;
 
 struct hostcmd_cmd_region_mapping
