@@ -116,21 +116,38 @@ const struct ieee80211_rate mwl_rates_50[] = {
 
 static const struct ieee80211_iface_limit ap_if_limits[] = {
 	{ .max = SYSADPT_NUM_OF_AP,	.types = BIT(NL80211_IFTYPE_AP) },
-	{ .max = 1,	.types = BIT(NL80211_IFTYPE_STATION) |
-							BIT(NL80211_IFTYPE_P2P_GO) |
-							BIT(NL80211_IFTYPE_P2P_CLIENT)},
+	{ .max = 1, .types = BIT(NL80211_IFTYPE_STATION) |
+	                     BIT(NL80211_IFTYPE_P2P_GO) |
+	                     BIT(NL80211_IFTYPE_P2P_CLIENT)},
 };
 
-static const struct ieee80211_iface_combination ap_if_comb = {
-	.limits = ap_if_limits,
-	.n_limits = ARRAY_SIZE(ap_if_limits),
-	.max_interfaces = SYSADPT_NUM_OF_AP,
-	.num_different_channels = 1,
-	.radar_detect_widths =	BIT(NL80211_CHAN_WIDTH_20_NOHT) |
-				BIT(NL80211_CHAN_WIDTH_20) |
-				BIT(NL80211_CHAN_WIDTH_40) |
-				BIT(NL80211_CHAN_WIDTH_80) |
-				BIT(NL80211_CHAN_WIDTH_160),
+static const struct ieee80211_iface_limit ibss_if_limits[] = {
+	{ .max = 1,	.types = BIT(NL80211_IFTYPE_ADHOC) }
+};
+
+static const struct ieee80211_iface_combination if_comb[] = {
+	{
+		.limits = ap_if_limits,
+		.n_limits = ARRAY_SIZE(ap_if_limits),
+		.max_interfaces = SYSADPT_NUM_OF_AP,
+		.num_different_channels = 1,
+		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) |
+		                       BIT(NL80211_CHAN_WIDTH_20) |
+		                       BIT(NL80211_CHAN_WIDTH_40) |
+		                       BIT(NL80211_CHAN_WIDTH_80) |
+		                       BIT(NL80211_CHAN_WIDTH_160),
+	},
+	{
+		.limits = ibss_if_limits,
+		.n_limits = ARRAY_SIZE(ibss_if_limits),
+		.max_interfaces = 1,
+		.num_different_channels = 1,
+		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) |
+		                       BIT(NL80211_CHAN_WIDTH_20) |
+		                       BIT(NL80211_CHAN_WIDTH_40) |
+		                       BIT(NL80211_CHAN_WIDTH_80) |
+		                       BIT(NL80211_CHAN_WIDTH_160),
+	}
 };
 
 #ifdef CONFIG_PM
@@ -563,6 +580,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 
 	priv->ap_macids_supported = 0x0000ffff;
 	priv->sta_macids_supported = 0x00010000;
+	priv->adhoc_macids_supported = 0x00000001;
 	priv->macids_used = 0;
 	INIT_LIST_HEAD(&priv->vif_list);
 	INIT_LIST_HEAD(&priv->sta_list);
@@ -700,9 +718,10 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_STATION);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_CLIENT);
+	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_ADHOC);
 
-	hw->wiphy->iface_combinations = &ap_if_comb;
-	hw->wiphy->n_iface_combinations = 1;
+	hw->wiphy->iface_combinations = &if_comb[0];
+	hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_comb);
 
 	mwl_set_caps(priv);
 
