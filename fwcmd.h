@@ -165,6 +165,9 @@ int mwl_fwcmd_remove_mac_addr(struct ieee80211_hw *hw,
 int mwl_fwcmd_bss_start(struct ieee80211_hw *hw,
 			struct ieee80211_vif *vif, bool enable);
 
+int mwl_fwcmd_ibss_start(struct ieee80211_hw *hw,
+			struct ieee80211_vif *vif, bool enable);
+
 int mwl_fwcmd_set_beacon(struct ieee80211_hw *hw,
 			 struct ieee80211_vif *vif, u8 *beacon, int len);
 

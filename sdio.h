@@ -386,16 +386,24 @@ struct mwifiex_sdio_mpa_rx {
 #define SDEVENT_BA_WATCHDOG    0x0003
 #define SDEVENT_WAKEUP         0x0005
 #define SDEVENT_PS_SLEEP       0x0006
+#define SDEVENT_IBSS_LAST_BCN  0x0007
 
 struct mwl_host_event_mac_t {
 	u16	event_id;
+	u8	payload[0];
 };
-
+struct mwl_ibss_lastBcn_payload {
+	u16 event;
+	u8 bssNum;
+	u8 bssType;
+	u8 bssTsf[8];
+};
 struct mwl_hostevent {
 	u16 length;
 	u16 type;
 	union {
 		struct mwl_host_event_mac_t mac_event;
+		struct mwl_ibss_lastBcn_payload BcnPayload;
 	};
 };
 
