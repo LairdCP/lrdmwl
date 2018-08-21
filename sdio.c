@@ -1163,9 +1163,7 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	case SDEVENT_IBSS_LAST_BCN:
 		if(host_event->BcnPayload.event)
 		{
-			u64 *TsfVal;
-			TsfVal = (u64*)(le64_to_cpu(host_event->BcnPayload.bssTsf) );
-			priv->LastBeaconTime = *TsfVal;
+			priv->LastBeaconTime = get_unaligned_le64(host_event->BcnPayload.bssTsf);
 		}
 		break;
 	default:
