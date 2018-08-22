@@ -1061,7 +1061,6 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	if(!mutex_trylock(&priv->fwcmd_mutex))
 	{
 		printk("returning not able to acquire lock\n\n");
-		mutex_unlock(&priv->ps_mutex);
 		return;
 	}
 	printk("In ps sleep enter:\n");
