@@ -426,18 +426,23 @@ static void mwl_mac80211_bss_info_changed(struct ieee80211_hw *hw,
 		mwl_fwcmd_use_fixed_rate(hw, rate, rate);
 	}
 
-	if (changed & (BSS_CHANGED_BEACON_INT | BSS_CHANGED_BEACON)) {
-		struct sk_buff *skb;
+	if ((vif->type == NL80211_IFTYPE_AP) || 
+		(vif->type == NL80211_IFTYPE_ADHOC) || 
+		(vif->type == NL80211_IFTYPE_P2P_GO))
+	{
+		if (changed & (BSS_CHANGED_BEACON_INT | BSS_CHANGED_BEACON)) {
+			struct sk_buff *skb;
 
-		if(changed & BSS_CHANGED_BEACON_INT)
-			wiphy_err(hw->wiphy, "Beacon interval changed\n");
-		if(changed & BSS_CHANGED_BEACON)
-			wiphy_err(hw->wiphy, "Beacon data changed\n");
+			if(changed & BSS_CHANGED_BEACON_INT)
+				wiphy_err(hw->wiphy, "Beacon interval changed\n");
+			if(changed & BSS_CHANGED_BEACON)
+				wiphy_err(hw->wiphy, "Beacon data changed\n");
 
-		skb = ieee80211_beacon_get(hw, vif);
-		if (skb) {
-			mwl_fwcmd_set_beacon(hw, vif, skb->data, skb->len);
-			dev_kfree_skb_any(skb);
+			skb = ieee80211_beacon_get(hw, vif);
+			if (skb) {
+				mwl_fwcmd_set_beacon(hw, vif, skb->data, skb->len);
+				dev_kfree_skb_any(skb);
+			}
 		}
 	}
 
