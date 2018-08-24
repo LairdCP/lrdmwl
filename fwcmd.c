@@ -223,10 +223,11 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 		mwl_fwcmd_send_cmd(priv);
 		if(priv->cmd_timeout) {
+			wiphy_err(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s) timeout\n",
+				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+
 			if (lrd_debug) {
 				lrd_debug--;
-				wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s) timeout\n",
-					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
 			}
 
@@ -241,10 +242,11 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		}
 
 		if (rc != 0) {
+			wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
+				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+
 			if (lrd_debug) {
 				lrd_debug--;
-				wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
-					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
 			}
 			priv->in_send_cmd = false;
