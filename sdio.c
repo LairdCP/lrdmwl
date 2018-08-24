@@ -1082,7 +1082,7 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 
 	if(!mutex_trylock(&priv->fwcmd_mutex))
 	{
-		printk("returning not able to acquire lock\n\n");
+		printk("returning not able to acquire lock\n");
 		return;
 	}
 	printk("In ps sleep enter:\n");
@@ -2684,6 +2684,31 @@ static int mwl_sdio_prepare(struct device *dev)
 			if ((priv->wow.state & WOWLAN_STATE_ENABLED) && priv->sw_scanning) {
 				wiphy_err(priv->hw->wiphy, "Scanning, suspend request denied\n");
 				rc = -EPERM;
+			}
+		}
+	}
+
+	return rc;
+}
+*/
+
+/*
+static int mwl_sdio_prepare(struct device *dev)
+{
+	struct sdio_func     *func = dev_to_sdio_func(dev);
+	struct mwl_priv      *priv;
+	struct mwl_sdio_card *card;
+	int rc = 0;
+
+	if (func) {
+		card = sdio_get_drvdata(func);
+		if (card && card->priv) {
+			priv = card->priv;
+
+			if ((priv->wow.state & WOWLAN_STATE_ENABLED) &&
+			     priv->sw_scanning) {
+			wiphy_err(priv->hw->wiphy, "Scanning, suspend request denied\n");
+			rc = -EPERM;
 			}
 		}
 	}

@@ -1763,8 +1763,12 @@ int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, bool hs_enable, bool ds
 	//It allows FW to unconditionally upload Rxed beacons.
 	//pcmd->options = cpu_to_le32(0x1);
 
-	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_HOSTSLEEP_CTRL)) {
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_HOSTSLEEP_CTRL) ||
+	    (pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, " %s failed execution %x\n",
+		          mwl_fwcmd_get_cmd_string(HOSTCMD_CMD_HOSTSLEEP_CTRL),
+		          pcmd->cmd_hdr.result);
 		return -EIO;
 	}
 
@@ -1808,6 +1812,7 @@ int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)) {
 		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, " %s failed execution\n", mwl_fwcmd_get_cmd_string(HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG));
 		return -EIO;
 	}
 
