@@ -191,7 +191,6 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 	if (priv->cmd_timeout) {
 		if (lrd_debug) {
-			lrd_debug--;
 			wiphy_debug(priv->hw->wiphy,
 			"Skip CMD(%04xh, %s) - due to prev cmd_timeout\n",
 			cmd, mwl_fwcmd_get_cmd_string(cmd));
@@ -216,24 +215,17 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 		rc = mwl_fwcmd_send_cmd(priv);
 		if (rc != 0) {
-			if (rc != -ENOMEDIUM)
-				wiphy_err(priv->hw->wiphy, "CMD_SEND (# %02x)=> (%04xh, %s) timeout\n",
+
+			if(priv->cmd_timeout) {
+				wiphy_err(priv->hw->wiphy, "DNLD_CMD (# %02x)=> (%04xh, %s) timeout\n",
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 
-			return rc;
-		}
-
-		if(priv->cmd_timeout) {
-			if (lrd_debug) {
-				lrd_debug--;
-				wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s) timeout\n",
-					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 				mwl_hex_dump((char*)pcmd, pcmd->len);
+				// Fatal error, initiate firmware recovery
+				lrd_radio_recovery(priv);
 			}
 
-			// Fatal error, initiate firmware recovery
-			lrd_radio_recovery(priv);
-			return -EIO;
+			return rc;
 		}
 
 		if (priv->if_ops.cmd_resp_wait_completed) {
@@ -242,12 +234,11 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		}
 
 		if (rc != 0) {
-			if (lrd_debug) {
-				lrd_debug--;
-				wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
-					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
-				mwl_hex_dump((char*)pcmd, pcmd->len);
-			}
+			wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
+				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+
+			mwl_hex_dump((char*)pcmd, pcmd->len);
+
 			priv->in_send_cmd = false;
 			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
 				priv->cmd_timeout = true;
@@ -298,7 +289,6 @@ int mwl_fwcmd_set_slot_time(struct ieee80211_hw *hw, bool short_slot)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_SLOT_TIME)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -334,7 +324,6 @@ int mwl_fwcmd_config_EDMACCtrl(struct ieee80211_hw *hw, int EDMAC_Ctrl)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_EDMAC_CTRL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -366,7 +355,6 @@ static int mwl_fwcmd_802_11_radio_control(struct mwl_priv *priv,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_RADIO_CONTROL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -400,7 +388,6 @@ static int mwl_fwcmd_get_tx_powers(struct mwl_priv *priv, u16 *powlist,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_TX_POWER)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -439,7 +426,6 @@ static int mwl_fwcmd_set_tx_powers(struct mwl_priv *priv, u16 txpow[],
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_TX_POWER)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -821,7 +807,6 @@ static int mwl_fwcmd_set_ies(struct mwl_priv *priv, struct mwl_vif *mwl_vif)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_IES)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -957,7 +942,6 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_AP_BEACON)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -988,7 +972,6 @@ static int mwl_fwcmd_set_spectrum_mgmt(struct mwl_priv *priv, bool enable)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_SPECTRUM_MGMT)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1014,7 +997,6 @@ static int mwl_fwcmd_set_power_constraint(struct mwl_priv *priv,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_POWER_CONSTRAINT)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1080,7 +1062,6 @@ static int mwl_fwcmd_set_country_code(struct mwl_priv *priv,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_COUNTRY_CODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1263,7 +1244,6 @@ int mwl_fwcmd_set_hw_specs(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_HW_SPEC)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1326,7 +1306,6 @@ int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, __le16 type)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_CFG)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		release_firmware(priv->cal_data);
 		priv->cal_data = NULL;
 		return -EIO;
@@ -1358,7 +1337,6 @@ int mwl_fwcmd_get_stat(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_GET_STAT)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1395,7 +1373,6 @@ int mwl_fwcmd_reg_mac(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 
     if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MAC_REG_ACCESS)) {
         mutex_unlock(&priv->fwcmd_mutex);
-        wiphy_err(hw->wiphy, "failed execution\n");
         return -EIO;
     }
 
@@ -1425,7 +1402,6 @@ int mwl_fwcmd_reg_bb(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BBP_REG_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1455,7 +1431,6 @@ int mwl_fwcmd_reg_rf(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_RF_REG_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1510,7 +1485,6 @@ int mwl_fwcmd_get_addr_value(struct ieee80211_hw *hw, u32 addr, u32 len,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MEM_ADDR_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1596,7 +1570,6 @@ int mwl_fwcmd_rf_antenna(struct ieee80211_hw *hw, int ant_tx_bmp,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_RF_ANTENNA_V2)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1645,7 +1618,6 @@ int mwl_fwcmd_broadcast_ssid_enable(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BROADCAST_SSID_ENABLE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1674,7 +1646,6 @@ int mwl_fwcmd_powersave_EnblDsbl(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_PS_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1708,7 +1679,6 @@ int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCon
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_HOSTSLEEP_CTRL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1752,7 +1722,6 @@ int mwl_fwcmd_wowlan_apinrange_config(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_WOWLAN_AP_INRANGE_CFG)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1797,7 +1766,6 @@ int mwl_fwcmd_set_roc_channel(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(hw->priv, HOSTCMD_CMD_SET_RF_CHANNEL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1920,7 +1888,6 @@ int mwl_fwcmd_set_rf_channel(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_RF_CHANNEL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -1983,7 +1950,6 @@ int mwl_fwcmd_set_aid(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_AID)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2013,7 +1979,6 @@ int mwl_fwcmd_set_infra_mode(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_INFRA_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2040,7 +2005,6 @@ int mwl_fwcmd_set_rts_threshold(struct ieee80211_hw *hw, int threshold)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_RTS_THSD)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2073,7 +2037,6 @@ int mwl_fwcmd_set_edca_params(struct ieee80211_hw *hw, u8 index,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_EDCA_PARAMS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2118,7 +2081,6 @@ int mwl_fwcmd_set_radar_detect(struct ieee80211_hw *hw, u16 action)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11H_DETECT_RADAR)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2144,7 +2106,6 @@ int mwl_fwcmd_set_wmm_mode(struct ieee80211_hw *hw, bool enable)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WMM_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2171,7 +2132,6 @@ int mwl_fwcmd_ht_guard_interval(struct ieee80211_hw *hw, u32 gi_type)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_HT_GUARD_INTERVAL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2200,7 +2160,6 @@ int mwl_fwcmd_use_fixed_rate(struct ieee80211_hw *hw, int mcast, int mgmt)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_FIXED_RATE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2227,7 +2186,6 @@ int mwl_fwcmd_set_linkadapt_cs_mode(struct ieee80211_hw *hw, u16 cs_mode)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_LINKADAPT_CS_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2254,7 +2212,6 @@ int mwl_fwcmd_set_rate_adapt_mode(struct ieee80211_hw *hw, u16 mode)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_RATE_ADAPT_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2286,7 +2243,6 @@ int mwl_fwcmd_set_mac_addr_client(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_MAC_ADDR)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2311,7 +2267,6 @@ int mwl_fwcmd_get_watchdog_bitmap(struct ieee80211_hw *hw, u8 *bitmap)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_GET_WATCHDOG_BITMAP)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2344,7 +2299,6 @@ int mwl_fwcmd_remove_mac_addr(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_DEL_MAC_ADDR)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2389,7 +2343,6 @@ int mwl_fwcmd_bss_start(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BSS_START)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2537,7 +2490,6 @@ int mwl_fwcmd_set_new_stn_add(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2548,7 +2500,6 @@ int mwl_fwcmd_set_new_stn_add(struct ieee80211_hw *hw,
 		pcmd->stn_id = cpu_to_le16(2);
 		if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "failed execution\n");
 			return -EIO;
 		}
 	}
@@ -2583,7 +2534,6 @@ int mwl_fwcmd_set_new_stn_add_self(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2616,7 +2566,6 @@ int mwl_fwcmd_set_new_stn_del(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2626,7 +2575,6 @@ int mwl_fwcmd_set_new_stn_del(struct ieee80211_hw *hw,
 
 		if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "failed execution\n");
 			return -EIO;
 		}
 	}
@@ -2653,7 +2601,6 @@ int mwl_fwcmd_set_apmode(struct ieee80211_hw *hw, u8 apmode)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_APMODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2731,7 +2678,6 @@ int mwl_fwcmd_set_switch_channel(struct mwl_priv *priv,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_SWITCH_CHANNEL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2768,7 +2714,6 @@ int mwl_fwcmd_update_encryption_enable(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2781,7 +2726,6 @@ int mwl_fwcmd_update_encryption_enable(struct ieee80211_hw *hw,
 
 		if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "failed execution\n");
 			return -EIO;
 		}
 	}
@@ -2874,7 +2818,6 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2889,7 +2832,6 @@ int mwl_fwcmd_encryption_set_key(struct ieee80211_hw *hw,
 
 		if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "failed execution\n");
 			return -EIO;
 		}
 	}
@@ -2936,7 +2878,6 @@ int mwl_fwcmd_encryption_remove_key(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -2980,7 +2921,6 @@ int mwl_fwcmd_check_ba(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BASTREAM)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "check ba failed execution\n");
 		return -EIO;
 	}
 
@@ -3041,7 +2981,6 @@ int mwl_fwcmd_create_ba(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BASTREAM)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "create ba failed execution\n");
 		return -EIO;
 	}
 
@@ -3083,7 +3022,6 @@ int mwl_fwcmd_destroy_ba(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BASTREAM)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "destroy ba failed execution\n");
 		return -EIO;
 	}
 
@@ -3210,7 +3148,6 @@ int mwl_fwcmd_set_optimization_level(struct ieee80211_hw *hw, u8 opt_level)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_OPTIMIZATION_LEVEL)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3239,7 +3176,6 @@ int mwl_fwcmd_set_mimops_ht(struct ieee80211_hw *hw, u8 *addr, u8 smps_ctrl)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_MIMOPSHT)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3265,7 +3201,6 @@ int mwl_fwcmd_set_wfd_ie(struct ieee80211_hw *hw, u8 len, u8 *data)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WFD_IE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3273,7 +3208,6 @@ int mwl_fwcmd_set_wfd_ie(struct ieee80211_hw *hw, u8 len, u8 *data)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WFD_IE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3300,7 +3234,6 @@ int mwl_fwcmd_set_wsc_ie(struct ieee80211_hw *hw, u8 len, u8 *data)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WSC_IE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3308,7 +3241,6 @@ int mwl_fwcmd_set_wsc_ie(struct ieee80211_hw *hw, u8 len, u8 *data)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WSC_IE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3334,7 +3266,6 @@ int mwl_fwcmd_set_dwds_stamode(struct ieee80211_hw *hw, bool enable)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_DWDS_ENABLE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3360,7 +3291,6 @@ int mwl_fwcmd_set_fw_flush_timer(struct ieee80211_hw *hw, u32 value)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_FW_FLUSH_TIMER)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3386,7 +3316,6 @@ int mwl_fwcmd_set_cdd(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_CDD)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3414,7 +3343,6 @@ int mwl_fwcmd_reg_cau(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_CAU_REG_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3442,7 +3370,6 @@ int mwl_fwcmd_get_temp(struct ieee80211_hw *hw, s32 *temp)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_GET_TEMP)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3473,7 +3400,6 @@ int mwl_fwcmd_get_fw_region_code(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, cmd)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3517,7 +3443,6 @@ int mwl_fwcmd_get_device_pwr_tbl(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, cmd)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3555,7 +3480,6 @@ int mwl_fwcmd_get_fw_region_code_sc4(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, cmd)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3596,7 +3520,6 @@ int mwl_fwcmd_get_pwr_tbl_sc4(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, cmd)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3639,7 +3562,6 @@ int mwl_fwcmd_quiet_mode(struct ieee80211_hw *hw, bool enable, u32 period,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_QUIET_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3697,7 +3619,6 @@ int mwl_fwcmd_dump_otp_data(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_DUMP_OTP_DATA)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3733,7 +3654,6 @@ int mwl_fwcmd_set_pre_scan(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_PRE_SCAN)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3757,7 +3677,6 @@ int mwl_fwcmd_set_post_scan(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_POST_SCAN)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3835,7 +3754,6 @@ int mwl_fwcmd_encryption_set_tx_key(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -3854,7 +3772,6 @@ int mwl_fwcmd_encryption_set_tx_key(struct ieee80211_hw *hw,
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_UPDATE_ENCRYPTION)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 
@@ -4061,7 +3978,6 @@ int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MONITOR_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "failed execution\n");
 		return -EIO;
 	}
 	mutex_unlock(&priv->fwcmd_mutex);
