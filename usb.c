@@ -494,37 +494,40 @@ static void mwl_usb_rx_recv(unsigned long data)
 
 static int mwl_usb_init(struct mwl_priv *priv)
 {
-        struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
-        int num;
+	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
+	int num;
+
 	card->priv = priv;
+	priv->host_if = MWL_IF_USB;
+
 	priv->dev = &card->udev->dev;
 	priv->chip_type = card->chip_type;                            
-        priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);           
-        if (!priv->pcmd_buf) {
-                wiphy_err(priv->hw->wiphy,                            
-                          "%s: cannot alloc memory for command buffer\n",              
-                          MWL_DRV_NAME);                              
-                return -ENOMEM;                                       
-        }                                                             
-        wiphy_debug(priv->hw->wiphy,
-                    "priv->pcmd_buf = %p\n",
-                    priv->pcmd_buf);
-        memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
+	priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);           
+
+	if (!priv->pcmd_buf) {
+		wiphy_err(priv->hw->wiphy,                            
+				  "%s: cannot alloc memory for command buffer\n",              
+				  MWL_DRV_NAME);                              
+		return -ENOMEM;                                       
+	}
+
+	wiphy_debug(priv->hw->wiphy,
+			"priv->pcmd_buf = %p\n",
+			priv->pcmd_buf);
+	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 	init_waitqueue_head(&card->cmd_wait_q.wait);
         card->cmd_wait_q.status = 0;
 	skb_queue_head_init(&card->rx_data_q);
 
 	/* Init the tasklet first in case there are tx/rx interrupts */
-        tasklet_init(&priv->rx_task, (void *)mwl_usb_rx_recv,
-                (unsigned long)priv->hw);
-        tasklet_disable(&priv->rx_task);
+	tasklet_init(&priv->rx_task, (void *)mwl_usb_rx_recv,
+		(unsigned long)priv->hw);
+	tasklet_disable(&priv->rx_task);
 
-        for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++)
-                skb_queue_head_init(&priv->txq[num]);
-
+	for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++)
+		skb_queue_head_init(&priv->txq[num]);
 
 	return 0;
-
 }
 
 static int mwl_register_dev(struct mwl_priv *priv)
