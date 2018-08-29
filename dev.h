@@ -164,6 +164,7 @@ enum {
 };
 
 enum {
+	MWL_IF_USB  = 0x04,
 	MWL_IF_PCIE = 0x03,
 	MWL_IF_SDIO = 0x02,
 };
