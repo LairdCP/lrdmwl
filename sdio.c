@@ -2715,13 +2715,16 @@ static int __init mwl_sdio_driver_init(void)
 {
 	int ret;
 
-	ret = sdio_register_driver(&mwl_sdio_driver);
-	if (ret)
-		return ret;
-
 	ret = mwl_sdio_init_gpio();
 	if (!ret)
-		sdio_ops.hardware_reset = mwl_sdio_reset_gpio;
+	{
+		if (reset_pwd_gpio != ARCH_NR_GPIOS)
+			sdio_ops.hardware_reset = mwl_sdio_reset_gpio;
+
+		ret = sdio_register_driver(&mwl_sdio_driver);
+		if (ret)
+			mwl_sdio_release_gpio();
+	}
 
 	return ret;
 }
