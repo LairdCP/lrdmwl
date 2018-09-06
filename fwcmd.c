@@ -366,7 +366,7 @@ int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
-	wiphy_info(priv->hw->wiphy, "Entered deepsleep\n");
+	wiphy_dbg(priv->hw->wiphy, "Entered deepsleep\n");
 	return 0;
 }
 

@@ -1031,7 +1031,7 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
 		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
 
-	wiphy_info(priv->hw->wiphy,"Initiate Card wakeup\n");
+	wiphy_dbg(priv->hw->wiphy,"Initiate Card wakeup\n");
 
 	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x2))) {
 		mutex_unlock(&priv->ps_mutex);
@@ -1054,7 +1054,7 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 
 	mwl_restart_ds_timer(priv, false);
 
-	wiphy_err(priv->hw->wiphy, "info: Card Wakeup complete\n");
+	wiphy_dbg(priv->hw->wiphy, "info: Card Wakeup complete\n");
 	mutex_unlock(&priv->ps_mutex);
 	return 0;
 }
@@ -1082,17 +1082,18 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 
 	if(!mutex_trylock(&priv->fwcmd_mutex))
 	{
-		printk("returning not able to acquire lock\n");
 		return;
 	}
-	printk("In ps sleep enter:\n");
+
+	wiphy_dbg(priv->hw->wiphy,"In ps sleep enter:\n");
 
 	mutex_lock(&priv->ps_mutex);
 
 	//check if tx empty,if not do not enter PS
 	for (num = SYSADPT_TX_WMM_QUEUES - 1; num >= 0; num--) {
 		if (skb_queue_len(&priv->txq[num]) > 0)
-		{	wiphy_err(priv->hw->wiphy, "Sleep fail due to tx not empty %d\n",skb_queue_len(&priv->txq[num]));
+		{
+			wiphy_err(priv->hw->wiphy, "Sleep fail due to tx not empty %d\n",skb_queue_len(&priv->txq[num]));
 			mutex_unlock(&priv->ps_mutex);
 			mutex_unlock(&priv->fwcmd_mutex);
 			return;
@@ -1110,7 +1111,8 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 
 	//check if cmd is sent
 	if (priv->in_send_cmd == true)
-	{	wiphy_err(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
+	{
+		wiphy_err(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
 		mutex_unlock(&priv->ps_mutex);
 		mutex_unlock(&priv->fwcmd_mutex);
 		return;
@@ -1139,8 +1141,7 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	// Remove SDIO Header
 	host_event->length -= INTF_HEADER_LEN;
 
-	wiphy_info(hw->wiphy,
-		"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
+	wiphy_dbg(hw->wiphy,"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
 
 	switch (event_id) {
 	case SDEVENT_RADAR_DETECT:
