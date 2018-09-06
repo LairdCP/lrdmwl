@@ -152,7 +152,7 @@ int EDMAC_Ctrl = 0x0;
 /* Tx AMSDU control*/
 int tx_amsdu_enable = 0;
 
-int ds_enable = DS_ENABLE_OFF;
+int ds_enable = DS_ENABLE_ON;
 
 /*Laird additions */
 int SISO_mode = 0;
