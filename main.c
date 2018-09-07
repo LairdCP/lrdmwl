@@ -519,6 +519,13 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	ieee80211_hw_set(hw, MFP_CAPABLE);
 	ieee80211_hw_set(hw, SPECTRUM_MGMT);
 
+	/* Ask mac80211 to use standard NULL data packets
+	 * instead of QOS NULL data packets.
+	 * This works around issues in both mac80211 and the driver
+	 * that prevent QOS NULL data packets from being transmitted correctly
+	 */
+	ieee80211_hw_set(hw, DOESNT_SUPPORT_QOS_NDP);
+
 	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
 	hw->wiphy->flags |= WIPHY_FLAG_HAS_CHANNEL_SWITCH;
 
