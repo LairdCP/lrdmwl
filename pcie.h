@@ -34,6 +34,10 @@ struct mwl_pcie_card {
 	int fw_desc_cnt[SYSADPT_NUM_OF_DESC_DATA];
 	int intr_mode;
 	spinlock_t intr_status_lock;
+
+	struct tasklet_struct tx_task;
+	struct tasklet_struct tx_done_task;
+	struct tasklet_struct qe_task;
 };
 
 void mwl_pcie_tx_done(unsigned long data);

@@ -304,9 +304,6 @@ static struct usb_driver mwl_usb_driver = {
 
 
 
-static struct tasklet_struct tx_task;
-
-
 static bool mwl_usb_check_card_status(struct mwl_priv *priv)
 {
         return true;
@@ -570,6 +567,7 @@ static int mwl_register_dev(struct mwl_priv *priv)
         adapter->usb_mc_status = false;
         adapter->usb_mc_setup = false;
 #endif
+	priv->if_ops.ptx_task = &card->tx_task;
 	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs,
                 (unsigned long)priv->hw);
         tasklet_disable(priv->if_ops.ptx_task);
@@ -1467,7 +1465,6 @@ static struct mwl_if_ops usb_ops1 = {
 	.cmd_resp_wait_completed=	mwl_usb_cmd_resp_wait_completed,
 	.host_to_card=		mwl_usb_host_to_card,
 	.is_tx_available=	mwl_usb_is_tx_available,
-	.ptx_task=		&tx_task,
 };
 
 module_usb_driver(mwl_usb_driver);

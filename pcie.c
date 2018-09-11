@@ -1728,14 +1728,17 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 	}
 
 #ifndef NEW_DP
+	priv->if_ops.ptx_task = &card->tx_task;
 	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs,
 		(unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.ptx_task);
 
+	priv->if_ops.ptx_done_task = &card->tx_done_task;
 	tasklet_init(priv->if_ops.ptx_done_task,
 		(void *)mwl_pcie_tx_done, (unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.ptx_done_task);
 
+	priv->if_ops.pqe_task = &card->qe_task;
 	tasklet_init(priv->if_ops.pqe_task, (void *)mwl_pcie_tx_flush_amsdu,
 		(unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.pqe_task);
@@ -1883,15 +1886,8 @@ static int mwl_pcie_debugfs_reg_access(struct mwl_priv *priv, bool write)
 	return ret;
 }
 
-static struct tasklet_struct tx_task;
-static struct tasklet_struct tx_done_task;
-static struct tasklet_struct qe_task;
-
 static struct mwl_if_ops pcie_ops = {
 	.inttf_head_len = INTF_HEADER_LEN,
-	.ptx_task = &tx_task,
-	.ptx_done_task = &tx_done_task,
-	.pqe_task = &qe_task,
 	.init_if =			mwl_pcie_init,
 	.cleanup_if =		mwl_pcie_cleanup,
 	.check_card_status =		mwl_pcie_check_card_status,
