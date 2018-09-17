@@ -481,6 +481,9 @@ struct otp_data {
 	u32 len;	// Actual size of data in buf[]
 };
 
+//Laird radio capability bits
+#define LRD_CAP_SU60 BIT(0)
+
 struct mwl_priv {
 	struct ieee80211_hw *hw;
 	struct firmware *fw_ucode;
@@ -659,6 +662,11 @@ struct mwl_priv {
 
 	struct otp_data otp_data;
 	bool recovery_in_progress;
+	u32 radio_caps;
+
+#ifdef CONFIG_SYSFS
+	const struct attribute_group **groups;
+#endif
 };
 
 struct beacon_info {
