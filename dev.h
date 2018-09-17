@@ -494,6 +494,9 @@ struct otp_data {
 #define DS_ENABLE_ON       1
 #define DS_ENABLE_PAUSE    2
 
+//Laird radio capability bits
+#define LRD_CAP_SU60 BIT(0)
+
 struct mwl_priv {
 	struct ieee80211_hw *hw;
 	struct firmware *fw_ucode;
@@ -686,6 +689,11 @@ struct mwl_priv {
 	bool mfg_mode;
 
 	bool recovery_in_progress;
+	u32 radio_caps;
+
+#ifdef CONFIG_SYSFS
+	const struct attribute_group **groups;
+#endif
 };
 
 struct beacon_info {

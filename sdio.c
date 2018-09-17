@@ -400,7 +400,7 @@ out:
 static int mwl_sdio_init(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
-	struct sdio_func *func = card->func;
+	struct sdio_func     *func = card->func;
 	const struct mwl_sdio_card_reg *reg = card->reg;
 	int rc;
 	u8 sdio_ireg;
@@ -423,8 +423,8 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 
 	priv->host_if = MWL_IF_SDIO;
 	card->priv = priv;
-	sdio_set_drvdata(card->func, card);
 	priv->dev = &func->dev;
+	sdio_set_drvdata(card->func,priv->hw);
 
 	/*
 	 * Read the host_int_status_reg for ACK the first interrupt got
@@ -2439,16 +2439,15 @@ static int mwl_sdio_host_to_card(struct mwl_priv *priv,
 static void
 mwl_sdio_interrupt(struct sdio_func *func)
 {
-	struct mwl_priv *priv;
-	struct mwl_sdio_card *card;
+	struct mwl_priv      *priv;
+	struct ieee80211_hw  *hw;
 
-	card = sdio_get_drvdata(func);
-	priv = card->priv;
-	if (!card || !card->priv) {
-		pr_err("int: func=%p card=%p priv=%p\n",
-			 func, card, card ? card->priv : NULL);
+	hw = sdio_get_drvdata(func);
+
+	if (!hw || !hw->priv)
 		return;
-	}
+
+	priv = hw->priv;
 
 	mwl_sdio_interrupt_status(priv);
 	mwl_sdio_process_int_status(priv);
@@ -2616,18 +2615,17 @@ static int mwl_sdio_probe(struct sdio_func *func,
 
 static void mwl_sdio_remove(struct sdio_func *func)
 {
-	struct mwl_priv *priv;
-	struct mwl_sdio_card *card;
+	struct mwl_priv     *priv;
 	struct ieee80211_hw *hw;
 
 	pr_info("lrdmwl: Card removal initiated!\n");
-	card = sdio_get_drvdata(func);
-	if (!card || !card->priv) {
+	hw = sdio_get_drvdata(func);
+	if (!hw || !hw->priv) {
 		pr_err("Data structures invalid, exiting...");
 		return;
 	}
-	priv = card->priv;
-	hw = priv->hw;
+
+	priv = hw->priv;
 
 	mwl_wl_deinit(priv);
 
@@ -2645,28 +2643,38 @@ static void mwl_sdio_remove(struct sdio_func *func)
 
 static void lrd_sdio_host_fixups(struct sdio_func *func)
 {
-	struct mwl_sdio_card *card;
+	struct ieee80211_hw *hw;
 
 	if (func) {
-		card = sdio_get_drvdata(func);
+		hw = sdio_get_drvdata(func);
 
-		if (card && mmc_card_is_removable(func->card->host)) {
-			card->caps_fixups |= MMC_CAP_NONREMOVABLE;
+		if (hw && hw->priv) {
+			struct mwl_priv      *priv = (struct mwl_priv*)hw->priv;
+			struct mwl_sdio_card *card = (struct mwl_sdio_card *)priv->intf;
 
-			func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+			if (card && mmc_card_is_removable(func->card->host)) {
+				card->caps_fixups      |= MMC_CAP_NONREMOVABLE;
+
+				func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+			}
 		}
 	}
-
 }
+
 static void lrd_sdio_remove_host_fixups(struct sdio_func *func)
 {
-	struct mwl_sdio_card *card;
+	struct ieee80211_hw *hw;
 
 	if (func) {
-		card = sdio_get_drvdata(func);
+		hw = sdio_get_drvdata(func);
 
-		if (card && card->caps_fixups) {
-			func->card->host->caps &= ~(card->caps_fixups);
+		if (hw && hw->priv) {
+			struct mwl_priv      *priv = (struct mwl_priv*)hw->priv;
+			struct mwl_sdio_card *card = (struct mwl_sdio_card *)priv->intf;
+
+			if (card && card->caps_fixups) {
+				func->card->host->caps &= ~(card->caps_fixups);
+			}
 		}
 	}
 }
@@ -2674,20 +2682,19 @@ static void lrd_sdio_remove_host_fixups(struct sdio_func *func)
 /*
 static int mwl_sdio_prepare(struct device *dev)
 {
-	struct sdio_func     *func = dev_to_sdio_func(dev);
-	struct mwl_priv      *priv;
-	struct mwl_sdio_card *card;
+	struct sdio_func    *func = dev_to_sdio_func(dev);
+	struct ieee80211_hw *hw;
 	int rc = 0;
 
-	if (func) {
-		card = sdio_get_drvdata(func);
-		if (card && card->priv) {
-			priv = card->priv;
+	if (dev) {
+		hw = sdio_get_drvdata(func);
 
-			if ((priv->wow.state & WOWLAN_STATE_ENABLED) &&
-			     priv->sw_scanning) {
-			wiphy_err(priv->hw->wiphy, "Scanning, suspend request denied\n");
-			rc = -EPERM;
+		if (hw && hw->priv) {
+			struct mwl_priv *priv = (struct mwl_priv*)hw->priv;
+
+			if ((priv->wow.state & WOWLAN_STATE_ENABLED) && priv->sw_scanning) {
+				wiphy_err(priv->hw->wiphy, "Scanning, suspend request denied\n");
+				rc = -EPERM;
 			}
 		}
 	}
@@ -2698,8 +2705,9 @@ static int mwl_sdio_prepare(struct device *dev)
 
 static int mwl_sdio_suspend(struct device *dev)
 {
-	struct sdio_func *func = dev_to_sdio_func(dev);
-	struct mwl_priv *priv;
+	struct sdio_func     *func = dev_to_sdio_func(dev);
+	struct ieee80211_hw  *hw;
+	struct mwl_priv      *priv;
 	struct mwl_sdio_card *card;
 	mmc_pm_flag_t pm_flag = 0;
 	int ret = 0;
@@ -2714,8 +2722,8 @@ static int mwl_sdio_suspend(struct device *dev)
 			return -ENOSYS;
 		}
 
-		card = sdio_get_drvdata(func);
-		if (!card || !card->priv) {
+		hw = sdio_get_drvdata(func);
+		if (!hw || !hw->priv || !((struct mwl_priv*)hw->priv)->intf) {
 			pr_err("suspend: invalid card or priv\n");
 			return 0;
 		}
@@ -2724,9 +2732,10 @@ static int mwl_sdio_suspend(struct device *dev)
 		return 0;
 	}
 
-	priv = card->priv;
+	priv = (struct mwl_priv*)hw->priv;
+	card = (struct mwl_sdio_card *)priv->intf;
 
-	wiphy_debug(priv->hw->wiphy, "cmd: suspend with MMC_PM_KEEP_POWER\n");
+	wiphy_debug(hw->wiphy, "cmd: suspend with MMC_PM_KEEP_POWER\n");
 	ret = sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
 
 	lrd_sdio_host_fixups(func);
@@ -2739,16 +2748,17 @@ static int mwl_sdio_suspend(struct device *dev)
 
 static int mwl_sdio_resume(struct device *dev)
 {
-
-	struct sdio_func *func = dev_to_sdio_func(dev);
-	struct mwl_priv *priv;
+	struct sdio_func     *func = dev_to_sdio_func(dev);
+	struct ieee80211_hw  *hw;
+	struct mwl_priv      *priv;
 	struct mwl_sdio_card *card;
 	mmc_pm_flag_t pm_flag = 0;
 
 	if (func) {
 		pm_flag = sdio_get_host_pm_caps(func);
-		card = sdio_get_drvdata(func);
-		if (!card || !card->priv) {
+
+		hw = sdio_get_drvdata(func);
+		if (!hw || !hw->priv || !((struct mwl_priv*)hw->priv)->intf) {
 			pr_err("resume: invalid card or priv\n");
 			return 0;
 		}
@@ -2757,11 +2767,11 @@ static int mwl_sdio_resume(struct device *dev)
 		return 0;
 	}
 
-	priv = card->priv;
+	priv = (struct mwl_priv*)hw->priv;
+	card = (struct mwl_sdio_card *)priv->intf;
 
 	if (!card->is_suspended) {
-		wiphy_debug(priv->hw->wiphy,
-			    "device already resumed\n");
+		wiphy_debug(hw->wiphy,"device already resumed\n");
 		return 0;
 	}
 

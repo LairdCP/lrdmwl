@@ -29,6 +29,10 @@
 #include "rx.h"
 #include "isr.h"
 #include "thermal.h"
+#ifdef CONFIG_SYSFS
+#include "sysfs.h"
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 #include "debugfs.h"
 #endif
@@ -648,6 +652,14 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		}
 	}
 
+	rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
+
+	if (rc) {
+		wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
+		priv->radio_caps = 0;
+	}
+
+	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
 	if (priv->if_ops.register_dev)
 		rc = priv->if_ops.register_dev(priv);
 	else
@@ -759,6 +771,10 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 
 	cancel_work_sync(&priv->ds_work);
 	destroy_workqueue(priv->ds_workq);
+
+#ifdef CONFIG_SYSFS
+	lrd_sysfs_remove(hw);
+#endif
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
 
@@ -999,6 +1015,10 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	 * and IEEE80211_CONF_IDLE flag is setup
 	 */
 	mwl_restart_ds_timer(priv, true);
+
+#ifdef CONFIG_SYSFS
+	lrd_sysfs_init(hw);
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 	mwl_debugfs_init(hw);
