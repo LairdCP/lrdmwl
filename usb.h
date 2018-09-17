@@ -68,7 +68,7 @@ struct urb_context {
 	struct sk_buff *skb;
 	struct urb *urb;
 	u8 ep;
-}; 
+};
 
 #define MWIFIEX_USB_TX_AGGR_TMO_MIN	1
 #define MWIFIEX_USB_TX_AGGR_TMO_MAX	4
@@ -163,8 +163,8 @@ enum mwifiex_usb_ep {
         MWIFIEX_USB_EP_DATA_CH2 = 3,
 };
 
-enum RESPONSES {  
-        OK = 0, 
+enum RESPONSES {
+        OK = 0,
         ERROR = 1
 };
 
@@ -200,6 +200,11 @@ static inline struct mwl_rxinfo *MWL_SKB_RXCB(struct sk_buff *skb)
 
         BUILD_BUG_ON(sizeof(struct mwl_cb) > sizeof(skb->cb));
         return &cb->rx_info;
+}
+
+static inline void usb_set_drvdata(struct device *dev, void *data)
+{
+	dev->driver_data = data;
 }
 
 

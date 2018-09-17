@@ -3963,6 +3963,39 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 	return 0;
 }
 
+int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability)
+{
+	struct hostcmd_header *pcmd;
+	struct lrdcmd_cmd_cap *caps;
+	struct mwl_priv       *priv = hw->priv;
+
+	pcmd = (struct hostcmd_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(*caps));
+
+	pcmd->cmd = cpu_to_le16(HOSTCMD_LRD_CMD);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + sizeof(*caps));
+
+	//Fill in capability struct
+	caps = (struct lrdcmd_cmd_cap*) (((u8*)pcmd) + sizeof(struct hostcmd_header));
+	caps->hdr.lrd_cmd = cpu_to_le16(LRD_CMD_CAPS);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD) ||
+		pcmd->result != HOSTCMD_RESULT_OK) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_get_caps failed execution %x\n", pcmd->result);
+		return -EIO;
+	}
+
+	*capability = le16_to_cpu(caps->capability);
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
+
 int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
 {
     struct hostcmd_cmd_monitor_mode *pcmd;
