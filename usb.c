@@ -400,7 +400,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 			}
 
 			if (!ieee80211_is_auth(wh->frame_control))
-#if 0			
+#if 0
 				status.flag |= RX_FLAG_IV_STRIPPED |
 					       RX_FLAG_DECRYPTED |
 					       RX_FLAG_MMIC_STRIPPED;
@@ -502,19 +502,20 @@ static int mwl_usb_init(struct mwl_priv *priv)
 	priv->host_if = MWL_IF_USB;
 
 	priv->dev = &card->udev->dev;
-	priv->chip_type = card->chip_type;                            
-	priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);           
+	priv->chip_type = card->chip_type;
+	priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
 
 	if (!priv->pcmd_buf) {
-		wiphy_err(priv->hw->wiphy,                            
-				  "%s: cannot alloc memory for command buffer\n",              
-				  MWL_DRV_NAME);                              
-		return -ENOMEM;                                       
+		wiphy_err(priv->hw->wiphy,
+				  "%s: cannot alloc memory for command buffer\n",
+				  MWL_DRV_NAME);
+		return -ENOMEM;
 	}
 
-	wiphy_debug(priv->hw->wiphy,
-			"priv->pcmd_buf = %p\n",
-			priv->pcmd_buf);
+	usb_set_drvdata(&card->udev->dev, priv->hw);
+
+	wiphy_debug(priv->hw->wiphy, "priv->pcmd_buf = %p\n", priv->pcmd_buf);
+
 	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 	init_waitqueue_head(&card->cmd_wait_q.wait);
         card->cmd_wait_q.status = 0;

@@ -9,6 +9,7 @@ lrdmwl-y			+= isr.o
 lrdmwl-y			+= vendor_cmd.o
 lrdmwl-$(CONFIG_THERMAL)	+= thermal.o
 lrdmwl-$(CONFIG_DEBUG_FS)	+= debugfs.o
+lrdmwl-$(CONFIG_SYSFS)		+= sysfs.o
 
 obj-$(CONFIG_LRDMWL_PCIE) += lrdmwl_pcie.o
 lrdmwl_pcie-y += pcie.o

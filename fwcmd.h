@@ -66,6 +66,10 @@ struct cmd_header {
 	__le16 len;
 } __packed;
 
+enum lrd_fw_commands{
+	LRD_CMD_CAPS = 1
+};
+
 struct lrd_vndr_header
 {
 	__le16 command;
@@ -285,6 +289,8 @@ int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw);
 
 int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
 int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
+
+int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability);
 
 #ifdef CONFIG_PM
 int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, int enbl, int wakeupCond);

@@ -29,6 +29,10 @@
 #include "rx.h"
 #include "isr.h"
 #include "thermal.h"
+#ifdef CONFIG_SYSFS
+#include "sysfs.h"
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 #include "debugfs.h"
 #endif
@@ -620,6 +624,14 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		}
 	}
 
+	rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
+
+	if (rc) {
+		wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
+		priv->radio_caps = 0;
+	}
+
+	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
 	if (priv->if_ops.register_dev)
 		rc = priv->if_ops.register_dev(priv);
 	else
@@ -727,6 +739,9 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	skb_queue_purge(&priv->rx_defer_skb_q);
 
 	mwl_fwcmd_reset(hw);
+#ifdef CONFIG_SYSFS
+	lrd_sysfs_remove(hw);
+#endif
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
 
@@ -852,6 +867,10 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas\n",
 		   priv->ant_tx_num, priv->ant_rx_num);
+
+#ifdef CONFIG_SYSFS
+	lrd_sysfs_init(hw);
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 	mwl_debugfs_init(hw);
