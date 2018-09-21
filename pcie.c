@@ -24,6 +24,7 @@
 #define LRD_PCIE_DESC        "Laird 60 Series Wireless PCIE Network Driver"
 
 #define INTF_HEADER_LEN      0
+#define INTF_HEADER_LEN_MFG  4
 
 #ifdef CONFIG_ARCH_BERLIN
 #define MWL_FW_ROOT     "mrvl"
@@ -830,6 +831,12 @@ static bool mwl_pcie_is_tx_available(struct mwl_priv *priv, int desc_num)
 
 	return true;
 }
+static int mwl_pcie_init_post(struct mwl_priv *priv)
+{
+	priv->ds_enable = DS_ENABLE_OFF;
+
+	return 0;
+}
 
 /*
  * This function initializes the PCI-E host memory space, WCB rings, etc.
@@ -852,6 +859,7 @@ static int mwl_pcie_init(struct mwl_priv *priv)
 	priv->host_if = MWL_IF_PCIE;
 
 	hw = priv->hw;
+	priv->irq=-1;
 	rc = pci_enable_device(pdev);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: cannot enable new PCI device.\n",
@@ -1002,7 +1010,7 @@ static void mwl_fwdl_trig_pcicmd(struct mwl_priv *priv)
 
 	writel(priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_GEN_PTR);
 
-	writel(0x00, card->iobase1 + MACREG_REG_INT_CODE);
+	writel((u32)((u64)priv->pphys_cmd_buf >> 32), card->iobase1 + MACREG_REG_INT_CODE);
 
 	writel(MACREG_H2ARIC_BIT_DOOR_BELL,
 	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
@@ -1012,10 +1020,17 @@ static void mwl_fwdl_trig_pcicmd_bootcode(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *) priv->intf;
 
-	writel(priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_GEN_PTR);
+	/* Write the lower 32bits of the physical address to low command
+	 * address scratch register
+	 */
+	writel((u32)priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_GEN_PTR);
 
-	writel(0x00, card->iobase1 + MACREG_REG_INT_CODE);
+	/* Write the upper 32bits of the physical address to high command
+	 * address scratch register
+	 */
+	writel((u32)((u64)priv->pphys_cmd_buf >> 32), card->iobase1 + MACREG_REG_INT_CODE);
 
+	/* Ring the door bell */
 	writel(MACREG_H2ARIC_BIT_DOOR_BELL,
 	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
 }
@@ -1028,28 +1043,30 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	u32 size_fw_downloaded = 0;
 	u32 int_code = 0;
 	u32 len = 0;
-#ifdef SUPPORT_MFG
+
 	u32 fwreadysignature = priv->mfg_mode ?
 		MFG_FW_READY_SIGNATURE : HOSTCMD_SOFTAP_FWRDY_SIGNATURE;
-#else
-	u32 fwreadysignature = HOSTCMD_SOFTAP_FWRDY_SIGNATURE;
-#endif
+	u32 fwreadyReg = priv->mfg_mode ?
+		MACREG_REG_FW_STATUS : MACREG_REG_INT_CODE;
 
 	fw = priv->fw_ucode;
 	card = (struct mwl_pcie_card *)priv->intf;
 	hw = priv->hw;
+
+	if (priv->mfg_mode) {
+		wiphy_err(hw->wiphy, "mfg_mode: overriding I/F header len to %d\n",INTF_HEADER_LEN_MFG);
+		priv->if_ops.inttf_head_len = INTF_HEADER_LEN_MFG;
+	}
 
 	/* FW before jumping to boot rom, it will enable PCIe transaction retry,
 	 * wait for boot code to stop it.
 	 */
 	usleep_range(FW_CHECK_MSECS * 1000, FW_CHECK_MSECS * 2000);
 
-	writel(MACREG_A2HRIC_BIT_MASK,
-	       card->iobase1 + MACREG_REG_A2H_INTERRUPT_CLEAR_SEL);
+	writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CLEAR_SEL);
 	writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CAUSE);
 	writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
-	writel(MACREG_A2HRIC_BIT_MASK,
-	       card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
+	writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 	/* this routine interacts with SC2 bootrom to download firmware binary
 	 * to the device. After DMA'd to SC2, the firmware could be deflated to
@@ -1058,17 +1075,12 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	 */
 	wiphy_debug(hw->wiphy, "fw download start\n");
 
-	if (priv->chip_type != MWL8997) {
-		/* Disable PFU before FWDL */
-		writel(0x100, card->iobase1 + 0xE0E4);
-	}
-
 	/* make sure SCRATCH2 C40 is clear, in case we are too quick */
-	while (readl(card->iobase1 + 0xc40) == 0)
+	while (readl(card->iobase1 + MACREG_REG_CMD_SIZE) == 0)
 		cond_resched();
 
 	while (size_fw_downloaded < fw->size) {
-		len = readl(card->iobase1 + 0xc40);
+		len = readl(card->iobase1 + MACREG_REG_CMD_SIZE);
 
 		if (!len)
 			break;
@@ -1078,35 +1090,22 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 			INTF_CMDHEADER_LEN(INTF_HEADER_LEN)],
 		       (fw->data + size_fw_downloaded), len);
 
+		/* Write the command length to cmd_size scratch register */
+		writel(len, card->iobase1 + MACREG_REG_CMD_SIZE);
+
 		/* this function writes pdata to c10, then write 2 to c18 */
 		mwl_fwdl_trig_pcicmd_bootcode(priv);
 
 		/* this is arbitrary per your platform; we use 0xffff */
 		curr_iteration = FW_MAX_NUM_CHECKS;
 
-		/* NOTE: the following back to back checks on C1C is time
-		 * sensitive, hence may need to be tweaked dependent on host
-		 * processor. Time for SC2 to go from the write of event 2 to
-		 * C1C == 2 is ~1300 nSec. Hence the checkings on host has to
-		 * consider how efficient your code can be to meet this timing,
-		 * or you can alternatively tweak this routines to fit your
-		 * platform
-		 */
-	if (priv->chip_type != MWL8997) {
+		/* Wait for cmd done */
 		do {
-			int_code = readl(card->iobase1 + 0xc1c);
-			if (int_code != 0)
-				break;
-			cond_resched();
-			curr_iteration--;
-		} while (curr_iteration);
-	}
-
-		do {
-			int_code = readl(card->iobase1 + 0xc1c);
+			int_code = readl(card->iobase1 + MACREG_REG_H2A_INTERRUPT_CAUSE);
 			if ((int_code & MACREG_H2ARIC_BIT_DOOR_BELL) !=
 			    MACREG_H2ARIC_BIT_DOOR_BELL)
 				break;
+
 			cond_resched();
 			curr_iteration--;
 		} while (curr_iteration);
@@ -1127,27 +1126,38 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	wiphy_debug(hw->wiphy,
 		    "FwSize = %d downloaded Size = %d curr_iteration %d\n",
 		    (int)fw->size, size_fw_downloaded, curr_iteration);
+
 	/* Now firware is downloaded successfully, so this part is to check
 	 * whether fw can properly execute to an extent that write back
 	 * signature to indicate its readiness to the host. NOTE: if your
 	 * downloaded fw crashes, this signature checking will fail. This
 	 * part is similar as SC1
-	 */
-	*((u32 *)&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)+1]) = 0;
-	mwl_fwdl_trig_pcicmd(priv);
+		 */
+
+	if (!priv->mfg_mode) {
+		*((u32 *)&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)+1]) = 0;
+		mwl_fwdl_trig_pcicmd(priv);
+	}
+	else {
+		writel(fwreadysignature, card->iobase1 + MACREG_REG_DRV_READY);
+	}
+
 	curr_iteration = FW_MAX_NUM_CHECKS;
 
 	do {
 		curr_iteration--;
-		writel(HOSTCMD_SOFTAP_MODE,
-			       card->iobase1 + MACREG_REG_GEN_PTR);
-			usleep_range(FW_CHECK_MSECS * 1000,
-				     FW_CHECK_MSECS * 2000);
-			int_code = readl(card->iobase1 + MACREG_REG_INT_CODE);
+		if (!priv->mfg_mode) {
+			writel(HOSTCMD_SOFTAP_MODE, card->iobase1 + MACREG_REG_GEN_PTR);
+		}
+
+		usleep_range(FW_CHECK_MSECS * 1000, FW_CHECK_MSECS * 2000);
+
+		int_code = readl(card->iobase1 + fwreadyReg);
+
 		if (!(curr_iteration % 0xff) && (int_code != 0))
 			wiphy_err(hw->wiphy, "%x;", int_code);
-	} while ((curr_iteration) &&
-		 (int_code != fwreadysignature));
+
+	} while ((curr_iteration) && (int_code != fwreadysignature));
 
 	if (curr_iteration == 0) {
 		wiphy_err(hw->wiphy,
@@ -1205,10 +1215,26 @@ static void mwl_pcie_disable_int(struct mwl_priv *priv)
 static int mwl_pcie_send_command(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
+	struct hostcmd_header *pcmd;
+
+	pcmd = (struct hostcmd_header *)&priv->pcmd_buf[INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+
+	if (priv->mfg_mode) {
+
+		if (pcmd->cmd != HOSTCMD_CMD_MFG) {
+			return 0;
+		}
+
+		// XXX: Keeping i/f hdr as 0s for now
+		writel(pcmd->len + priv->if_ops.inttf_head_len, card->iobase1 + MACREG_REG_CMD_SIZE);
+		writel(priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_CMDRSP_BUF_LO);
+		writel(0x0, card->iobase1 + MACREG_REG_CMDRSP_BUF_HI);
+	}
 
 	writel(priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_GEN_PTR);
-	writel(MACREG_H2ARIC_BIT_DOOR_BELL,
-	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
+
+	writel(MACREG_H2ARIC_BIT_DOOR_BELL, card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
 	return 0;
 }
 
@@ -1219,10 +1245,15 @@ static int mwl_pcie_cmd_resp_wait_completed(struct mwl_priv *priv,
 	unsigned int curr_iteration = MAX_WAIT_FW_COMPLETE_ITERATIONS;
 	unsigned short int_code = 0;
 
+	if (priv->mfg_mode && cmd != HOSTCMD_CMD_MFG) {
+		usleep_range(250, 500);
+		return 0;
+	}
+
 	do {
         usleep_range(250, 500);
 		int_code = le16_to_cpu(*((__le16 *)&priv->pcmd_buf[
-				INTF_CMDHEADER_LEN(INTF_HEADER_LEN)+0]));
+				INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)]));
 	} while ((int_code != cmd) && (--curr_iteration));
 
 	if (curr_iteration == 0) {
@@ -1908,6 +1939,7 @@ static struct mwl_if_ops pcie_ops = {
 	.ptx_done_task     = &tx_done_task,
 	.pqe_task          = &qe_task,
 	.init_if           = mwl_pcie_init,
+	.init_if_post      = mwl_pcie_init_post,
 	.cleanup_if        = mwl_pcie_cleanup,
 	.check_card_status = mwl_pcie_check_card_status,
 	.prog_fw           = mwl_pcie_program_firmware,

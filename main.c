@@ -986,10 +986,13 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
 
-	priv->ds_enable = DS_ENABLE_OFF;
+	priv->ds_enable = ds_enable;
 
-	if (priv->host_if == MWL_IF_SDIO && !priv->mfg_mode) {
-		priv->ds_enable =  ds_enable ? DS_ENABLE_ON : DS_ENABLE_OFF;
+	/* card specific initialization after fw is loaded .. */
+	if (priv->if_ops.init_if_post) {
+		if (priv->if_ops.init_if_post(priv)) {
+			goto err_init_if;
+		}
 	}
 
 	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",

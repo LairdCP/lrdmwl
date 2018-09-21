@@ -397,6 +397,15 @@ out:
 	return ret;
 }
 
+static int mwl_sdio_init_post(struct mwl_priv *priv)
+{
+	if (priv->mfg_mode) {
+		priv->ds_enable = DS_ENABLE_OFF;
+	}
+
+	return 0;
+}
+
 static int mwl_sdio_init(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
@@ -2527,6 +2536,7 @@ static int mwl_sdio_is_deepsleep(struct mwl_priv * priv)
 static struct mwl_if_ops sdio_ops = {
 	.inttf_head_len          = INTF_HEADER_LEN,
 	.init_if                 = mwl_sdio_init,
+	.init_if_post            = mwl_sdio_init_post,
 	.cleanup_if              = mwl_sdio_cleanup,
 	.check_card_status       = mwl_sdio_check_card_status,
 	.prog_fw                 = mwl_sdio_program_firmware,
