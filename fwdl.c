@@ -24,11 +24,6 @@
 #include "fwcmd.h"
 #include "fwdl.h"
 
-#define FW_DOWNLOAD_BLOCK_SIZE          256
-#define FW_CHECK_MSECS                  3
-
-#define FW_MAX_NUM_CHECKS               0xffff
-
 int mwl_fwdl_download_firmware(struct ieee80211_hw *hw)
 {
 	struct mwl_priv *priv = hw->priv;
