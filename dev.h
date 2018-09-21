@@ -49,12 +49,16 @@
 #define MACREG_REG_A2H_INTERRUPT_MASK        0x00000C34 /* (From ARM to host) */
 #define MACREG_REG_A2H_INTERRUPT_CLEAR_SEL   0x00000C38 /* (From ARM to host) */
 #define MACREG_REG_A2H_INTERRUPT_STATUS_MASK 0x00000C3C /* (From ARM to host) */
-#define MACREG_REG_SCRATCH2 0x00000C40
-#define MACREG_REG_SCRATCH3 0x00000C44
 
 /* Map to 0x80000000 on BAR1 */
-#define MACREG_REG_GEN_PTR                  0x00000C10
-#define MACREG_REG_INT_CODE                 0x00000C14
+#define MACREG_REG_GEN_PTR                  0x00000C10  /* cmd addr lo */
+#define MACREG_REG_INT_CODE                 0x00000C14  /* cmd addr hi */
+
+#define MACREG_REG_CMD_SIZE                 0x00000C40
+#define MACREG_REG_FW_STATUS                0x00000C44
+#define MACREG_REG_CMDRSP_BUF_LO            0x00000CD0
+#define MACREG_REG_CMDRSP_BUF_HI            0x00000CD4
+#define MACREG_REG_DRV_READY                0x00000CF0
 
 /* Bit definition for MACREG_REG_A2H_INTERRUPT_CAUSE (A2HRIC) */
 #define MACREG_A2HRIC_BIT_NUM_TX_DONE           (0)
@@ -440,6 +444,7 @@ struct mwl_if_ops {
 	struct mwl_chip_info	mwl_chip_tbl;
 
 	int (*init_if) (struct mwl_priv *);
+	int (*init_if_post) (struct mwl_priv *);
 	void (*cleanup_if) (struct mwl_priv *);
 	bool (*check_card_status) (struct mwl_priv *);
 	int (*prog_fw) (struct mwl_priv *);

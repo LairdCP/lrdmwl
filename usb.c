@@ -492,6 +492,12 @@ static void mwl_usb_rx_recv(unsigned long data)
 	return;
 }
 
+static int mwl_usb_init_post(struct mwl_priv *priv)
+{
+	priv->ds_enable = DS_ENABLE_OFF;
+
+	return 0;
+}
 static int mwl_usb_init(struct mwl_priv *priv)
 {
 	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
@@ -1472,6 +1478,7 @@ static struct mwl_if_ops usb_ops1 = {
 	.cleanup_if        = mwl_usb_cleanup,
 	.prog_fw           = mwl_usb_dnld_fw,
 	.init_if           = mwl_usb_init,
+	.init_if_post      = mwl_usb_init_post,
 	.check_card_status = mwl_usb_check_card_status,
 	.send_cmd          = mwl_usb_send_cmd,
 	.cmd_resp_wait_completed = mwl_usb_cmd_resp_wait_completed,
