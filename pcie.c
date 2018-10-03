@@ -82,22 +82,23 @@ static struct pci_device_id mwl_pci_id_tbl[] = {
 
 static void mwl_free_pci_resource(struct mwl_priv *priv)
 {
+#if 0
 	struct mwl_pcie_card *card = priv->intf;
 	struct pci_dev *pdev = card->pdev;
 
 	/* priv->pcmd_buf will be automatically freed on driver unload */
-#if 0
 	if (priv->pcmd_buf)
 		dma_free_coherent(priv->dev,
 			CMD_BUF_SIZE,
 			priv->pcmd_buf,
 			priv->pphys_cmd_buf);
-#endif
 
 	if (pdev) {
 		iounmap((volatile void __iomem *)&pdev->resource[0]);
 		iounmap((volatile void __iomem *)&pdev->resource[card->next_bar_num]);
 	}
+
+#endif
 }
 
 static int mwl_alloc_pci_resource(struct mwl_priv *priv)
@@ -320,7 +321,7 @@ static void mwl_rx_ring_cleanup(struct mwl_priv *priv)
 					 desc->rx_buf_size,
 					 PCI_DMA_FROMDEVICE);
 
-			wiphy_info(priv->hw->wiphy,
+			wiphy_dbg(priv->hw->wiphy,
 				   "Rx: unmapped+free'd %i 0x%p 0x%x %i\n",
 				   i, rx_hndl->psk_buff->data,
 				   le32_to_cpu(rx_hndl->pdesc->pphys_buff_data),
@@ -744,7 +745,7 @@ static void mwl_tx_ring_cleanup(struct mwl_priv *priv)
 					if (!desc->tx_hndl[i].psk_buff)
 						continue;
 
-					wiphy_info(priv->hw->wiphy,
+					wiphy_dbg(priv->hw->wiphy,
 							"Tx: unmapped and free'd %i 0x%p 0x%x\n",
 							i,
 							desc->tx_hndl[i].psk_buff->data,
