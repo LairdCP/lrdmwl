@@ -493,6 +493,9 @@ struct otp_data {
 #define DS_SLEEP 1
 #define DS_AWAKE 0
 
+#define PS_SLEEP 1
+#define PS_AWAKE 0
+
 #define DS_ENABLE_OFF      0
 #define DS_ENABLE_ON       1
 #define DS_ENABLE_PAUSE    2
