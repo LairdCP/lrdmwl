@@ -1323,11 +1323,11 @@ mwl_process_txdesc(struct mwl_priv *priv,
 	tx_desc->pkt_len = cpu_to_le16(skb->len);
 
 	if (tx_info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT) {
-		tx_desc->flags |= MWL_TX_WCB_FLAGS_DONT_ENCRYPT;
+		tx_desc->flags |= cpu_to_le32(MWL_TX_WCB_FLAGS_DONT_ENCRYPT);
 	}
 
 	if (tx_info->flags & IEEE80211_TX_CTL_NO_CCK_RATE) {
-		tx_desc->flags |= MWL_TX_WCB_FLAGS_NO_CCK_RATE;
+		tx_desc->flags |= cpu_to_le32(MWL_TX_WCB_FLAGS_NO_CCK_RATE);
 	}
 
 	tx_desc->packet_info = 0;

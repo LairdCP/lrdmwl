@@ -1272,11 +1272,11 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 	}
 
 	if (tx_info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT) {
-		tx_desc->flags |= MWL_TX_WCB_FLAGS_DONT_ENCRYPT;
+		tx_desc->flags |= cpu_to_le32(MWL_TX_WCB_FLAGS_DONT_ENCRYPT);
 	}
 
 	if (tx_info->flags & IEEE80211_TX_CTL_NO_CCK_RATE) {
-		tx_desc->flags |= MWL_TX_WCB_FLAGS_NO_CCK_RATE;
+		tx_desc->flags |= cpu_to_le32(MWL_TX_WCB_FLAGS_NO_CCK_RATE);
 	}
 
 	tx_desc->tx_priority = tx_ctrl->tx_priority;
@@ -1287,44 +1287,51 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 	tx_desc->type = tx_ctrl->type;
 	tx_desc->xmit_control = tx_ctrl->xmit_control;
 	tx_desc->sap_pkt_info = 0;
-	dma = pci_map_single(card->pdev, tx_skb->data,
-			     tx_skb->len, PCI_DMA_TODEVICE);
+
+	// Note - When PFU is enabled tx_skb contains the tx_desc 
+	// Therefore must not touch the descriptor after the call to pci_map_single()
+	//
+	// This limitation does not exist when PFU is not enabled since the 
+	// tx_desc is located in a separate coherent memory buffer
+	if (IS_PFU_ENABLED(priv->chip_type))
+		tx_desc->pkt_ptr = cpu_to_le32(sizeof(struct mwl_tx_desc));
+
+	tx_desc->status = cpu_to_le32(EAGLE_TXD_STATUS_FW_OWNED);
+
+	dma = pci_map_single(card->pdev, tx_skb->data, tx_skb->len, PCI_DMA_TODEVICE);
 	if (pci_dma_mapping_error(card->pdev, dma)) {
 		dev_kfree_skb_any(tx_skb);
 		wiphy_err(priv->hw->wiphy,
 			  "failed to map pci memory!\n");
 		return -ENOMEM;
 	}
-	
-	if (IS_PFU_ENABLED(priv->chip_type))
-		tx_desc->pkt_ptr = cpu_to_le32(sizeof(struct mwl_tx_desc));
-	else
-		tx_desc->pkt_ptr = cpu_to_le32(dma);
-	tx_desc->status = cpu_to_le32(EAGLE_TXD_STATUS_FW_OWNED);
 
-	/* make sure all the memory transactions done by cpu were completed */
-	wmb();	/*Data Memory Barrier*/
+	if (!IS_PFU_ENABLED(priv->chip_type))
+		tx_desc->pkt_ptr = cpu_to_le32(dma);
+
 	if (IS_PFU_ENABLED(priv->chip_type)) {
-		wrindx = (priv->txbd_wrptr & MLAN_TXBD_MASK) >>
-			PCIE_TX_START_PTR;
+		wrindx = (priv->txbd_wrptr & MLAN_TXBD_MASK) >> PCIE_TX_START_PTR;
 #if 0
-	wiphy_err(priv->hw->wiphy,
-	"SEND DATA: Attach pmbuf %p at txbd_wridx=%d\n", tx_skb, wrindx);
+		wiphy_err(priv->hw->wiphy,
+		"SEND DATA: Attach pmbuf %p at txbd_wridx=%d\n", tx_skb, wrindx);
 #endif
 		priv->tx_buf_list[wrindx] = tx_skb;
-		priv->txbd_ring[wrindx]->paddr = dma;
-	priv->txbd_ring[wrindx]->len = (unsigned short)tx_skb->len;
-		priv->txbd_ring[wrindx]->flags = MLAN_BD_FLAG_FIRST_DESC |
-			MLAN_BD_FLAG_LAST_DESC;
+		priv->txbd_ring[wrindx]->paddr = cpu_to_le64(dma);
+		priv->txbd_ring[wrindx]->len = cpu_to_le16((unsigned short)tx_skb->len);
+		priv->txbd_ring[wrindx]->flags = cpu_to_le16(MLAN_BD_FLAG_FIRST_DESC | MLAN_BD_FLAG_LAST_DESC);
 
-	priv->txbd_ring[wrindx]->frag_len = (unsigned short)tx_skb->len;
+		priv->txbd_ring[wrindx]->frag_len = cpu_to_le16((unsigned short)tx_skb->len);
 		priv->txbd_ring[wrindx]->offset = 0;
 		priv->txbd_wrptr += MLAN_BD_FLAG_TX_START_PTR;
 
 		if ((priv->txbd_wrptr & MLAN_TXBD_MASK) == num_tx_buffs)
-			priv->txbd_wrptr = ((priv->txbd_wrptr &
-						MLAN_BD_FLAG_TX_ROLLOVER_IND) ^
+			priv->txbd_wrptr = ((priv->txbd_wrptr & MLAN_BD_FLAG_TX_ROLLOVER_IND) ^
 					MLAN_BD_FLAG_TX_ROLLOVER_IND);
+
+		/* 
+		 * Memory barrier required to ensure write to PCI does not pass writes to memory
+		 */
+		wmb();
 
 		/* Write the TX ring write pointer in to REG_TXBD_WRPTR */
 		writel(priv->txbd_wrptr, card->iobase1 + REG_TXBD_WRPTR);
@@ -1335,26 +1342,13 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 				priv->txbd_rdptr, priv->txbd_wrptr);
 #endif
 
-#if 0
-		if (pcb->moal_read_reg(pmadapter->pmoal_handle,
-			REG_TXBD_WRPTR, &txbd_wrptr) != MLAN_STATUS_SUCCESS) {
-			wiphy_err(hw->wiphy,
-			"SEND DATA: failed to read back REG_TXBD_WRPTR\n");
-			ret = MLAN_STATUS_FAILURE;
-			goto done_unmap;
-		}
-		wiphy_err(hw->wiphy,
-			"SEND DATA: read back REG_TXBD_WRPTR (0x%x) = 0x%x\n",
-				REG_TXBD_WRPTR, txbd_wrptr);
-
-		if (PCIE_TXBD_NOT_FULL(pmadapter->txbd_wrptr,
-						pmadapter->txbd_rdptr))
-			pmadapter->data_sent = MFALSE;
-#endif
-
 	} else {
-		writel(MACREG_H2ARIC_BIT_PPA_READY,
-	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
+		/* 
+		 * Memory barrier required to ensure write to PCI does not pass writes to memory
+		 */
+		wmb();
+
+		writel(MACREG_H2ARIC_BIT_PPA_READY, card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
 		priv->desc_data[desc_num].pnext_tx_hndl = tx_hndl->pnext;
 		priv->fw_desc_cnt[desc_num]++;
 	}
@@ -1486,16 +1480,16 @@ static void mwl_tx_complete_skb(struct sk_buff *done_skb,
 	tx_desc = &tr->tx_desc;
 
 #if 0
-wiphy_err(priv->hw->wiphy, "unmap: skb=%p vdata=%p pdata=%p plen=%d!\n",
+wiphy_err(priv->hw->wiphy, "unmap: skb=%p vdata=%p pdata=%p len=%d!\n",
 			done_skb,
 			done_skb->data,
-			tx_ring_entry->paddr,
-			tx_ring_entry->len);
+			le64_to_cpu(tx_ring_entry->paddr),
+			le16_to_cpu(tx_ring_entry->len));
 #endif
 
 	pci_unmap_single(card->pdev,
-			tx_ring_entry->paddr,
-			tx_ring_entry->len,
+			le64_to_cpu(tx_ring_entry->paddr),
+			le16_to_cpu(tx_ring_entry->len),
 			PCI_DMA_TODEVICE);
 
 #if 0
