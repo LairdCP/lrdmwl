@@ -1047,8 +1047,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 
 	u32 fwreadysignature = priv->mfg_mode ?
 		MFG_FW_READY_SIGNATURE : HOSTCMD_SOFTAP_FWRDY_SIGNATURE;
-	u32 fwreadyReg = priv->mfg_mode ?
-		MACREG_REG_FW_STATUS : MACREG_REG_INT_CODE;
+	u32 fwreadyReg = MACREG_REG_FW_STATUS;
 
 	fw = priv->fw_ucode;
 	card = (struct mwl_pcie_card *)priv->intf;
