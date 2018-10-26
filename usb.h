@@ -17,8 +17,8 @@
  * this warranty disclaimer.
  */
 
-#ifndef _MWIFIEX_USB_H
-#define _MWIFIEX_USB_H
+#ifndef _LRDMWL_USB_H
+#define _LRDMWL_USB_H
 
 #include <linux/completion.h>
 #include <linux/skbuff.h>
@@ -202,10 +202,4 @@ static inline struct mwl_rxinfo *MWL_SKB_RXCB(struct sk_buff *skb)
         return &cb->rx_info;
 }
 
-static inline void usb_set_drvdata(struct device *dev, void *data)
-{
-	dev->driver_data = data;
-}
-
-
-#endif /*_MWIFIEX_USB_H */
+#endif /*_LRDMWL_USB_H */

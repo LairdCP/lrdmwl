@@ -696,10 +696,6 @@ struct mwl_priv {
 
 	bool recovery_in_progress;
 	u32 radio_caps;
-
-#ifdef CONFIG_SYSFS
-	const struct attribute_group **groups;
-#endif
 };
 
 struct beacon_info {
