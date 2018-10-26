@@ -1099,7 +1099,7 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 				priv->wow.wowlanCond |= MWL_WOW_CND_AP_INRANGE;
 
 				/* channel set */
-				priv->wow.channelCnt = min(sizeof(priv->wow.channels),
+				priv->wow.channelCnt = min((u32)sizeof(priv->wow.channels),
 				                           wowlan->nd_config->n_channels);
 
 				for (i=0; i < priv->wow.channelCnt; i++) {

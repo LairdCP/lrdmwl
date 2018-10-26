@@ -512,7 +512,7 @@ static int mwl_usb_init(struct mwl_priv *priv)
 		return -ENOMEM;
 	}
 
-	usb_set_drvdata(&card->udev->dev, priv->hw);
+	dev_set_drvdata(&card->udev->dev, priv->hw);
 
 	wiphy_debug(priv->hw->wiphy, "priv->pcmd_buf = %p\n", priv->pcmd_buf);
 

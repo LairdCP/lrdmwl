@@ -35,8 +35,6 @@ static ssize_t radio_type_show(struct device *d, struct device_attribute *attr, 
 }
 static DEVICE_ATTR(radio_type, 0444, radio_type_show, NULL);
 
-
-
 static struct attribute *lrd_sys_status_entries[] = {
 	&dev_attr_radio_type.attr,
 	NULL
@@ -45,11 +43,6 @@ static struct attribute *lrd_sys_status_entries[] = {
 static const struct attribute_group lrd_attribute_group = {
 	.name  = "lrd_info",
 	.attrs = lrd_sys_status_entries,
-};
-
-static const struct attribute_group *lrd_attribute_groups[] = {
-	&lrd_attribute_group,
-	NULL
 };
 
 void lrd_sysfs_init(struct ieee80211_hw *hw)
@@ -63,9 +56,7 @@ void lrd_sysfs_init(struct ieee80211_hw *hw)
 	priv = hw->priv;
 
 	if (priv->dev) {
-		if (!sysfs_create_groups(&priv->dev->kobj, lrd_attribute_groups)) {
-			priv->groups = lrd_attribute_groups;
-		}
+		sysfs_create_group(&priv->dev->kobj, &lrd_attribute_group);
 	}
 }
 
@@ -79,8 +70,7 @@ void lrd_sysfs_remove(struct ieee80211_hw *hw)
 
 	priv = hw->priv;
 
-	if (priv && priv->groups) {
-		sysfs_remove_groups(&priv->dev->kobj, priv->groups);
+	if (priv) {
+		sysfs_remove_group(&priv->dev->kobj, &lrd_attribute_group);
 	}
 }
-
