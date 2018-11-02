@@ -145,8 +145,14 @@ static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
 	struct mwl_vif *mwl_vif;
 	u32 macids_supported;
 	int macid;
+	int rc = 0;
+
+	wiphy_dbg(hw->wiphy,"mwl_mac80211_add_interface %x \n", vif->type);
 
 	switch (vif->type) {
+	case NL80211_IFTYPE_MONITOR:
+		return 0;
+		break;
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
 		macids_supported = priv->ap_macids_supported;
@@ -187,30 +193,35 @@ static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
 		ether_addr_copy(mwl_vif->bssid, vif->addr);
-		mwl_fwcmd_set_new_stn_add_self(hw, vif);
+		rc = mwl_fwcmd_set_new_stn_add_self(hw, vif);
 		break;
 	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_P2P_CLIENT:
 		ether_addr_copy(mwl_vif->sta_mac, vif->addr);
 		mwl_fwcmd_bss_start(hw, vif, true);
 		mwl_fwcmd_set_infra_mode(hw, vif);
-		mwl_fwcmd_set_mac_addr_client(hw, vif, vif->addr);
+		rc = mwl_fwcmd_set_mac_addr_client(hw, vif, vif->addr);
 		break;
 	case NL80211_IFTYPE_ADHOC:
 		ether_addr_copy(mwl_vif->sta_mac, vif->addr);
 		mwl_fwcmd_set_infra_mode(hw, vif);
-		mwl_fwcmd_set_new_stn_add_self(hw, vif);
+		rc = mwl_fwcmd_set_new_stn_add_self(hw, vif);
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	priv->macids_used |= 1 << mwl_vif->macid;
-	spin_lock_bh(&priv->vif_lock);
-	list_add_tail(&mwl_vif->list, &priv->vif_list);
-	spin_unlock_bh(&priv->vif_lock);
+	if (!rc) {
+		priv->macids_used |= 1 << mwl_vif->macid;
+		spin_lock_bh(&priv->vif_lock);
+		list_add_tail(&mwl_vif->list, &priv->vif_list);
+		spin_unlock_bh(&priv->vif_lock);
+	}
+	else {
+		wiphy_err(hw->wiphy, "Failed to add interface %x %d\n",vif->type, rc);
+	}
 
-	return 0;
+	return rc;
 }
 
 void mwl_mac80211_remove_vif(struct mwl_priv *priv,
@@ -234,7 +245,15 @@ static void mwl_mac80211_remove_interface(struct ieee80211_hw *hw,
 {
 	struct mwl_priv *priv = hw->priv;
 
+	wiphy_dbg(hw->wiphy,"mwl_mac80211_remove_interface %x \n", vif->type);
+
 	switch (vif->type) {
+	case NL80211_IFTYPE_MONITOR:
+		if (priv->monitor_mode) {
+			mwl_fwcmd_set_monitor_mode (hw, 0);
+		}
+		return;
+	break;
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
 		mwl_fwcmd_set_new_stn_del(hw, vif, vif->addr);
@@ -281,14 +300,19 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	if (rc)
 		goto out;
 
-	if(changed & IEEE80211_CONF_CHANGE_MONITOR) {
+	if((changed & IEEE80211_CONF_CHANGE_MONITOR) &&
+	   (priv->radio_caps & LRD_CAP_SU60)) {
 		if(conf->flags & IEEE80211_CONF_MONITOR)
-			rc = mwl_fwcmd_set_monitor_mode (hw,1);
+			rc = mwl_fwcmd_set_monitor_mode (hw, 1);
 		else
-			rc = mwl_fwcmd_set_monitor_mode (hw,0);
+			rc = mwl_fwcmd_set_monitor_mode (hw, 0);
+
 		if (rc)
 			goto out;
+
+		priv->monitor_mode = (conf->flags & IEEE80211_CONF_MONITOR)?true:false;
 	}
+
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
 		rc = mwl_fwcmd_powersave_EnblDsbl(hw, conf);
 		if (rc)
@@ -429,17 +453,17 @@ static void mwl_mac80211_bss_info_changed(struct ieee80211_hw *hw,
 		mwl_fwcmd_use_fixed_rate(hw, rate, rate);
 	}
 
-	if ((vif->type == NL80211_IFTYPE_AP) || 
-		(vif->type == NL80211_IFTYPE_ADHOC) || 
+	if ((vif->type == NL80211_IFTYPE_AP) ||
+		(vif->type == NL80211_IFTYPE_ADHOC) ||
 		(vif->type == NL80211_IFTYPE_P2P_GO))
 	{
 		if (changed & (BSS_CHANGED_BEACON_INT | BSS_CHANGED_BEACON)) {
 			struct sk_buff *skb;
 
 			if(changed & BSS_CHANGED_BEACON_INT)
-				wiphy_err(hw->wiphy, "Beacon interval changed\n");
+				wiphy_dbg(hw->wiphy, "Beacon interval changed\n");
 			if(changed & BSS_CHANGED_BEACON)
-				wiphy_err(hw->wiphy, "Beacon data changed\n");
+				wiphy_dbg(hw->wiphy, "Beacon data changed\n");
 
 			skb = ieee80211_beacon_get(hw, vif);
 			if (skb) {
@@ -608,7 +632,8 @@ static int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
 	struct ieee80211_key_conf *key;
 	struct mwl_sta *sta_info = mwl_dev_get_sta(sta);
 
-	wiphy_err(hw->wiphy,"In mwl_mac80211_sta_remove \n");
+	wiphy_dbg(hw->wiphy,"mwl_mac80211_sta_remove \n");
+
     mwl_vif = mwl_dev_get_vif(vif);
 	cancel_work_sync(&sta_info->rc_update_work);
 
@@ -1047,7 +1072,6 @@ int mwl_mac80211_set_ant(struct ieee80211_hw *hw,
 #endif
 
 	rc = mwl_fwcmd_rf_antenna(hw, tx_ant, rx_ant);
-
 	if (rc){
 		return -EINVAL;
 	}
@@ -1058,7 +1082,7 @@ int mwl_mac80211_set_ant(struct ieee80211_hw *hw,
 	priv->ant_rx_bmp = rx_ant;
 	priv->ant_rx_num = MWL_RXANT_BMP_TO_NUM(rx_ant);
 
-	mwl_set_caps(priv);
+	mwl_set_ieee_hw_caps(priv);
 
 	return 0;
 }

@@ -703,7 +703,8 @@ struct mwl_priv {
 	struct workqueue_struct *restart_workq;
 	struct work_struct restart_work;
 
-	u32 radio_caps;
+	u32  radio_caps;
+	bool monitor_mode;
 };
 
 struct beacon_info {

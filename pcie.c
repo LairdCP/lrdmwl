@@ -1503,10 +1503,10 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 	tx_desc->xmit_control = tx_ctrl->xmit_control;
 	tx_desc->sap_pkt_info = 0;
 
-	// Note - When PFU is enabled tx_skb contains the tx_desc 
+	// Note - When PFU is enabled tx_skb contains the tx_desc
 	// Therefore must not touch the descriptor after the call to pci_map_single()
 	//
-	// This limitation does not exist when PFU is not enabled since the 
+	// This limitation does not exist when PFU is not enabled since the
 	// tx_desc is located in a separate coherent memory buffer
 	if (IS_PFU_ENABLED(priv->chip_type))
 		tx_desc->pkt_ptr = cpu_to_le32(sizeof(struct mwl_tx_desc));
@@ -1543,7 +1543,7 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 			priv->txbd_wrptr = ((priv->txbd_wrptr & MLAN_BD_FLAG_TX_ROLLOVER_IND) ^
 					MLAN_BD_FLAG_TX_ROLLOVER_IND);
 
-		/* 
+		/*
 		 * Memory barrier required to ensure write to PCI does not pass writes to memory
 		 */
 		wmb();
@@ -1558,7 +1558,7 @@ static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 #endif
 
 	} else {
-		/* 
+		/*
 		 * Memory barrier required to ensure write to PCI does not pass writes to memory
 		 */
 		wmb();
@@ -2231,7 +2231,7 @@ static void mwl_remove(struct pci_dev *pdev)
 	mwl_pcie_cleanup(priv);
 	mwl_pcie_unregister_dev(priv);
 
-	ieee80211_free_hw(hw);
+	mwl_ieee80211_free_hw(priv);
 
 #if 0
 	pci_disable_device(pdev);

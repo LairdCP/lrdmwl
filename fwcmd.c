@@ -2351,7 +2351,8 @@ int mwl_fwcmd_set_mac_addr_client(struct ieee80211_hw *hw,
 	pcmd->mac_type = cpu_to_le16(WL_MAC_TYPE_SECONDARY_CLIENT);
 	ether_addr_copy(pcmd->mac_addr, mac_addr);
 
-	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_MAC_ADDR)) {
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_MAC_ADDR) ||
+	    (pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
@@ -2706,7 +2707,8 @@ int mwl_fwcmd_set_new_stn_add_self(struct ieee80211_hw *hw,
 	pcmd->action = cpu_to_le16(HOSTCMD_ACT_STA_ACTION_ADD);
 	ether_addr_copy(pcmd->mac_addr, vif->addr);
 
-	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN) ||
+	    (pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
