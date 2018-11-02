@@ -63,7 +63,6 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 	},
 };
 
-
 static int
 mwl_write_data_sync(struct mwl_priv *priv,
 			u8 *buffer, u32 pkt_len, u32 port);
@@ -368,7 +367,7 @@ static int mwl_sdio_enable_int(struct mwl_priv *priv, bool enable)
 					   &ret);
 	sdio_release_host(func);
 
-	wiphy_info(priv->hw->wiphy,
+	wiphy_dbg(priv->hw->wiphy,
 			"=>%s(): %s host interrupt %s\n", __func__,
 			enable ? "enable" : "disable", ret ? "failed" : "ok");
 
@@ -1120,7 +1119,7 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	for (num = SYSADPT_TX_WMM_QUEUES - 1; num >= 0; num--) {
 		if (skb_queue_len(&priv->txq[num]) > 0)
 		{
-			wiphy_err(priv->hw->wiphy, "Sleep fail due to tx not empty %d\n",skb_queue_len(&priv->txq[num]));
+			wiphy_dbg(priv->hw->wiphy, "Sleep fail due to tx not empty %d\n",skb_queue_len(&priv->txq[num]));
 			mutex_unlock(&priv->ps_mutex);
 			mutex_unlock(&priv->fwcmd_mutex);
 			return;
@@ -1130,7 +1129,7 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	//check if Rx has any packets
 	if (skb_queue_len(&card->rx_data_q) > 0)
 	{
-		wiphy_err(priv->hw->wiphy, "Sleep fail due to rx not empty\n");
+		wiphy_dbg(priv->hw->wiphy, "Sleep fail due to rx not empty\n");
 		mutex_unlock(&priv->ps_mutex);
 		mutex_unlock(&priv->fwcmd_mutex);
 		return;
@@ -1139,7 +1138,7 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	//check if cmd is sent
 	if (priv->in_send_cmd == true)
 	{
-		wiphy_err(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
+		wiphy_dbg(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
 		mutex_unlock(&priv->ps_mutex);
 		mutex_unlock(&priv->fwcmd_mutex);
 		return;
@@ -2647,11 +2646,11 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		card->mp_end_port = 0x0020;
 	}
 
-	card->tx_workq = alloc_workqueue("mwlwifi-tx_workq",
+	card->tx_workq = alloc_workqueue("lrdwifi-tx_workq",
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&card->tx_work, mwl_sdio_tx_workq);
 
-	card->cmd_workq = alloc_workqueue("mwlwifi-cmd_workq",
+	card->cmd_workq = alloc_workqueue("lrdwifi-cmd_workq",
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&card->cmd_work, mwl_sdio_enter_ps_sleep);
 	INIT_WORK(&card->event_work, mwl_sdio_wakeup_complete);
@@ -2695,12 +2694,11 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	mwl_sdio_cleanup(priv);
 	mwl_sdio_unregister_dev(priv);
 
-    mwl_delete_ds_timer(priv);
-
-	ieee80211_free_hw(hw);
+	mwl_delete_ds_timer(priv);
 
 	mwl_sdio_reset(priv);
 
+	mwl_ieee80211_free_hw(priv);
 	pr_info("lrdmwl: Card removal complete!\n");
 }
 

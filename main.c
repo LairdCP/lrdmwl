@@ -114,28 +114,27 @@ const struct ieee80211_rate mwl_rates_50[] = {
 	{ .bitrate = 540, .hw_value = 108, },
 };
 
-static const struct ieee80211_iface_limit ap_if_limits[] = {
-	{ .max = SYSADPT_NUM_OF_AP,	.types = BIT(NL80211_IFTYPE_AP) },
-	{ .max = 1, .types = BIT(NL80211_IFTYPE_STATION) |
-	                     BIT(NL80211_IFTYPE_P2P_GO) |
-	                     BIT(NL80211_IFTYPE_P2P_CLIENT)},
-};
-
 static const struct ieee80211_iface_limit ibss_if_limits[] = {
 	{ .max = 1,	.types = BIT(NL80211_IFTYPE_ADHOC) }
 };
 
-static const struct ieee80211_iface_combination if_comb[] = {
+static const struct ieee80211_iface_limit ap_if_su_limits[] = {
+	{ .max = SYSADPT_NUM_OF_SU_AP, .types = BIT(NL80211_IFTYPE_AP) },
+	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) |
+	                                        BIT(NL80211_IFTYPE_P2P_GO) |
+	                                        BIT(NL80211_IFTYPE_P2P_CLIENT)},
+};
+
+static const struct ieee80211_iface_combination if_su_comb[] = {
 	{
-		.limits = ap_if_limits,
-		.n_limits = ARRAY_SIZE(ap_if_limits),
-		.max_interfaces = SYSADPT_NUM_OF_AP,
+		.limits                 = ap_if_su_limits,
+		.n_limits               = ARRAY_SIZE(ap_if_su_limits),
+		.max_interfaces         = SYSADPT_NUM_OF_SU_AP,
 		.num_different_channels = 1,
 		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) |
 		                       BIT(NL80211_CHAN_WIDTH_20) |
 		                       BIT(NL80211_CHAN_WIDTH_40) |
-		                       BIT(NL80211_CHAN_WIDTH_80) |
-		                       BIT(NL80211_CHAN_WIDTH_160),
+		                       BIT(NL80211_CHAN_WIDTH_80),
 	},
 	{
 		.limits = ibss_if_limits,
@@ -145,9 +144,34 @@ static const struct ieee80211_iface_combination if_comb[] = {
 		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) |
 		                       BIT(NL80211_CHAN_WIDTH_20) |
 		                       BIT(NL80211_CHAN_WIDTH_40) |
-		                       BIT(NL80211_CHAN_WIDTH_80) |
-		                       BIT(NL80211_CHAN_WIDTH_160),
+		                       BIT(NL80211_CHAN_WIDTH_80),
 	}
+};
+
+
+static const struct ieee80211_iface_limit if_st_limits[] = {
+	{ .max = SYSADPT_NUM_OF_ST_AP, .types = BIT(NL80211_IFTYPE_AP) },
+	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) |
+	                                        BIT(NL80211_IFTYPE_P2P_GO) |
+	                                        BIT(NL80211_IFTYPE_P2P_CLIENT)},
+};
+
+static const struct ieee80211_iface_combination if_st_comb[] = {
+	{
+		.limits                 = if_st_limits,
+		.n_limits               = ARRAY_SIZE(if_st_limits),
+		.max_interfaces         = SYSADPT_NUM_OF_ST_AP + SYSADPT_NUM_OF_STA,
+		.num_different_channels = 1,
+		.radar_detect_widths    = 0,
+	},
+	{
+		.limits                 = ibss_if_limits,
+		.n_limits               = ARRAY_SIZE(ibss_if_limits),
+		.max_interfaces         = 1,
+		.num_different_channels = 1,
+		.radar_detect_widths    = 0
+	}
+
 };
 
 #ifdef CONFIG_PM
@@ -155,7 +179,7 @@ static const struct wiphy_wowlan_support lrd_wowlan_support = {
 	.flags = WIPHY_WOWLAN_ANY        |
 	         WIPHY_WOWLAN_DISCONNECT |
 	         WIPHY_WOWLAN_NET_DETECT,
-	.n_patterns = 0,
+	.n_patterns      = 0,
 	.pattern_min_len = 0,
 	.pattern_max_len = 0,
 };
@@ -375,42 +399,121 @@ static void mwl_set_vht_caps(struct mwl_priv *priv,
 	}
 }
 
-void mwl_set_caps(struct mwl_priv *priv)
+static int lrd_set_su_caps(struct mwl_priv *priv)
 {
-	struct ieee80211_hw *hw;
+	struct ieee80211_hw *hw = priv->hw;
 
-	hw = priv->hw;
+	hw->wiphy->iface_combinations   = &if_su_comb[0];
+	hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_su_comb);
 
-	memset(&priv->band_24, 0,
-			sizeof(struct ieee80211_supported_band));
-	memset(&priv->band_50, 0,
-			sizeof(struct ieee80211_supported_band));
+	#ifdef CONFIG_PM
+	if (priv->wow.capable) {
+		hw->wiphy->wowlan = &lrd_wowlan_support;
+		/* max number of SSIDs device can scan for */
+		hw->wiphy->max_sched_scan_ssids = 1;
+	}
+	#endif
+
+	/* Register for monitor interfaces, to work around mac80211 bug */
+	ieee80211_hw_set(hw, WANT_MONITOR_VIF);
+
+	/* Caller will do actual allocation */
+	hw->wiphy->n_addresses = if_su_comb[0].max_interfaces;
+
+	return 0;
+}
+
+static int lrd_set_st_caps(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+	int x = 0;
+
+	hw->wiphy->iface_combinations   = &if_st_comb[0];
+	hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_st_comb);
+
+	/* sterling fw supports fewer AP interfaces - adjust for that here*/
+	priv->ap_macids_supported = 0;
+	for (x = 0; x < SYSADPT_NUM_OF_ST_AP; x++) {
+		priv->ap_macids_supported |= 1 << x;
+	}
+
+	/* Caller will do actual allocation */
+	hw->wiphy->n_addresses = if_st_comb[0].max_interfaces;
+
+	return 0;
+}
+
+void mwl_ieee80211_free_hw(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+
+	if (hw && hw->wiphy->n_addresses) {
+		kfree(hw->wiphy->addresses);
+	}
+
+	ieee80211_free_hw(hw);
+
+} EXPORT_SYMBOL(mwl_ieee80211_free_hw);
+
+void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+	int    x = 0;
+	u64 addr = 0;
+	u64 addr1 = 0;
+
+	SET_IEEE80211_DEV(hw, priv->dev);
+	SET_IEEE80211_PERM_ADDR(hw, priv->hw_data.mac_addr);
+
+	/* hook regulatory domain change notification */
+	hw->wiphy->reg_notifier = mwl_reg_notifier;
+
+	hw->extra_tx_headroom   = SYSADPT_TX_MIN_BYTES_HEADROOM;
+	hw->queues              = SYSADPT_TX_WMM_QUEUES;
+
+	/* Set rssi values to dBm */
+	ieee80211_hw_set(hw, SIGNAL_DBM);
+	ieee80211_hw_set(hw, HAS_RATE_CONTROL);
+
+	/* Ask mac80211 not to trigger PS mode
+	 * based on PM bit of incoming frames.
+	 */
+	ieee80211_hw_set(hw, AP_LINK_PS);
+	ieee80211_hw_set(hw, SUPPORTS_PER_STA_GTK);
+	ieee80211_hw_set(hw, MFP_CAPABLE);
+	ieee80211_hw_set(hw, SPECTRUM_MGMT);
+	if (priv->chip_type == MWL8997) {
+		if (priv->host_if != MWL_IF_USB)
+			ieee80211_hw_set(hw, SUPPORTS_PS);
+	}
+
+	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
+	hw->wiphy->flags |= WIPHY_FLAG_HAS_CHANNEL_SWITCH;
+	hw->wiphy->flags |= WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
+	hw->wiphy->flags |= WIPHY_FLAG_SUPPORTS_TDLS;
+
+	hw->wiphy->features |=  NL80211_FEATURE_NEED_OBSS_SCAN;
+	hw->wiphy->features |=  NL80211_FEATURE_AP_SCAN;
+	hw->wiphy->features &= ~NL80211_FEATURE_MAC_ON_CREATE;
+
+	hw->wiphy->max_remain_on_channel_duration = 5000;
+
+	hw->vif_data_size = sizeof(struct mwl_vif);
+	hw->sta_data_size = sizeof(struct mwl_sta);
+
+	hw->wiphy->available_antennas_tx = MWL_8997_DEF_TX_ANT_BMP;
+	hw->wiphy->available_antennas_rx = MWL_8997_DEF_RX_ANT_BMP;
+
+	hw->wiphy->interface_modes = 0;
+	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_AP);
+	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_STATION);
+	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO);
+	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_CLIENT);
+	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_ADHOC);
 
 	/* set up band information for 2.4G */
 	if (!priv->disable_2g) {
-		BUILD_BUG_ON(sizeof(priv->channels_24) !=
-			     sizeof(mwl_channels_24));
-		memcpy(priv->channels_24, mwl_channels_24,
-		       sizeof(mwl_channels_24));
-
-		BUILD_BUG_ON(sizeof(priv->rates_24) != sizeof(mwl_rates_24));
-		memcpy(priv->rates_24, mwl_rates_24, sizeof(mwl_rates_24));
-
-		priv->band_24.band = NL80211_BAND_2GHZ;
-		priv->band_24.channels = priv->channels_24;
-		priv->band_24.n_channels = ARRAY_SIZE(mwl_channels_24);
-		priv->band_24.bitrates = priv->rates_24;
-		priv->band_24.n_bitrates = ARRAY_SIZE(mwl_rates_24);
-
-		if (mwl_is_world_mode(priv)) {
-			/* when configured for WW, firmware does not allow
-			 * channels 12-14 to be configured, remove them here
-			 * to keep ma80211 in synce with FW.
-			 * TODO:  Revisit for Summit Radio */
-			priv->band_24.n_channels -= 3;
-		}
-
-		mwl_set_ht_caps(priv, &priv->band_24);
+		mwl_set_ht_caps(priv,  &priv->band_24);
 		mwl_set_vht_caps(priv, &priv->band_24);
 
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = &priv->band_24;
@@ -418,37 +521,43 @@ void mwl_set_caps(struct mwl_priv *priv)
 
 	/* set up band information for 5G */
 	if (!priv->disable_5g) {
-		BUILD_BUG_ON(sizeof(priv->channels_50) !=
-			     sizeof(mwl_channels_50));
-		memcpy(priv->channels_50, mwl_channels_50,
-		       sizeof(mwl_channels_50));
-
-		BUILD_BUG_ON(sizeof(priv->rates_50) != sizeof(mwl_rates_50));
-		memcpy(priv->rates_50, mwl_rates_50, sizeof(mwl_rates_50));
-
-		priv->band_50.band = NL80211_BAND_5GHZ;
-		priv->band_50.channels = priv->channels_50;
-		priv->band_50.n_channels = ARRAY_SIZE(mwl_channels_50);
-		priv->band_50.bitrates = priv->rates_50;
-		priv->band_50.n_bitrates = ARRAY_SIZE(mwl_rates_50);
-
-		wiphy_info(hw->wiphy, "%s: Antcfg = %08x(%d) %08x(%d)\n",
-		    __FUNCTION__, priv->ant_tx_bmp,  priv->ant_tx_num,
-		    priv->ant_rx_bmp,  priv->ant_rx_num);
-
-		mwl_set_ht_caps(priv, &priv->band_50);
+		mwl_set_ht_caps(priv,  &priv->band_50);
 		mwl_set_vht_caps(priv, &priv->band_50);
 
 		hw->wiphy->bands[NL80211_BAND_5GHZ] = &priv->band_50;
 	}
+
+	/* hook regulatory domain change notification */
+	hw->wiphy->reg_notifier = mwl_reg_notifier;
+
+	if (mwl_is_world_mode(priv)) {
+		hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
+	}
+
+	if (priv->radio_caps & LRD_CAP_SU60) {
+		lrd_set_su_caps(priv);
+	}
+	else {
+		lrd_set_st_caps(priv);
+	}
+
+	/* Allocated interface address pool */
+	hw->wiphy->addresses = (struct mac_address*)kzalloc(sizeof(struct mac_address) * hw->wiphy->n_addresses, GFP_KERNEL);
+	addr = be64_to_cpup((u64*)priv->hw_data.mac_addr);
+	addr = addr >> 16;
+
+	for (x=0; x < hw->wiphy->n_addresses; x++) {
+		addr1 = cpu_to_be64(addr<<16);
+		memcpy(hw->wiphy->addresses[x].addr, &addr1, sizeof(struct mac_address));
+		addr++; //First address must be the permanent adddress, increment after copy
+	}
+
+	lrd_set_vendor_commands(hw->wiphy);
 }
 
 static void mwl_regd_init(struct mwl_priv *priv)
 {
 	struct mwl_region_mapping map;
-
-	/* hook regulatory domain change notification */
-	priv->hw->wiphy->reg_notifier = mwl_reg_notifier;
 
 	if (mwl_fwcmd_get_region_mapping(priv->hw, &map)) {
 		/* If we fail to retrieve mapping, default to WW */
@@ -458,11 +567,6 @@ static void mwl_regd_init(struct mwl_priv *priv)
 	}
 
 	memcpy(priv->fw_alpha2, map.cc, sizeof(priv->fw_alpha2));
-
-	if (mwl_is_world_mode(priv)) {
-		wiphy_debug(priv->hw->wiphy, "Setting strict regulatory");
-		priv->hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
-	}
 }
 
 static void remain_on_channel_expire(unsigned long data)
@@ -531,87 +635,69 @@ void ds_routine(unsigned long data)
 
 static int mwl_wl_init(struct mwl_priv *priv)
 {
-	struct ieee80211_hw *hw;
+	struct ieee80211_hw *hw   = priv->hw;
+	struct mwl_if_ops *if_ops = &priv->if_ops;
 	int rc;
 
-	hw = priv->hw;
-/*
-	hw->extra_tx_headroom = SYSADPT_MIN_BYTES_HEADROOM;
-	hw->queues = SYSADPT_TX_WMM_QUEUES;
-*/
-	/* Set rssi values to dBm */
-	ieee80211_hw_set(hw, SIGNAL_DBM);
-	ieee80211_hw_set(hw, HAS_RATE_CONTROL);
+	priv->fw_device_pwrtbl  = false;
+	priv->forbidden_setting = false;
+	priv->regulatory_set    = false;
+	priv->disable_2g        = false;
+	priv->disable_5g        = false;
 
-	if (priv->chip_type == MWL8997)
-		if (priv->host_if != MWL_IF_USB)
-			ieee80211_hw_set(hw, SUPPORTS_PS);
+	if (!SISO_mode)
+		priv->ant_tx_bmp = if_ops->mwl_chip_tbl.antenna_tx;
+	else
+		priv->ant_tx_bmp = SISO_mode & MWL_8997_DEF_TX_ANT_BMP;
+	priv->ant_tx_num = MWL_TXANT_BMP_TO_NUM(priv->ant_tx_bmp);
 
-	/* Ask mac80211 not to trigger PS mode
-	 * based on PM bit of incoming frames.
-	 */
-	ieee80211_hw_set(hw, AP_LINK_PS);
+	if (!SISO_mode)
+		priv->ant_rx_bmp = if_ops->mwl_chip_tbl.antenna_rx;
+	else
+		priv->ant_rx_bmp = SISO_mode & MWL_8997_DEF_RX_ANT_BMP;
+	priv->ant_rx_num = MWL_RXANT_BMP_TO_NUM(priv->ant_rx_bmp);
 
-	ieee80211_hw_set(hw, SUPPORTS_PER_STA_GTK);
-	ieee80211_hw_set(hw, MFP_CAPABLE);
-	ieee80211_hw_set(hw, SPECTRUM_MGMT);
+	priv->ps_state  = PS_AWAKE;
+	priv->ds_state  = DS_AWAKE;
+	priv->ds_enable = ds_enable;
+	priv->ps_mode   = 0;
 
-	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
-	hw->wiphy->flags |= WIPHY_FLAG_HAS_CHANNEL_SWITCH;
-
-	hw->wiphy->flags |= WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
-
-	hw->wiphy->flags |= WIPHY_FLAG_SUPPORTS_TDLS;
-
-	hw->wiphy->features |= NL80211_FEATURE_NEED_OBSS_SCAN;
-
-	hw->wiphy->max_remain_on_channel_duration = 5000;
-
-#ifdef CONFIG_PM
-	if (priv->wow.capable) {
-		hw->wiphy->wowlan = &lrd_wowlan_support;
-		/* max number of SSIDs device can scan for */
-		hw->wiphy->max_sched_scan_ssids = 1;
-	}
-#endif
-
-	hw->vif_data_size = sizeof(struct mwl_vif);
-	hw->sta_data_size = sizeof(struct mwl_sta);
-
-	priv->ap_macids_supported = 0x0000ffff;
-	priv->sta_macids_supported = 0x00010000;
+	priv->ap_macids_supported    = 0x0000ffff;
+	priv->sta_macids_supported   = 0x00010000;
 	priv->adhoc_macids_supported = 0x00000001;
-	priv->macids_used = 0;
+	priv->macids_used            = 0;
+
 	INIT_LIST_HEAD(&priv->vif_list);
 	INIT_LIST_HEAD(&priv->sta_list);
 
 	/* Set default radio state, preamble and wmm */
-	priv->radio_on = false;
+	priv->radio_on             = false;
 	priv->radio_short_preamble = false;
-	priv->wmm_enabled = false;
+	priv->wmm_enabled          = false;
 
-	priv->powinited = 0;
-
-	priv->csa_active = false;
-	priv->dfs_chirp_count_min = 5;
+	priv->powinited               = 0;
+	priv->csa_active              = false;
+	priv->dfs_chirp_count_min     = 5;
 	priv->dfs_chirp_time_interval = 1000;
-	priv->dfs_pw_filter = 0;
-	priv->dfs_min_num_radar = 5;
-	priv->dfs_min_pri_count = 4;
+	priv->dfs_pw_filter           = 0;
+	priv->dfs_min_num_radar       = 5;
+	priv->dfs_min_pri_count       = 4;
 
 	/* Handle watchdog ba events */
 	INIT_WORK(&priv->watchdog_ba_handle, mwl_watchdog_ba_events);
 	INIT_WORK(&priv->chnl_switch_handle, mwl_chnl_switch_event);
 
-	priv->is_tx_done_schedule = false;
-	priv->is_qe_schedule = false;
-	priv->qe_trigger_num = 0;
-	priv->qe_trigger_time = jiffies;
-	priv->txq_limit = SYSADPT_TX_QUEUE_LIMIT;
-	priv->recv_limit = SYSADPT_RECEIVE_LIMIT;
+	priv->is_tx_done_schedule  = false;
+	priv->is_qe_schedule       = false;
+	priv->qe_trigger_num       = 0;
+	priv->qe_trigger_time      = jiffies;
+	priv->txq_limit            = SYSADPT_TX_QUEUE_LIMIT;
 
-	priv->is_rx_schedule = false;
-	priv->cmd_timeout = false;
+	priv->is_rx_defer_schedule = false;
+	priv->is_rx_schedule       = false;
+	priv->recv_limit           = SYSADPT_RECEIVE_LIMIT;
+
+	priv->cmd_timeout          = false;
 
 	mutex_init(&priv->fwcmd_mutex);
 	mutex_init(&priv->ps_mutex);
@@ -620,11 +706,54 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	spin_lock_init(&priv->sta_lock);
 	spin_lock_init(&priv->stream_lock);
 
-	rc = mwl_thermal_register(priv);
+	/* set up band information for 2.4G */
+	memset(&priv->band_24, 0,sizeof(struct ieee80211_supported_band));
+	if (!priv->disable_2g) {
+		BUILD_BUG_ON(sizeof(priv->channels_24) != sizeof(mwl_channels_24));
+		memcpy(priv->channels_24, mwl_channels_24,sizeof(mwl_channels_24));
+
+		BUILD_BUG_ON(sizeof(priv->rates_24) != sizeof(mwl_rates_24));
+		memcpy(priv->rates_24, mwl_rates_24, sizeof(mwl_rates_24));
+
+		priv->band_24.band       = NL80211_BAND_2GHZ;
+		priv->band_24.channels   = priv->channels_24;
+		priv->band_24.n_channels = ARRAY_SIZE(mwl_channels_24);
+		priv->band_24.bitrates   = priv->rates_24;
+		priv->band_24.n_bitrates = ARRAY_SIZE(mwl_rates_24);
+	}
+
+	/* set up band information for 5G */
+	memset(&priv->band_50, 0, sizeof(struct ieee80211_supported_band));
+	if (!priv->disable_5g) {
+		BUILD_BUG_ON(sizeof(priv->channels_50) != sizeof(mwl_channels_50));
+		memcpy(priv->channels_50, mwl_channels_50,sizeof(mwl_channels_50));
+
+		BUILD_BUG_ON(sizeof(priv->rates_50) != sizeof(mwl_rates_50));
+		memcpy(priv->rates_50, mwl_rates_50, sizeof(mwl_rates_50));
+
+		priv->band_50.band       = NL80211_BAND_5GHZ;
+		priv->band_50.channels   = priv->channels_50;
+		priv->band_50.n_channels = ARRAY_SIZE(mwl_channels_50);
+		priv->band_50.bitrates   = priv->rates_50;
+		priv->band_50.n_bitrates = ARRAY_SIZE(mwl_rates_50);
+	}
+
+	/* card specific initialization after fw is loaded .. */
+	if (priv->if_ops.init_if_post) {
+		if (priv->if_ops.init_if_post(priv)) {
+			goto err_wl_init;
+		}
+	}
+
+	/* bus specific device registration */
+	if (priv->if_ops.register_dev)
+		rc = priv->if_ops.register_dev(priv);
+	else
+		rc = -ENXIO;
 	if (rc) {
-		wiphy_err(hw->wiphy, "%s: fail to register thermal framework\n",
+		wiphy_err(hw->wiphy, "%s: fail to register device\n",
 			  MWL_DRV_NAME);
-		goto err_thermal_register;
+		goto err_wl_init;
 	}
 
 	if (priv->host_if == MWL_IF_SDIO) {
@@ -633,6 +762,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		msleep(1000);
 	}
 
+	/* Begin querying FW for information */
 	rc = mwl_fwcmd_get_hw_specs(hw);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to get HW specifications\n",
@@ -646,29 +776,21 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			rc = -ENODEV;
 			goto err_wl_init;
 		}
-		else {
-			wiphy_info(hw->wiphy,
-			     "firmware version: 0x%x\n", priv->hw_data.fw_release_num);
-		}
 	}
 
 	rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
-
 	if (rc) {
 		wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
 		priv->radio_caps = 0;
 	}
 
-	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
-	if (priv->if_ops.register_dev)
-		rc = priv->if_ops.register_dev(priv);
-	else
-		rc = -ENXIO;
-
-	if (rc) {
-		wiphy_err(hw->wiphy, "%s: fail to register device\n",
-			  MWL_DRV_NAME);
-		goto err_wl_init;
+	if (priv->radio_caps & LRD_CAP_SU60) {
+		rc = mwl_thermal_register(priv);
+		if (rc) {
+			wiphy_err(hw->wiphy, "%s: fail to register thermal framework\n",
+				MWL_DRV_NAME);
+			goto err_thermal_register;
+		}
 	}
 
 	rc = mwl_fwcmd_set_hw_specs(priv->hw);
@@ -678,26 +800,24 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		goto err_wl_init;
 	}
 
-	SET_IEEE80211_PERM_ADDR(hw, priv->hw_data.mac_addr);
-
 	rc = mwl_fwcmd_set_cfg_data(hw, cpu_to_le16(2));
-
 	if(rc) {
 		wiphy_err(hw->wiphy, "%s: fail to download calibaration data\n",
 			MWL_DRV_NAME);
-//		goto err_wl_init;
 	}
 
-	if (priv->chip_type == MWL8964)
-		rc = mwl_fwcmd_get_fw_region_code_sc4(hw,
-						      &priv->fw_region_code);
-	else
-		rc = mwl_fwcmd_get_fw_region_code(hw, &priv->fw_region_code);
+	rc = mwl_fwcmd_get_fw_region_code(hw, &priv->fw_region_code);
 	if (!rc) {
 		priv->fw_device_pwrtbl = true;
 		mwl_regd_init(priv);
-		wiphy_info(hw->wiphy,
-			   "firmware region code: %x\n", priv->fw_region_code);
+
+		if (mwl_is_world_mode(priv)) {
+			/* when configured for WW, firmware does not allow
+			 * channels 12-14 to be configured, remove them here
+			 * to keep ma80211 in synce with FW.
+			 * TODO:  Revisit for Summit Radio */
+			priv->band_24.n_channels -= 3;
+		}
 	}
 
 	rc = mwl_fwcmd_dump_otp_data(hw);
@@ -705,26 +825,13 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		wiphy_info(hw->wiphy, "OTP Dump failed\n");
 	}
 
-
 	mwl_fwcmd_radio_disable(hw);
-
-	hw->wiphy->available_antennas_tx = MWL_8997_DEF_TX_ANT_BMP;
-	hw->wiphy->available_antennas_rx = MWL_8997_DEF_RX_ANT_BMP;
-
 	mwl_fwcmd_rf_antenna(hw, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
-	hw->wiphy->interface_modes = 0;
-	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_AP);
-	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_STATION);
-	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO);
-	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_CLIENT);
-	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_ADHOC);
+	/*Set IEEE HW Capabilities */
+	mwl_set_ieee_hw_caps(priv);
 
-	hw->wiphy->iface_combinations = &if_comb[0];
-	hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_comb);
-
-	mwl_set_caps(priv);
-
+	/* Register with MAC80211 */
 	rc = ieee80211_register_hw(hw);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to register hw\n",
@@ -732,19 +839,24 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		goto err_wl_init;
 	}
 
-	setup_timer(&priv->roc.roc_timer, remain_on_channel_expire, (unsigned long)hw);
+	/* Success - dump relevant info to log */
+	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
+	wiphy_info(hw->wiphy, "Firmware version: 0x%x\n", priv->hw_data.fw_release_num);
+	wiphy_info(hw->wiphy, "Firmware region code: %x\n", priv->fw_region_code);
+	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
+		   priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
 
-	setup_timer(&priv->period_timer, timer_routine, (unsigned long)priv);
-	mod_timer(&priv->period_timer, jiffies +
-		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
+	wiphy_info(priv->hw->wiphy, "2G %s, 5G %s\n",
+		   priv->disable_2g ? "disabled" : "enabled",
+		   priv->disable_5g ? "disabled" : "enabled");
+
+	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas. (%08x)/(%08x)\n",
+		   priv->ant_tx_num, priv->ant_rx_num, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
 	return rc;
 
 err_wl_init:
 err_thermal_register:
-
-	wiphy_err(hw->wiphy, "init fail %d\n", rc);
-
 	return rc;
 }
 
@@ -937,18 +1049,16 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	}
 
 	priv = hw->priv;
-	priv->hw = hw;
-
-	priv->fw_device_pwrtbl = false;
+	priv->hw   = hw;
 	priv->intf = card;
 
-	priv->is_rx_defer_schedule = false;
-	priv->rx_defer_workq = alloc_workqueue("mwlwifi-rx_defer_workq",
-		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	/* Setup queues */
+	priv->rx_defer_workq = alloc_workqueue("lrdwifi-rx_defer_workq",
+	                       WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
 	skb_queue_head_init(&priv->rx_defer_skb_q);
 
-	priv->ds_workq = alloc_workqueue("mwlwifi-ds_workq",
+	priv->ds_workq = alloc_workqueue("lrdwifi-ds_workq",
 	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->ds_work, mwl_ds_workq);
 
@@ -956,38 +1066,15 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
 
 	/* card specific initialization has been deferred until now .. */
-	if (priv->if_ops.init_if)
+	if (priv->if_ops.init_if) {
 		if (priv->if_ops.init_if(priv))
 			goto err_init_if;
+	}
 
-	/* hook regulatory domain change notification */
-	hw->wiphy->reg_notifier = mwl_reg_notifier;
-	hw->extra_tx_headroom = SYSADPT_TX_MIN_BYTES_HEADROOM;
-	hw->queues = SYSADPT_TX_WMM_QUEUES;
-	INIT_LIST_HEAD(&priv->sta_list);
-
-	lrd_set_vendor_commands(hw->wiphy);
-
-	priv->forbidden_setting = false;
-	priv->regulatory_set = false;
-	priv->disable_2g = false;
-	priv->disable_5g = false;
-
-	if (!SISO_mode)
-		priv->ant_tx_bmp = if_ops->mwl_chip_tbl.antenna_tx;
-	else
-		priv->ant_tx_bmp = SISO_mode & MWL_8997_DEF_TX_ANT_BMP;
-	priv->ant_tx_num = MWL_TXANT_BMP_TO_NUM(priv->ant_tx_bmp);
-
-	if (!SISO_mode)
-		priv->ant_rx_bmp = if_ops->mwl_chip_tbl.antenna_rx;
-	else
-		priv->ant_rx_bmp = SISO_mode & MWL_8997_DEF_RX_ANT_BMP;
-	priv->ant_rx_num = MWL_RXANT_BMP_TO_NUM(priv->ant_rx_bmp);
-
-	priv->ps_state=PS_AWAKE;
-
-	SET_IEEE80211_DEV(hw, priv->dev);
+	/* Setup timers */
+	setup_timer(&priv->roc.roc_timer, remain_on_channel_expire, (unsigned long)hw);
+	setup_timer(&priv->period_timer,  timer_routine, (unsigned long)priv);
+	setup_timer(&priv->ds_timer, ds_routine, (unsigned long)priv);
 
 	rc = mwl_init_firmware(priv);
 
@@ -1000,20 +1087,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 	/* firmware is loaded to H/W, it can be released now */
 	release_firmware(priv->fw_ucode);
 
-	priv->ds_enable = ds_enable;
-
-	/* card specific initialization after fw is loaded .. */
-	if (priv->if_ops.init_if_post) {
-		if (priv->if_ops.init_if_post(priv)) {
-			goto err_init_if;
-		}
-	}
-
-	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
-	           priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
-
-	setup_timer(&priv->ds_timer, ds_routine, (unsigned long)priv);
-
 	rc = mwl_wl_init(priv);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to initialize wireless lan\n",
@@ -1021,12 +1094,8 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 		goto err_wl_init;
 	}
 
-	wiphy_info(priv->hw->wiphy, "2G %s, 5G %s\n",
-		   priv->disable_2g ? "disabled" : "enabled",
-		   priv->disable_5g ? "disabled" : "enabled");
-
-	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas\n",
-		   priv->ant_tx_num, priv->ant_rx_num);
+	/* Start Timers */
+	mod_timer(&priv->period_timer, jiffies + msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 
 	/* Start DS timer after init where radio is registered with mac802.11
 	 * and IEEE80211_CONF_IDLE flag is setup
@@ -1048,7 +1117,7 @@ err_init_firmware:
 	priv->if_ops.cleanup_if(priv);
 
 err_init_if:
-	ieee80211_free_hw(hw);
+	mwl_ieee80211_free_hw(priv);
 
 err_alloc_hw:
 
@@ -1298,7 +1367,6 @@ MODULE_PARM_DESC(EDMAC_Ctrl, "EDMAC CFG: BIT0:2G_enbl, BIT1:5G_enbl, " \
                              "BIT[4:11]: 2G_Offset, BIT[12:19]:5G_offset, " \
                              "BIT[20:27]:Queue_lock, BIT[28]: MCBC_QLock, " \
                              "BIT[29]: BCN_DSBL");
-
 
 module_param(tx_amsdu_enable, int, 0);
 MODULE_PARM_DESC(tx_amsdu_enable, "Tx AMSDU enable/disable");

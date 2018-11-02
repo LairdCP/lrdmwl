@@ -39,7 +39,10 @@
 
 #define SYSADPT_TX_AMPDU_QUEUES        4
 
-#define SYSADPT_NUM_OF_AP              16
+#define SYSADPT_NUM_OF_SU_AP           3
+#define SYSADPT_NUM_OF_ST_AP           1
+#define SYSADPT_NUM_OF_STA             1
+#define SYSADPT_NUM_OF_AP              SYSADPT_NUM_OF_SU_AP
 
 #define SYSADPT_TOTAL_TX_QUEUES        (SYSADPT_TX_WMM_QUEUES + \
 					SYSADPT_NUM_OF_AP)
@@ -48,9 +51,9 @@
 					SYSADPT_TX_AMPDU_QUEUES)
 
 #define SYSADPT_NUM_OF_DESC_DATA       (4 + SYSADPT_NUM_OF_AP)
-#define SYSADPT_PFU_NUM_OF_DESC_DATA       (1)
+#define SYSADPT_PFU_NUM_OF_DESC_DATA   (1)
 
-/* #define SYSADPT_MAX_NUM_TX_DESC        256 */
+/* #define SYSADPT_MAX_NUM_TX_DESC     256 */
 
 #define SYSADPT_TX_QUEUE_LIMIT         (3 * SYSADPT_MAX_NUM_TX_DESC)
 
@@ -58,15 +61,15 @@
 
 #define SYSADPT_DELAY_FREE_Q_LIMIT     SYSADPT_MAX_NUM_TX_DESC
 
-/* #define SYSADPT_MAX_NUM_RX_DESC        256 */
+/* #define SYSADPT_MAX_NUM_RX_DESC     256 */
 
 #define SYSADPT_RECEIVE_LIMIT          64
 
-/* #define SYSADPT_MAX_AGGR_SIZE          8192 */
+/* #define SYSADPT_MAX_AGGR_SIZE       8192 */
 
 #define SYSADPT_MIN_BYTES_HEADROOM     64
 
-#define SYSADPT_TX_MIN_BYTES_HEADROOM     (64 + 64)
+#define SYSADPT_TX_MIN_BYTES_HEADROOM  (64 + 64)
 
 #define SYSADPT_AMPDU_PACKET_THRESHOLD 64
 
