@@ -81,6 +81,43 @@ static struct pci_device_id mwl_pci_id_tbl[] = {
 	{ },
 };
 
+extern int mwl_init_firmware(struct mwl_priv *priv);
+
+static void mwl_pcie_reset_notify(struct pci_dev *pdev, bool prepare)
+{
+	struct mwl_priv      *priv;
+	struct ieee80211_hw  *hw;
+
+	hw = pci_get_drvdata(pdev);
+
+	if (!hw || !hw->priv)
+		return;
+
+	priv = hw->priv;
+
+	if (prepare) {
+		mwl_shutdown_sw(priv);
+	}
+	else {
+		mwl_reinit_sw(priv);
+	}
+}
+
+#if KERNEL_VERSION(4, 13, 0) <= LINUX_VERSION_CODE
+static void mwl_pcie_reset_prepare(struct pci_dev *pdev)
+{
+	mwl_pcie_reset_notify(pdev, true);
+}
+
+static void mwl_pcie_reset_done(struct pci_dev *pdev)
+{
+	mwl_pcie_reset_notify(pdev, false);
+}
+#endif
+
+/*
+ * Cleanup all software without cleaning anything related to PCIe and HW.
+*/
 static void mwl_free_pci_resource(struct mwl_priv *priv)
 {
 #if 0
@@ -834,7 +871,23 @@ static bool mwl_pcie_is_tx_available(struct mwl_priv *priv, int desc_num)
 }
 static int mwl_pcie_init_post(struct mwl_priv *priv)
 {
+	struct mwl_pcie_card *card = priv->intf;
+	int i;
+	
 	priv->ds_enable = DS_ENABLE_OFF;
+
+	if (!IS_PFU_ENABLED(priv->chip_type)) {
+		writel(priv->desc_data[0].pphys_tx_ring,
+			card->iobase0 + priv->desc_data[0].wcb_base);
+		for (i = 1; i < SYSADPT_TOTAL_TX_QUEUES; i++)
+			writel(priv->desc_data[i].pphys_tx_ring,
+				card->iobase0 + priv->desc_data[i].wcb_base);
+	}
+
+	writel(priv->desc_data[0].pphys_rx_ring,
+	       card->iobase0 + priv->desc_data[0].rx_desc_read);
+	writel(priv->desc_data[0].pphys_rx_ring,
+	       card->iobase0 + priv->desc_data[0].rx_desc_write);
 
 	return 0;
 }
@@ -861,6 +914,8 @@ static int mwl_pcie_init(struct mwl_priv *priv)
 
 	hw = priv->hw;
 	priv->irq=-1;
+	card->priv = priv;
+
 	rc = pci_enable_device(pdev);
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: cannot enable new PCI device.\n",
@@ -1035,6 +1090,115 @@ static void mwl_fwdl_trig_pcicmd_bootcode(struct mwl_priv *priv)
 	writel(MACREG_H2ARIC_BIT_DOOR_BELL,
 	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
 }
+
+/* Combo firmware image is a combination of
+ * (1) combo crc heaer, start with CMD5
+ * (2) bluetooth image, start with CMD7, end with CMD6, data wrapped in CMD1.
+ * (3) wifi image.
+ *
+ * This function bypass the header and bluetooth part, return
+ * the offset of tail wifi-only part. If the image is already wifi-only,
+ * that is start with CMD1, return 0.
+ */
+
+static int mwl_extract_wifi_fw(struct mwl_priv *priv) {
+	struct ieee80211_hw *hw;
+	const void *firmware;
+	u32 firmware_len;
+	const struct mwifiex_fw_data *fwdata;
+	u32 offset = 0, data_len, dnld_cmd;
+	int ret = 0;
+	bool cmd7_before = false, first_cmd = false;
+	
+	hw = priv->hw;
+	
+	firmware = priv->fw_ucode->data;
+	firmware_len = priv->fw_ucode->size;
+
+	while (1) {
+		/* Check for integer and buffer overflow */
+		if (offset + sizeof(fwdata->header) < sizeof(fwdata->header) ||
+		    offset + sizeof(fwdata->header) >= firmware_len) {
+			wiphy_err(hw->wiphy,
+				    "extract wifi-only fw failure!\n");
+			ret = -1;
+			goto done;
+		}
+
+		fwdata = firmware + offset;
+		dnld_cmd = le32_to_cpu(fwdata->header.dnld_cmd);
+		data_len = le32_to_cpu(fwdata->header.data_length);
+
+		/* Skip past header */
+		offset += sizeof(fwdata->header);
+
+		switch (dnld_cmd) {
+		case MWIFIEX_FW_DNLD_CMD_1:
+			if (offset + data_len < data_len) {
+				wiphy_err(hw->wiphy, "bad FW parse\n");
+				ret = -1;
+				goto done;
+			}
+
+			/* Image start with cmd1, already wifi-only firmware */
+			if (!first_cmd) {
+				wiphy_info(hw->wiphy,
+					    "input wifi-only firmware\n");
+				return 0;
+			}
+
+			if (!cmd7_before) {
+				wiphy_err(hw->wiphy,
+					    "no cmd7 before cmd1!\n");
+				ret = -1;
+				goto done;
+			}
+			offset += data_len;
+			break;
+		case MWIFIEX_FW_DNLD_CMD_5:
+			first_cmd = true;
+			/* Check for integer overflow */
+			if (offset + data_len < data_len) {
+				wiphy_err(hw->wiphy, "bad FW parse\n");
+				ret = -1;
+				goto done;
+			}
+			offset += data_len;
+			break;
+		case MWIFIEX_FW_DNLD_CMD_6:
+			first_cmd = true;
+			/* Check for integer overflow */
+			if (offset + data_len < data_len) {
+				wiphy_err(hw->wiphy, "bad FW parse\n");
+				ret = -1;
+				goto done;
+			}
+			offset += data_len;
+			if (offset >= firmware_len) {
+				wiphy_err(hw->wiphy,
+					    "extract wifi-only fw failure!\n");
+				ret = -1;
+			} else {
+				ret = offset;
+			}
+			goto done;
+		case MWIFIEX_FW_DNLD_CMD_7:
+			first_cmd = true;
+			cmd7_before = true;
+			break;
+		default:
+			wiphy_err(hw->wiphy, "unknown dnld_cmd %d\n",
+				    dnld_cmd);
+			ret = -1;
+			goto done;
+		}
+	}
+
+done:
+	return ret;
+}
+
+
 static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 {
 	const struct firmware *fw;
@@ -1054,7 +1218,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	hw = priv->hw;
 
 	if (priv->mfg_mode) {
-		wiphy_err(hw->wiphy, "mfg_mode: overriding I/F header len to %d\n",INTF_HEADER_LEN_MFG);
+		wiphy_info(hw->wiphy, "mfg_mode: overriding I/F header len to %d\n",INTF_HEADER_LEN_MFG);
 		priv->if_ops.inttf_head_len = INTF_HEADER_LEN_MFG;
 	}
 
@@ -1073,17 +1237,34 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	 * reside on its respective blocks such as ITCM, DTCM, SQRAM,
 	 * (or even DDR, AFTER DDR is init'd before fw download
 	 */
-	wiphy_debug(hw->wiphy, "fw download start\n");
+	wiphy_info(hw->wiphy, "fw download start %x\n",FW_MAX_NUM_CHECKS);
 
 	/* make sure SCRATCH2 C40 is clear, in case we are too quick */
 	while (readl(card->iobase1 + MACREG_REG_CMD_SIZE) == 0)
 		cond_resched();
+		
+	int_code = readl(card->iobase1 + PCIE_SCRATCH_13_REG);
+	if (int_code == MWIFIEX_PCIE_FLR_HAPPENS)
+	{
+		int ret;
+		ret = mwl_extract_wifi_fw(priv);
+		if (ret < 0)
+		{
+			wiphy_err(hw->wiphy, "Failed to extract wifi fw\n");
+			goto err_download;
+		}
+
+		size_fw_downloaded = ret;
+		wiphy_info(hw->wiphy,
+			    "info: dnld wifi firmware from %d bytes\n", size_fw_downloaded);
+	}
 
 	while (size_fw_downloaded < fw->size) {
 		len = readl(card->iobase1 + MACREG_REG_CMD_SIZE);
 
-		if (!len)
+		if (!len) {
 			break;
+		}
 
 		/* this copies the next chunk of fw binary to be delivered */
 		memcpy((char *)&priv->pcmd_buf[
@@ -1106,6 +1287,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 			    MACREG_H2ARIC_BIT_DOOR_BELL)
 				break;
 
+			usleep_range(10, 20);
 			cond_resched();
 			curr_iteration--;
 		} while (curr_iteration);
@@ -1116,14 +1298,14 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 			 * download failed
 			 */
 			wiphy_err(hw->wiphy,
-				  "Exhausted curr_iteration for fw download\n");
+				  "\nExhausted fw segment download\n");
 			goto err_download;
 		}
 
 		size_fw_downloaded += len;
 	}
 
-	wiphy_debug(hw->wiphy,
+	wiphy_info(hw->wiphy,
 		    "FwSize = %d downloaded Size = %d curr_iteration %d\n",
 		    (int)fw->size, size_fw_downloaded, curr_iteration);
 
@@ -1165,14 +1347,16 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 		goto err_download;
 	}
 
-	wiphy_debug(hw->wiphy, "fw download complete\n");
+	wiphy_info(hw->wiphy, "fw download complete\n");
 	writel(0x00, card->iobase1 + MACREG_REG_INT_CODE);
 
 	return 0;
 
 err_download:
 
-	mwl_fwcmd_reset(hw);
+	if (!priv->recovery_in_progress) {
+		mwl_fwcmd_reset(hw);
+	}
 
 	return -EIO;
 }
@@ -1742,7 +1926,6 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card;
 	int rc = 0;
-	int i;
 
 	card = (struct mwl_pcie_card *)priv->intf;
 
@@ -1771,19 +1954,6 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 	tasklet_init(&priv->rx_task, (void *)mwl_pcie_rx_recv,
 		(unsigned long)priv->hw);
 	tasklet_disable(&priv->rx_task);
-
-	if (!IS_PFU_ENABLED(priv->chip_type)) {
-		writel(priv->desc_data[0].pphys_tx_ring,
-			card->iobase0 + priv->desc_data[0].wcb_base);
-		for (i = 1; i < SYSADPT_TOTAL_TX_QUEUES; i++)
-			writel(priv->desc_data[i].pphys_tx_ring,
-				card->iobase0 + priv->desc_data[i].wcb_base);
-	}
-
-	writel(priv->desc_data[0].pphys_rx_ring,
-	       card->iobase0 + priv->desc_data[0].rx_desc_read);
-	writel(priv->desc_data[0].pphys_rx_ring,
-	       card->iobase0 + priv->desc_data[0].rx_desc_write);
 
 	return rc;
 }
@@ -1926,6 +2096,43 @@ static void mwl_pcie_enter_deepsleep(struct mwl_priv *priv)
 	return;
 }
 
+/*
+ * This function initializes the PCI-E host memory space, WCB rings, etc.,
+ * similar to mwl_pcie_init(), but without resetting PCI-E state.
+ */
+static void mwl_pcie_up_dev(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+	struct mwl_pcie_card *card = priv->intf;
+	struct pci_dev *pdev = card->pdev;
+
+	wiphy_info(priv->hw->wiphy, "%s: Bringing up adapter...\n", MWL_DRV_NAME);
+
+	/*
+	 * Initialize tx/rx buffers, enable bus mastering
+	 */
+	mwl_tx_init(hw);
+	mwl_rx_init(hw);
+	pci_set_master(pdev);
+
+	return;
+}
+
+/* This function cleans up the PCI-E host memory space. */
+static void mwl_pcie_down_dev(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+	struct mwl_pcie_card *card = priv->intf;
+	struct pci_dev *pdev = card->pdev;
+
+	wiphy_info(priv->hw->wiphy, "%s: Taking down adapter...\n", MWL_DRV_NAME);
+
+	pci_clear_master(pdev);
+	mwl_rx_deinit(hw);
+	mwl_tx_deinit(hw);
+}
+
+
 static struct tasklet_struct tx_task;
 static struct tasklet_struct tx_done_task;
 static struct tasklet_struct qe_task;
@@ -1957,6 +2164,12 @@ static struct mwl_if_ops pcie_ops = {
 	.enter_deepsleep   = mwl_pcie_enter_deepsleep,
 	.wakeup_card       = mwl_pcie_wakeup_card,
 	.is_deepsleep      = mwl_pcie_is_deepsleep,
+	.down_dev          = mwl_pcie_down_dev,
+	.up_dev            = mwl_pcie_up_dev,
+
+	// Restart handler not supported
+	// until firmware supports Function Level Reset
+	//.hardware_restart  = mwl_pcie_restart_handler,
 };
 
 
@@ -1985,10 +2198,10 @@ static int mwl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	memcpy(&pcie_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
 		sizeof(struct mwl_chip_info));
+
 	rc = mwl_add_card(card, &pcie_ops);
 	if (rc) {
 		pr_err("%s: add card failed", MWL_DRV_NAME);
-		rc = -EIO;
 		goto err_add_card;
 	}
 	return rc;
@@ -2028,6 +2241,27 @@ static void mwl_remove(struct pci_dev *pdev)
 }
 
 #if 0
+static int mwl_pcie_restart_handler(struct mwl_priv *priv)
+{
+	int rc = 0;
+	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
+
+	/* We can't afford to wait here; remove() might be waiting on us. If we
+	* can't grab the device lock, maybe we'll get another chance later.
+	*/
+	rc = pci_try_reset_function(card->pdev);
+	
+	if (rc == -EAGAIN && !card->priv->shutdown) {
+		WARN_ON(!priv->restart_workq);
+		queue_work(priv->restart_workq, &priv->restart_work);
+	}
+	
+	return rc;
+}
+#endif
+
+
+#if 0
 static u32 pci_read_mac_reg(struct mwl_priv *priv, u32 offset)
 {
 	if (priv->chip_type == MWL8964) {
@@ -2049,12 +2283,22 @@ static u32 pci_read_mac_reg(struct mwl_priv *priv, u32 offset)
 }
 #endif
 
+static const struct pci_error_handlers mwl_pcie_err_handler = {
+#if KERNEL_VERSION(4, 13, 0) > LINUX_VERSION_CODE
+	.reset_notify  = mwl_pcie_reset_notify,
+#else
+	.reset_prepare = mwl_pcie_reset_prepare,
+	.reset_done    = mwl_pcie_reset_done,
+#endif
+};
 
 static struct pci_driver mwl_pci_driver = {
 	.name     = MWL_DRV_NAME,
 	.id_table = mwl_pci_id_tbl,
 	.probe    = mwl_probe,
 	.remove   = mwl_remove,
+
+	.err_handler = &mwl_pcie_err_handler,
 };
 
 module_pci_driver(mwl_pci_driver);

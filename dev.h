@@ -60,6 +60,8 @@
 #define MACREG_REG_CMDRSP_BUF_HI            0x00000CD4
 #define MACREG_REG_DRV_READY                0x00000CF0
 
+#define PCIE_SCRATCH_13_REG				0xCF4
+
 /* Bit definition for MACREG_REG_A2H_INTERRUPT_CAUSE (A2HRIC) */
 #define MACREG_A2HRIC_BIT_NUM_TX_DONE           (0)
 #define MACREG_A2HRIC_BIT_NUM_RX_RDY            (1)
@@ -478,9 +480,11 @@ struct mwl_if_ops {
 	int (*clean_pcie_ring) (struct mwl_priv *);
 	void (*deaggr_pkt)(struct mwl_priv *, struct sk_buff *);
 	void (*multi_port_resync)(struct mwl_priv *);
-	int (*hardware_reset)(struct mwl_priv *);
+	int (*hardware_restart)(struct mwl_priv *);
 	int (*wakeup_card)(struct mwl_priv *);
 	int (*is_deepsleep)(struct mwl_priv *);
+	void (*down_dev)(struct mwl_priv *);
+	void (*up_dev)(struct mwl_priv *);
 };
 
 #define MWL_OTP_BUF_SIZE	(256*8)		//258 lines * 8 bytes
@@ -695,6 +699,10 @@ struct mwl_priv {
 	bool mfg_mode;
 
 	bool recovery_in_progress;
+	struct task_struct *recovery_owner;
+	struct workqueue_struct *restart_workq;
+	struct work_struct restart_work;
+
 	u32 radio_caps;
 };
 
@@ -831,5 +839,25 @@ void mwl_pause_ds(struct mwl_priv *);
 
 /* Defined in mac80211.c. */
 extern const struct ieee80211_ops mwl_mac80211_ops;
+
+
+struct mwifiex_fw_header {
+	__le32 dnld_cmd;
+	__le32 base_addr;
+	__le32 data_length;
+	__le32 crc;
+} __packed;
+
+struct mwifiex_fw_data {
+	struct mwifiex_fw_header header;
+	__le32 seq_num;
+	u8 data[1];
+} __packed;
+
+#define MWIFIEX_FW_DNLD_CMD_1 0x1
+#define MWIFIEX_FW_DNLD_CMD_5 0x5
+#define MWIFIEX_FW_DNLD_CMD_6 0x6
+#define MWIFIEX_FW_DNLD_CMD_7 0x7
+
 
 #endif /* _DEV_H_ */

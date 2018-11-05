@@ -48,6 +48,7 @@ static const struct attribute_group lrd_attribute_group = {
 void lrd_sysfs_init(struct ieee80211_hw *hw)
 {
 	struct mwl_priv *priv;
+	int ret;
 
 	if (!hw || !hw->priv ) {
 		return;
@@ -56,7 +57,9 @@ void lrd_sysfs_init(struct ieee80211_hw *hw)
 	priv = hw->priv;
 
 	if (priv->dev) {
-		sysfs_create_group(&priv->dev->kobj, &lrd_attribute_group);
+		ret = sysfs_create_group(&priv->dev->kobj, &lrd_attribute_group);
+		if (ret)
+			wiphy_err(priv->hw->wiphy, "%s: Unable to create attribute group!\n", __func__);
 	}
 }
 

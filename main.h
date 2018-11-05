@@ -20,6 +20,11 @@ void mwl_set_caps(struct mwl_priv *priv);
 extern void timer_routine(struct timer_list *t);
 extern void mwl_restart_ds_timer(struct mwl_priv *priv, bool force);
 extern void mwl_delete_ds_timer(struct mwl_priv *priv);
+extern int mwl_shutdown_sw(struct mwl_priv *priv);
+extern int mwl_reinit_sw(struct mwl_priv *priv);
+extern void mwl_mac80211_stop(struct ieee80211_hw *hw);
+extern void mwl_mac80211_remove_vif(struct mwl_priv *priv, struct ieee80211_vif *vif);
+
 
 #ifdef CONFIG_PM
 extern void lrd_report_wowlan_wakeup(struct mwl_priv *priv);
