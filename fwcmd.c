@@ -181,9 +181,9 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 	might_sleep();
 
-	// If recovery is in progress, firmware is hung
-	// Don't attempt to access it
-	if (priv->recovery_in_progress)
+	// If recovery is in progress, firmware is hung or device is restarting
+	// Don't attempt to access it unless coming from the restart owner
+	if ((priv->recovery_in_progress) && (priv->recovery_owner != current))
 		return -EIO;
 
 	if ((priv->ds_state == DS_SLEEP && cmd != HOSTCMD_CMD_DEEPSLEEP)

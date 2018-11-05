@@ -862,7 +862,8 @@ void mwl_disable_ds(struct mwl_priv * priv)
 
 	mwl_delete_ds_timer(priv);
 
-	if(priv->ds_state == DS_SLEEP)
+	// Don't try to access the radio while asleep or non-responsive
+	if((priv->ds_state == DS_SLEEP) && (!priv->recovery_in_progress))
 		priv->if_ops.wakeup_card(priv);
 
 	priv->ds_enable = DS_ENABLE_OFF;
@@ -871,10 +872,28 @@ void mwl_disable_ds(struct mwl_priv * priv)
 
 EXPORT_SYMBOL_GPL(mwl_disable_ds);
 
+static void lrd_radio_recovery_work(struct work_struct *work)
+{
+	struct mwl_priv *priv = container_of(work,
+				struct mwl_priv, restart_work);
+	int ret;
+
+	wiphy_info(priv->hw->wiphy, "%s: Initiating radio recovery!!\n",
+		  MWL_DRV_NAME);
+
+	// Restart radio hardware
+	ret = priv->if_ops.hardware_restart(priv);
+	if (!ret)
+		wiphy_info(priv->hw->wiphy, "%s: Radio restart complete...\n",
+			MWL_DRV_NAME);
+	else
+		wiphy_err(priv->hw->wiphy, "%s: Unable to restart radio!!\n",
+			MWL_DRV_NAME);
+}
+
 void lrd_radio_recovery(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
-	int ret;
 
 	wiphy_info(priv->hw->wiphy, "%s: Radio recovery requested!\n", __func__);
 	if (priv->recovery_in_progress)
@@ -885,27 +904,22 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 
 	priv->recovery_in_progress = 1;
 
-	if (!priv->if_ops.hardware_reset)
+	if (!priv->if_ops.hardware_restart)
 	{
-		wiphy_info(hw->wiphy, "%s: Radio recovery requested but no reset handler configured!\n",
+		wiphy_info(hw->wiphy, "%s: Radio recovery requested but no restart handler configured!\n",
 			MWL_DRV_NAME);
 		return;
 	}
 
-	wiphy_info(hw->wiphy, "%s: Initiating radio recovery!!\n",
-		  MWL_DRV_NAME);
+	// Initialize workq if it hasn't been already
+	if (!priv->restart_workq)
+	{
+		priv->restart_workq = alloc_workqueue("mwlwifi-restart_workq",
+						WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+		INIT_WORK(&priv->restart_work, lrd_radio_recovery_work);
+	}
 
-	// Reset radio hardware
-	// The assumption is this reset will also trigger an unload/reload
-	// of the radio driver
-	ret = priv->if_ops.hardware_reset(priv);
-	if (!ret)
-		wiphy_info(hw->wiphy, "%s: Radio reset complete...\n",
-			MWL_DRV_NAME);
-	else
-		wiphy_err(hw->wiphy, "%s: Unable to reset radio!!\n",
-			MWL_DRV_NAME);
-
+	queue_work(priv->restart_workq, &priv->restart_work);
 }
 
 int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
@@ -1041,6 +1055,173 @@ err_alloc_hw:
 	return rc;
 }
 EXPORT_SYMBOL_GPL(mwl_add_card);
+
+/*
+ * This function gets called during restart
+ */
+int mwl_shutdown_sw(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+	struct mwl_vif *mwl_vif, *tmp_vif;
+
+	WARN_ON(!priv->recovery_in_progress);
+
+	wiphy_info(priv->hw->wiphy, "%s: Shutting down software...\n", MWL_DRV_NAME);
+
+	// Save task context as mechanism to identify calls made in context
+	// of restart sequence
+	priv->recovery_owner = current;
+
+	/*
+	 * Disable radio (if possible)
+	 * Stop queues
+	 * Disable tasklets
+	 * Return completed TX SKBs
+	 */
+	mwl_mac80211_stop(hw);
+
+	del_timer_sync(&priv->roc.roc_timer);
+	del_timer_sync(&priv->period_timer);
+	mwl_disable_ds(priv);
+	cancel_work_sync(&priv->watchdog_ba_handle);
+	cancel_work_sync(&priv->chnl_switch_handle);
+	cancel_work_sync(&priv->rx_defer_work);
+	skb_queue_purge(&priv->rx_defer_skb_q);
+	cancel_work_sync(&priv->ds_work);
+
+
+	/*
+	 * All the existing interfaces are re-added by the ieee80211_reconfig;
+	 * which means driver should remove existing interfaces before calling
+	 * ieee80211_restart_hw
+	 */
+	list_for_each_entry_safe(mwl_vif, tmp_vif, &priv->vif_list, list)
+		mwl_mac80211_remove_vif(priv, mwl_vif->vif);
+
+	if (priv->if_ops.down_dev)
+		priv->if_ops.down_dev(priv);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mwl_shutdown_sw);
+
+/* This function gets called during interface restart. Required
+ * code is extracted from mwl_add_card()/mwl_wl_init()
+ */
+int mwl_reinit_sw(struct mwl_priv *priv)
+{
+	struct ieee80211_hw *hw = priv->hw;
+	int rc;
+
+	WARN_ON(!priv->recovery_in_progress);
+
+	wiphy_info(priv->hw->wiphy, "%s: Re-initializing software...\n", MWL_DRV_NAME);
+
+	if (priv->if_ops.up_dev)
+		priv->if_ops.up_dev(priv);
+
+	// Re-initialize priv members that may have changed since initialization
+	INIT_LIST_HEAD(&priv->sta_list);
+	INIT_LIST_HEAD(&priv->vif_list);
+
+	priv->macids_used = 0;
+
+	priv->regulatory_set = false;
+	priv->ps_state=PS_AWAKE;
+	priv->ps_mode = 0;
+	priv->ds_enable = ds_enable;
+	priv->ds_state = DS_AWAKE;
+	priv->radio_on = false;
+	priv->radio_short_preamble = false;
+	priv->wmm_enabled = false;
+	priv->csa_active = false;
+
+	priv->is_tx_done_schedule = false;
+	priv->is_qe_schedule = false;
+	priv->qe_trigger_num = 0;
+	priv->qe_trigger_time = jiffies;
+
+	priv->is_rx_schedule = false;
+	priv->cmd_timeout = false;
+
+	rc = mwl_init_firmware(priv);
+
+	if (rc) {
+		wiphy_err(hw->wiphy, "%s: fail to initialize firmware\n", MWL_DRV_NAME);
+		goto err_init;
+	}
+
+	release_firmware(priv->fw_ucode);
+
+	/* card specific initialization after fw is loaded .. */
+	if (priv->if_ops.init_if_post) {
+		if (priv->if_ops.init_if_post(priv)) {
+			goto err_init;
+		}
+	}
+
+	rc = mwl_fwcmd_get_hw_specs(hw);
+	if (rc) {
+		wiphy_err(hw->wiphy, "%s: fail to get HW specifications\n",
+			  MWL_DRV_NAME);
+		goto err_init;
+	}
+	else {
+		if (priv->hw_data.fw_release_num == NOT_LRD_HW) {
+			wiphy_err(hw->wiphy,
+			     "Detected non Laird hardware: 0x%x\n", priv->hw_data.fw_release_num);
+			rc = -ENODEV;
+			goto err_init;
+		}
+		else {
+			wiphy_info(hw->wiphy,
+			     "firmware version: 0x%x\n", priv->hw_data.fw_release_num);
+		}
+	}
+
+	rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
+
+	if (rc) {
+		wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
+		priv->radio_caps = 0;
+	}
+
+	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
+
+	rc = mwl_fwcmd_set_hw_specs(priv->hw);
+	if (rc) {
+		wiphy_err(priv->hw->wiphy, "%s: fail to set HW specifications\n",
+			  MWL_DRV_NAME);
+		goto err_init;
+	}
+
+	mwl_fwcmd_radio_disable(hw);
+	mwl_fwcmd_rf_antenna(hw, priv->ant_tx_bmp, priv->ant_rx_bmp);
+
+	wiphy_err(priv->hw->wiphy, "%s: Restarting mac80211...\n",
+			  MWL_DRV_NAME);
+
+	priv->recovery_in_progress = false;
+	priv->recovery_owner = NULL;
+
+	ieee80211_restart_hw(hw);
+
+	mod_timer(&priv->period_timer, jiffies +
+		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
+	mwl_restart_ds_timer(priv, true);
+
+err_init:
+
+	if (rc) {
+		wiphy_err(hw->wiphy, "%s: fail to re-initialize wireless lan!\n",
+			  MWL_DRV_NAME);
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL_GPL(mwl_reinit_sw);
+
+
 
 #ifdef CONFIG_PM
 void lrd_report_wowlan_wakeup(struct mwl_priv *priv)

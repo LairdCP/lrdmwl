@@ -108,7 +108,7 @@ fwcmd_fail:
 	return rc;
 }
 
-static void mwl_mac80211_stop(struct ieee80211_hw *hw)
+void mwl_mac80211_stop(struct ieee80211_hw *hw)
 {
 	struct mwl_priv *priv = hw->priv;
 
@@ -122,6 +122,9 @@ static void mwl_mac80211_stop(struct ieee80211_hw *hw)
 	/* Disable TX reclaim and RX tasklets. */
 	if (priv->if_ops.ptx_task != NULL)
 		tasklet_disable(priv->if_ops.ptx_task);
+
+	if (priv->if_ops.ptx_work != NULL)
+		cancel_work_sync(priv->if_ops.ptx_work);
 
 	if (priv->if_ops.ptx_done_task != NULL)
 		tasklet_disable(priv->if_ops.ptx_done_task);
@@ -210,7 +213,7 @@ static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
 	return 0;
 }
 
-static void mwl_mac80211_remove_vif(struct mwl_priv *priv,
+void mwl_mac80211_remove_vif(struct mwl_priv *priv,
 				    struct ieee80211_vif *vif)
 {
 	struct mwl_vif *mwl_vif = mwl_dev_get_vif(vif);

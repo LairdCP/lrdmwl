@@ -80,6 +80,7 @@ static int mwl_sdio_init_gpio(void);
 static int mwl_sdio_release_gpio(void);
 static int mwl_sdio_reset_gpio(struct mwl_priv *priv);
 static int mwl_sdio_reset(struct mwl_priv *priv);
+static int mwl_sdio_restart_handler(struct mwl_priv *priv);
 
 /* Device ID for SD8897 */
 #define SDIO_DEVICE_ID_MARVELL_8897   (0x912d)
@@ -435,6 +436,13 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	priv->dev = &func->dev;
 	sdio_set_drvdata(card->func,priv->hw);
 
+	// Initialize default restart handler if not already configured
+	if (!priv->if_ops.hardware_restart)
+	{
+		wiphy_info(priv->hw->wiphy, "Configuring default restart handler\n");
+		priv->if_ops.hardware_restart = mwl_sdio_restart_handler;
+	}
+
 	/*
 	 * Read the host_int_status_reg for ACK the first interrupt got
 	 * from the bootloader. If we don't do this we get a interrupt
@@ -505,6 +513,8 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	skb_queue_head_init(&card->rx_data_q);
 	card->cmd_wait_q.status = 0;
 	card->cmd_sent = false;
+	card->cmd_cond = false;
+	card->cmd_id = 0;
 	card->data_sent = false;
 	init_waitqueue_head(&card->wait_deepsleep);
 
@@ -556,6 +566,9 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 		priv->wow.capable = true;
 	}
 #endif
+
+	// Reinitialization needed in case of restart
+	card->is_deepsleep = 0;
 
 	return 0;
 }
@@ -666,6 +679,10 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	kfree(card->mpa_rx.skb_arr); card->mpa_rx.skb_arr = NULL;
 	kfree(card->mpa_rx.len_arr); card->mpa_rx.len_arr = NULL;
 	kfree(card->mp_regs); card->mp_regs = NULL;
+
+	/* Free pcmd buf */
+	kfree(priv->pcmd_buf); priv->pcmd_buf = NULL;
+	kfree(priv->pcmd_event_buf); priv->pcmd_event_buf = NULL;
 
 	sdio_claim_host(card->func);
 	sdio_disable_func(card->func);
@@ -2535,6 +2552,43 @@ static int mwl_sdio_is_deepsleep(struct mwl_priv * priv)
 	return card->is_deepsleep ;
 }
 
+static void mwl_sdio_up_dev(struct mwl_priv *priv)
+{
+	wiphy_info(priv->hw->wiphy, "%s: Bringing up adapter...\n", MWL_DRV_NAME);
+
+	mwl_sdio_init(priv);
+	return;
+}
+
+static void mwl_sdio_down_dev(struct mwl_priv *priv)
+{
+	wiphy_info(priv->hw->wiphy, "%s: Taking down adapter...\n", MWL_DRV_NAME);
+	mwl_sdio_cleanup(priv);
+	return;
+}
+
+static int mwl_sdio_restart_handler(struct mwl_priv *priv)
+{
+	int ret;
+
+	wiphy_info(priv->hw->wiphy, "%s: Restarting adapter...\n", MWL_DRV_NAME);
+
+	mwl_shutdown_sw(priv);
+
+	ret = mwl_sdio_reset(priv);
+
+	if (!ret)
+	{
+		ret = mwl_reinit_sw(priv);
+		if (ret)
+			wiphy_err(priv->hw->wiphy, "%s: reinit failed with error %d\n", MWL_DRV_NAME, ret);
+	}
+	else
+		wiphy_err(priv->hw->wiphy, "%s: Reset failed with error %d\n", MWL_DRV_NAME, ret);
+
+	return ret;
+}
+
 static struct mwl_if_ops sdio_ops = {
 	.inttf_head_len          = INTF_HEADER_LEN,
 	.init_if                 = mwl_sdio_init,
@@ -2552,6 +2606,8 @@ static struct mwl_if_ops sdio_ops = {
 	.enter_deepsleep         = mwl_sdio_enter_deepsleep,
 	.wakeup_card             = mwl_sdio_wakeup_card,
 	.is_deepsleep            = mwl_sdio_is_deepsleep,
+	.up_dev                  = mwl_sdio_up_dev,
+	.down_dev                = mwl_sdio_down_dev,
 };
 
 static int mwl_sdio_probe(struct sdio_func *func,
@@ -2973,8 +3029,14 @@ static int __init mwl_sdio_driver_init(void)
 	ret = mwl_sdio_init_gpio();
 	if (!ret)
 	{
+		// GPIO init has completed successfully, indicating either
+		//  1. No GPIO was configured via modprobe parameter
+		//  2. GPIO was configured via modprobe parameter and was successfully obtained
 		if (reset_pwd_gpio != ARCH_NR_GPIOS)
-			sdio_ops.hardware_reset = mwl_sdio_reset_gpio;
+		{
+			// GPIO is configured via modprobe, use it directly (legacy restart mechanism)
+			sdio_ops.hardware_restart = mwl_sdio_reset_gpio;
+		}
 
 		ret = sdio_register_driver(&mwl_sdio_driver);
 		if (ret)
