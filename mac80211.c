@@ -737,6 +737,9 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 
 	stream = mwl_fwcmd_lookup_stream(hw, addr, tid);
 
+	wiphy_info(hw->wiphy, "%s(e) Action=%d stream=%p\n",
+		__FUNCTION__, action, stream);
+
 	switch (action) {
 	case IEEE80211_AMPDU_RX_START:
 	case IEEE80211_AMPDU_RX_STOP:
@@ -773,19 +776,10 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
-
-		wiphy_warn(hw->wiphy, "%s(e) Action=%d stream=%p\n",
-			__FUNCTION__, action, stream);
-
 		if (stream) {
-
-			wiphy_warn(hw->wiphy, "stream: state = %d idx=%d\n", stream->state, stream->idx);
-			wiphy_warn(hw->wiphy, "Addr = %02x:%02x:%02x:%02x:%02x:%02x\n",
-					addr[0], addr[1], addr[2],
-					addr[3], addr[4], addr[5]);
-
 			if (stream->state == AMPDU_STREAM_ACTIVE) {
-				mwl_tx_del_ampdu_pkts(hw, sta, tid);
+				if (action != IEEE80211_AMPDU_TX_STOP_CONT)
+					mwl_tx_del_ampdu_pkts(hw, sta, tid);
 				idx = stream->idx;
 				spin_unlock_bh(&priv->stream_lock);
 				mwl_fwcmd_destroy_ba(hw, idx);
@@ -798,8 +792,6 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 			rc = -EPERM;
 		}
 
-		wiphy_warn(hw->wiphy, "%s(l) Action=%d stream=%p ret=%d\n",
-			__FUNCTION__, action, stream, rc);
 		break;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
 		if (stream) {
@@ -860,6 +852,9 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 
 	stream = mwl_fwcmd_lookup_stream(hw, addr, tid);
 
+	wiphy_info(hw->wiphy, "%s(e) Action=%d stream=%p\n",
+		__FUNCTION__, action, stream);
+
 	switch (action) {
 	case IEEE80211_AMPDU_RX_START:
 	case IEEE80211_AMPDU_RX_STOP:
@@ -899,7 +894,8 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 		if (stream) {
 			if (stream->state == AMPDU_STREAM_ACTIVE) {
 				stream->state = AMPDU_STREAM_IN_PROGRESS;
-				mwl_tx_del_ampdu_pkts(hw, sta, tid);
+				if (action != IEEE80211_AMPDU_TX_STOP_CONT)
+					mwl_tx_del_ampdu_pkts(hw, sta, tid);
 				idx = stream->idx;
 				spin_unlock_bh(&priv->stream_lock);
 				mwl_fwcmd_destroy_ba(hw, idx);

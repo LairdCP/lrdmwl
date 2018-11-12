@@ -1712,11 +1712,7 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 			card->data_sent = false;
 		}
 
-
-		if (!priv->is_tx_done_schedule) {
-			priv->is_tx_done_schedule = true;
-			queue_work(card->tx_workq, &card->tx_work);
-		}
+		queue_work(card->tx_workq, &card->tx_work);
 	}
 
 	/* Rx process */
@@ -2171,7 +2167,6 @@ static void mwl_sdio_tx_workq(struct work_struct *work)
 	if(priv->ds_state == DS_SLEEP || priv->ps_state == PS_SLEEP )
 		priv->if_ops.wakeup_card(priv);
 
-	priv->is_tx_done_schedule = false;
 	mwl_tx_skbs((unsigned long)hw);
 	mwl_sdio_flush_amsdu_no_lock((unsigned long)hw);
 }

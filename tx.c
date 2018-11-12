@@ -865,7 +865,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 	tx_ctrl->xmit_control = xmitcontrol;
 
 	if (skb_queue_len(&priv->txq[txq_idx]) > priv->txq_limit){
-		wiphy_err(priv->hw->wiphy, "[SQ%d]\n", mac80211_tc);
+		wiphy_info(priv->hw->wiphy, "[SQ%d]\n", mac80211_tc);
 		ieee80211_stop_queue(hw, mac80211_tc);
 	}
 
@@ -875,10 +875,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 
 	if (priv->if_ops.ptx_work != NULL) {
 		/* SDIO interface is using this path */
-		if (!priv->is_tx_done_schedule) {
-			priv->is_tx_done_schedule = true;
-			queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
-		}
+		queue_work(priv->if_ops.ptx_workq, priv->if_ops.ptx_work);
 	} else {
 		/* PCIE interface is using this path */
 		tasklet_schedule(priv->if_ops.ptx_task);
@@ -1126,7 +1123,7 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 			queue = SYSADPT_TX_WMM_QUEUES - num - 1;
 			if (ieee80211_queue_stopped(hw, queue))
 			{
-				wiphy_err(priv->hw->wiphy, "[WQ%d]\n", queue);
+				wiphy_info(priv->hw->wiphy, "[WQ%d]\n", queue);
 				ieee80211_wake_queue(hw, queue);
 			}
 		}
