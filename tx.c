@@ -865,7 +865,7 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 	tx_ctrl->xmit_control = xmitcontrol;
 
 	if (skb_queue_len(&priv->txq[txq_idx]) > priv->txq_limit){
-		wiphy_info(priv->hw->wiphy, "[SQ%d]\n", mac80211_tc);
+		wiphy_dbg(priv->hw->wiphy, "[SQ%d]\n", mac80211_tc);
 		ieee80211_stop_queue(hw, mac80211_tc);
 	}
 
@@ -899,6 +899,7 @@ void mwl_tx_del_pkts_via_vif(struct ieee80211_hw *hw,
 	struct ieee80211_tx_info *tx_info;
 	struct mwl_tx_ctrl *tx_ctrl;
 	struct sk_buff_head *amsdu_pkts;
+	bool enable_queues = false;
 
 	for (num = 1; num < SYSADPT_NUM_OF_DESC_DATA; num++) {
 		spin_lock_bh(&priv->txq[num].lock);
@@ -914,10 +915,15 @@ void mwl_tx_del_pkts_via_vif(struct ieee80211_hw *hw,
 				}
 				__skb_unlink(skb, &priv->txq[num]);
 				dev_kfree_skb_any(skb);
+				enable_queues = true;
 			}
 		}
 		spin_unlock_bh(&priv->txq[num].lock);
 	}
+
+	// Restart mac80211 queues if any TX queues were cleared
+	if (enable_queues == true)
+		ieee80211_wake_queues(hw);
 }
 
 void mwl_tx_del_pkts_via_sta(struct ieee80211_hw *hw,
@@ -929,6 +935,7 @@ void mwl_tx_del_pkts_via_sta(struct ieee80211_hw *hw,
 	struct ieee80211_tx_info *tx_info;
 	struct mwl_tx_ctrl *tx_ctrl;
 	struct sk_buff_head *amsdu_pkts;
+	bool enable_queues = false;
 
 	for (num = 1; num < SYSADPT_NUM_OF_DESC_DATA; num++) {
 		spin_lock_bh(&priv->txq[num].lock);
@@ -944,10 +951,16 @@ void mwl_tx_del_pkts_via_sta(struct ieee80211_hw *hw,
 				}
 				__skb_unlink(skb, &priv->txq[num]);
 				dev_kfree_skb_any(skb);
+				enable_queues = true;
 			}
 		}
 		spin_unlock_bh(&priv->txq[num].lock);
 	}
+
+	// Restart mac80211 queues if any TX queues were cleared
+	if (enable_queues == true)
+		ieee80211_wake_queues(hw);
+
 }
 
 void mwl_tx_del_ampdu_pkts(struct ieee80211_hw *hw,
@@ -1123,7 +1136,7 @@ pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
 			queue = SYSADPT_TX_WMM_QUEUES - num - 1;
 			if (ieee80211_queue_stopped(hw, queue))
 			{
-				wiphy_info(priv->hw->wiphy, "[WQ%d]\n", queue);
+				wiphy_dbg(priv->hw->wiphy, "[WQ%d]\n", queue);
 				ieee80211_wake_queue(hw, queue);
 			}
 		}
