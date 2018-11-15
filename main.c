@@ -1026,8 +1026,8 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 	// Initialize workq if it hasn't been already
 	if (!priv->restart_workq)
 	{
-		priv->restart_workq = alloc_workqueue("mwlwifi-restart_workq",
-						WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+		priv->restart_workq = alloc_workqueue("lrdwifi-restart_workq",
+						WQ_MEM_RECLAIM | WQ_UNBOUND | WQ_HIGHPRI, 1);
 		INIT_WORK(&priv->restart_work, lrd_radio_recovery_work);
 	}
 
