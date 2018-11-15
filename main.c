@@ -637,7 +637,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw   = priv->hw;
 	struct mwl_if_ops *if_ops = &priv->if_ops;
-	int rc;
+	int rc = 0;
 
 	priv->fw_device_pwrtbl  = false;
 	priv->forbidden_setting = false;
