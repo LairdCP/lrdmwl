@@ -597,6 +597,8 @@ static int mwl_mac80211_sta_add(struct ieee80211_hw *hw,
 	}
 	sta_info->iv16 = 1;
 	sta_info->iv32 = 0;
+	sta_info->sta = sta;
+	sta_info->vif = vif;
 	spin_lock_init(&sta_info->amsdu_lock);
 	INIT_WORK(&sta_info->rc_update_work, mwl_rc_update_work);
 	sta_info->mwl_private = priv;
@@ -621,7 +623,7 @@ static int mwl_mac80211_sta_add(struct ieee80211_hw *hw,
 	return rc;
 }
 
-static int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
+int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_sta *sta)
 {
@@ -1243,6 +1245,29 @@ void mwl_mac80211_set_wakeup(struct ieee80211_hw *hw, bool enabled)
 
 #endif
 
+void mwl_mac80211_reconfig_complete(struct ieee80211_hw *hw,
+				  enum ieee80211_reconfig_type reconfig_type)
+{
+	struct mwl_priv *priv = hw->priv;
+	struct mwl_vif *mwl_vif;
+
+	if (reconfig_type == IEEE80211_RECONFIG_TYPE_RESTART)
+	{
+		// If hardware has been restarted, this is due to radio recovery
+		// Walk the interface list and indicate connection loss so 
+		// connections are restarted cleanly
+		list_for_each_entry(mwl_vif, &priv->vif_list, list)
+		{
+			wiphy_err(priv->hw->wiphy, "%s: Indicating connection loss...\n",
+				  MWL_DRV_NAME);
+			ieee80211_connection_loss(mwl_vif->vif);
+		}
+		wiphy_info(priv->hw->wiphy, "%s: Radio restart complete!\n",
+				MWL_DRV_NAME);
+	}
+
+}
+
 static int mwl_join_ibss(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	return 0;
@@ -1301,4 +1326,6 @@ const struct ieee80211_ops mwl_mac80211_ops = {
 
 	.set_antenna                = mwl_mac80211_set_ant,
 	.get_antenna                = mwl_mac80211_get_ant,
+
+	.reconfig_complete          = mwl_mac80211_reconfig_complete,
 };

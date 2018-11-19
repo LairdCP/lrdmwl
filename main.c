@@ -995,10 +995,7 @@ static void lrd_radio_recovery_work(struct work_struct *work)
 
 	// Restart radio hardware
 	ret = priv->if_ops.hardware_restart(priv);
-	if (!ret)
-		wiphy_info(priv->hw->wiphy, "%s: Radio restart complete...\n",
-			MWL_DRV_NAME);
-	else
+	if (ret)
 		wiphy_err(priv->hw->wiphy, "%s: Unable to restart radio!!\n",
 			MWL_DRV_NAME);
 }
@@ -1132,7 +1129,8 @@ int mwl_shutdown_sw(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 	struct mwl_vif *mwl_vif, *tmp_vif;
-
+	struct mwl_sta *mwl_sta, *tmp_sta;
+	
 	WARN_ON(!priv->recovery_in_progress);
 
 	wiphy_info(priv->hw->wiphy, "%s: Shutting down software...\n", MWL_DRV_NAME);
@@ -1158,14 +1156,20 @@ int mwl_shutdown_sw(struct mwl_priv *priv)
 	skb_queue_purge(&priv->rx_defer_skb_q);
 	cancel_work_sync(&priv->ds_work);
 
-
 	/*
-	 * All the existing interfaces are re-added by the ieee80211_reconfig;
-	 * which means driver should remove existing interfaces before calling
-	 * ieee80211_restart_hw
+	 * Existing interfaces and stations are re-added by ieee80211_reconfig
+	 * with the expectation the driver is in a clean state.
+	 * Remove private driver stations/interfaces here
 	 */
+	list_for_each_entry_safe(mwl_sta, tmp_sta, &priv->sta_list, list)
+	{
+		mwl_mac80211_sta_remove(hw, mwl_sta->vif, mwl_sta->sta);
+	}
+
 	list_for_each_entry_safe(mwl_vif, tmp_vif, &priv->vif_list, list)
+	{
 		mwl_mac80211_remove_vif(priv, mwl_vif->vif);
+	}
 
 	if (priv->if_ops.down_dev)
 		priv->if_ops.down_dev(priv);
@@ -1190,11 +1194,6 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 		priv->if_ops.up_dev(priv);
 
 	// Re-initialize priv members that may have changed since initialization
-	INIT_LIST_HEAD(&priv->sta_list);
-	INIT_LIST_HEAD(&priv->vif_list);
-
-	priv->macids_used = 0;
-
 	priv->regulatory_set = false;
 	priv->ps_state=PS_AWAKE;
 	priv->ps_mode = 0;
