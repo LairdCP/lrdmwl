@@ -778,6 +778,8 @@ struct mwl_amsdu_ctrl {
 
 struct mwl_sta {
 	struct list_head list;
+	struct ieee80211_sta * sta;
+	struct ieee80211_vif * vif;
 	bool is_mesh_node;
 	bool is_ampdu_allowed;
 	struct mwl_tx_info tx_stats[MWL_MAX_TID];

@@ -25,6 +25,7 @@ extern int mwl_shutdown_sw(struct mwl_priv *priv);
 extern int mwl_reinit_sw(struct mwl_priv *priv);
 extern void mwl_mac80211_stop(struct ieee80211_hw *hw);
 extern void mwl_mac80211_remove_vif(struct mwl_priv *priv, struct ieee80211_vif *vif);
+extern int mwl_mac80211_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif, struct ieee80211_sta *sta);
 
 
 #ifdef CONFIG_PM
