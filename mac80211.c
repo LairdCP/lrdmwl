@@ -764,7 +764,7 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 
 	stream = mwl_fwcmd_lookup_stream(hw, addr, tid);
 
-	wiphy_info(hw->wiphy, "%s(e) Action=%d stream=%p\n",
+	wiphy_dbg(hw->wiphy, "%s(e) Action=%d stream=%p\n",
 		__FUNCTION__, action, stream);
 
 	switch (action) {
@@ -879,7 +879,7 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 
 	stream = mwl_fwcmd_lookup_stream(hw, addr, tid);
 
-	wiphy_info(hw->wiphy, "%s(e) Action=%d stream=%p\n",
+	wiphy_dbg(hw->wiphy, "%s(e) Action=%d stream=%p\n",
 		__FUNCTION__, action, stream);
 
 	switch (action) {
