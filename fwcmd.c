@@ -324,7 +324,8 @@ int mwl_fwcmd_confirm_ps(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_CONFIRM_PS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
+		wiphy_err(hw->wiphy, " %s failed execution\n",
+		          mwl_fwcmd_get_cmd_string(HOSTCMD_CMD_CONFIRM_PS));
 		return -EIO;
 	}
 
@@ -361,7 +362,8 @@ int mwl_fwcmd_enter_deepsleep(struct ieee80211_hw *hw)
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_DEEPSLEEP)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(priv->hw->wiphy, "failed execution\n");
+		wiphy_err(hw->wiphy, " %s failed execution\n",
+		          mwl_fwcmd_get_cmd_string(HOSTCMD_CMD_DEEPSLEEP));
 		return -EIO;
 	}
 
