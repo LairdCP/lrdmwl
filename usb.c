@@ -211,7 +211,7 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	memcpy(&usb_ops1.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
                 sizeof(struct mwl_chip_info));
 
-	ret = mwl_add_card(card, &usb_ops1);
+	ret = mwl_add_card(card, &usb_ops1, NULL);
 	pr_debug("mwl_add_card successful");
 	if (ret) {
 		pr_err("%s: mwlwifi_add_card failed: %d\n", __func__, ret);

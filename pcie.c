@@ -74,9 +74,6 @@ static void mwl_clear_bit(struct mwl_priv *priv, int bit_num, volatile void * ad
 
 static irqreturn_t mwl_pcie_isr(int irq, void *dev_id);
 static struct pci_device_id mwl_pci_id_tbl[] = {
-	{ PCI_VDEVICE(MARVELL, 0x2a55), .driver_data = MWL8864, },
-	{ PCI_VDEVICE(MARVELL, 0x2b38), .driver_data = MWL8897, },
-	{ PCI_VDEVICE(MARVELL, 0x2b40), .driver_data = MWL8964, },
 	{ PCI_VDEVICE(MARVELL_EXT, 0x2b42), .driver_data = MWL8997, },
 	{ },
 };
@@ -2199,7 +2196,7 @@ static int mwl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	memcpy(&pcie_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
 		sizeof(struct mwl_chip_info));
 
-	rc = mwl_add_card(card, &pcie_ops);
+	rc = mwl_add_card(card, &pcie_ops, NULL);
 	if (rc) {
 		pr_err("%s: add card failed", MWL_DRV_NAME);
 		goto err_add_card;

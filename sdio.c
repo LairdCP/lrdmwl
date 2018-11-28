@@ -17,6 +17,7 @@
  * this warranty disclaimer.
  */
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/firmware.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
@@ -90,12 +91,14 @@ mwl_sdio_interrupt(struct sdio_func *func);
 
 /* WLAN IDs */
 static const struct sdio_device_id mwl_sdio_id_tbl[] = {
-
-	{SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8897),
-		.driver_data = MWL8897},
 	{SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8997),
 		.driver_data = MWL8997},
 	{ },
+};
+
+static const struct of_device_id mwl_sdio_of_match_table[] = {
+	{ .compatible = "marvell,sd8997" },
+	{ }
 };
 
 /*
@@ -205,8 +208,6 @@ static void *mwl_alloc_dma_align_buf(int rx_len, gfp_t flags)
 	return skb;
 }
 
-
-
 /*
  * This function polls the card status.
  */
@@ -223,7 +224,7 @@ mwl_sdio_poll_card_status(struct mwl_priv *priv, u8 bits)
 		else if ((cs & bits) == bits)
 			return 0;
 
-		usleep_range(10, 20);
+		lrdmwl_delay(10);
 	}
 
 	wiphy_err(priv->hw->wiphy,
@@ -663,7 +664,6 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	sdio_release_irq(card->func);
 	sdio_release_host(card->func);
 
-	tasklet_enable(&priv->rx_task);
 	tasklet_kill(&priv->rx_task);
 
 	/* Free Tx bufs */
@@ -818,8 +818,9 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 	u8 base0, base1;
 	u8 *fwbuf;
 	u16 len = 0;
-	u32 txlen, tx_blocks = 0, tries;
+	u32 txlen, tx_bytes = 0, tries;
 	u32 i = 0;
+	u32 ioport = (card->ioport & MWL_SDIO_IO_PORT_MASK);
 	u16 firmware_status = 0;
 
 	fw = priv->fw_ucode;
@@ -832,23 +833,6 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -1;
 	}
 
-	wiphy_info(priv->hw->wiphy,
-		    "Downloading FW image (%d bytes)\n", fw_len);
-
-	mwl_sdio_enable_int(priv, false);
-
-	sdio_claim_host(card->func);
-	ret = mwl_sdio_read_fw_status(priv, &firmware_status);
-	sdio_release_host(card->func);
-
-	if (ret  == 0 && firmware_status == FIRMWARE_READY_SDIO) {
-		wiphy_err(priv->hw->wiphy,
-			"Firmware already initialized! Resetting radio...\n");
-
-		ret = mwl_sdio_reset(priv);
-		return ret ? ret : -EPROBE_DEFER;
-	}
-
 	/* Assume that the allocated buffer is 8-byte aligned */
 	fwbuf = kzalloc(MWL_UPLD_SIZE, GFP_KERNEL);
 	if (!fwbuf) {
@@ -856,12 +840,43 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		return -ENOMEM;
 	}
 
+	wiphy_info(priv->hw->wiphy,
+		    "Downloading FW image (%d bytes)\n", fw_len);
+
 	mwl_sdio_enable_int(priv, false);
+
+	for (i = 0; i < 2; ++i) {
+		sdio_claim_host(card->func);
+		ret = mwl_sdio_read_fw_status(priv, &firmware_status);
+		sdio_release_host(card->func);
+
+		if (ret  == 0 && firmware_status == FIRMWARE_READY_SDIO) {
+			wiphy_err(priv->hw->wiphy,
+				"Firmware already initialized! Resetting radio...\n");
+
+			if (priv->if_ops.down_dev)
+				priv->if_ops.down_dev(priv);
+
+			ret = mwl_sdio_reset(priv);
+
+			if (priv->if_ops.up_dev)
+				priv->if_ops.up_dev(priv);
+
+			if (ret)
+				return ret;
+		}
+		else
+			break;
+	}
+
+	if (i >= 2)
+		return -1;
 
 	sdio_claim_host(card->func);
 
 	/* Perform firmware data transfer */
-	do {
+	i = 0;
+	for(;;) {
 		/* The host polls for the DN_LD_CARD_RDY and CARD_IO_READY
 		   bits */
 		ret = mwl_sdio_poll_card_status(priv, CARD_IO_READY |
@@ -901,7 +916,7 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 			if (len)
 				break;
 
-			usleep_range(10, 20);
+			lrdmwl_delay(10);
 		}
 
 		if (!len) {
@@ -917,8 +932,7 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 		txlen = len;
 
 		if (len & BIT(0)) {
-			i++;
-			if (i > MAX_WRITE_IOMEM_RETRY) {
+			if (++i > MAX_WRITE_IOMEM_RETRY) {
 				wiphy_err(priv->hw->wiphy,
 					    "FW dnld failed @ %d, over max retry\n",
 					    offset);
@@ -939,30 +953,28 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 			if (fw_len - offset < txlen)
 				txlen = fw_len - offset;
 
-			tx_blocks = (txlen + MWL_SDIO_BLOCK_SIZE - 1)
-				    / MWL_SDIO_BLOCK_SIZE;
+			tx_bytes = ALIGN(txlen, MWL_SDIO_BLOCK_SIZE);
 
 			/* Copy payload to buffer */
-			memmove(fwbuf, &fw_data[offset], txlen);
+			memcpy(fwbuf, &fw_data[offset], txlen);
 		}
 
-		ret = mwl_write_data_sync(priv, fwbuf, tx_blocks *
-					      MWL_SDIO_BLOCK_SIZE,
-					      card->ioport);
+		ret = sdio_writesb(card->func, ioport, fwbuf, tx_bytes);
 		if (ret) {
-			wiphy_err(priv->hw->wiphy,
-				    "FW download, write iomem (%d) failed @ %d\n",
-				    i, offset);
-			if (mwl_write_reg(priv, CONFIGURATION_REG, 0x04))
+			if (ret != -ENOMEDIUM) {
 				wiphy_err(priv->hw->wiphy,
-					    "write CFG reg failed\n");
+						"FW download, write iomem (%d) failed @ %d\n",
+						i, offset);
+				if (mwl_write_reg(priv, CONFIGURATION_REG, 0x04))
+					wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
+			}
 
 			ret = -1;
 			goto err_dnld;
 		}
 
 		offset += txlen;
-	} while (true);
+	}
 
 	sdio_release_host(card->func);
 
@@ -2609,20 +2621,21 @@ static int mwl_sdio_probe(struct sdio_func *func,
 {
 	static bool printed_version;
 	struct mwl_sdio_card *card;
+	struct device_node *np, *of_node = NULL;
 	int rc = 0;
 
 	if (id->driver_data >= MWLUNKNOWN)
 		return -ENODEV;
 
 	if (!printed_version) {
-		pr_info("<<%s version %s>>",
+		dev_info(&func->dev, "<<%s version %s>>",
 			LRD_DESC, LRD_DRV_VERSION);
 		printed_version = true;
 	}
 
 	card = kzalloc(sizeof(struct mwl_sdio_card), GFP_KERNEL);
 	if (!card) {
-		pr_err(MWL_DRV_NAME ": allocate mwl_sdio_card structure failed");
+		dev_err(&func->dev,  ": allocate mwl_sdio_card structure failed");
 		return -ENOMEM;
 	}
 
@@ -2661,13 +2674,27 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	memcpy(&sdio_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
 		sizeof(struct mwl_chip_info));
 
-	rc = mwl_add_card((void *)card, &sdio_ops);
-	if (rc == -EPROBE_DEFER)
-		rc = mwl_add_card((void *)card, &sdio_ops);
+	/* device tree node parsing and platform specific configuration */
+	if (func->dev.of_node) {
+		if (!of_match_node(mwl_sdio_of_match_table, func->dev.of_node))
+			return -ENODEV;
 
+		of_node = func->dev.of_node;
+	} else {
+		for_each_child_of_node(func->card->dev.of_node, np) {
+			if (of_match_node(mwl_sdio_of_match_table, np)) {
+				of_node = np;
+				break;
+			}
+		}
+	}
+
+	rc = mwl_add_card(card, &sdio_ops, of_node);
 	if (rc != 0) {
-		pr_err("%s: failed to add_card %d\n", __func__, rc);
+		if (rc != -EPROBE_DEFER)
+			dev_err(&func->dev, "Failed to add_card %d\n", rc);
 
+		destroy_workqueue(card->cmd_workq);
 		destroy_workqueue(card->tx_workq);
 		kfree(card);
 	}
@@ -2680,10 +2707,10 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	struct mwl_priv     *priv;
 	struct ieee80211_hw *hw;
 
-	pr_info("lrdmwl: Card removal initiated!\n");
+	dev_info(&func->dev, "Card removal initiated!\n");
 	hw = sdio_get_drvdata(func);
 	if (!hw || !hw->priv) {
-		pr_err("Data structures invalid, exiting...");
+		dev_err(&func->dev, "Data structures invalid, exiting...");
 		return;
 	}
 
@@ -2699,7 +2726,7 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	mwl_sdio_reset(priv);
 
 	mwl_ieee80211_free_hw(priv);
-	pr_info("lrdmwl: Card removal complete!\n");
+	dev_info(&func->dev, "Card removal complete!\n");
 }
 
 static void lrd_sdio_host_fixups(struct sdio_func *func)
@@ -2826,6 +2853,8 @@ static int mwl_sdio_suspend(struct device *dev)
 
 	lrd_sdio_host_fixups(func);
 
+	lrd_enable_wowlan(priv);
+
 	/* Indicate device suspended */
 	card->is_suspended = true;
 
@@ -2860,6 +2889,8 @@ static int mwl_sdio_resume(struct device *dev)
 		wiphy_debug(hw->wiphy,"device already resumed\n");
 		return 0;
 	}
+
+	lrd_disable_wowlan(priv);
 
 	lrd_sdio_remove_host_fixups(func);
 
