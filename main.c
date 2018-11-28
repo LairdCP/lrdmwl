@@ -16,9 +16,10 @@
 /* Description:  This file implements main functions of this module. */
 
 #include <linux/module.h>
-#ifdef CONFIG_OF
+#include <linux/interrupt.h>
 #include <linux/of.h>
-#endif
+#include <linux/of_irq.h>
+#include <linux/suspend.h>
 
 #include "sysadpt.h"
 #include "dev.h"
@@ -29,6 +30,7 @@
 #include "rx.h"
 #include "isr.h"
 #include "thermal.h"
+
 #ifdef CONFIG_SYSFS
 #include "sysfs.h"
 #endif
@@ -248,7 +250,7 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 	rc = priv->if_ops.prog_fw(priv);
 	if (rc) {
 		wiphy_err(priv->hw->wiphy,
-			  "%s: firmware download/init failed! <%s> %x\n",
+			  "%s: firmware download/init failed! <%s> %d\n",
 			  MWL_DRV_NAME, fw_name, rc);
 		goto err_download_fw;
 	}
@@ -264,16 +266,10 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 				  "Cal data request_firmware() failed\n");
 	}
 
-	return rc;
-
 err_download_fw:
-
 	release_firmware(priv->fw_ucode);
 
 err_load_fw:
-
-	wiphy_err(priv->hw->wiphy, "firmware init fail\n");
-
 	return rc;
 }
 
@@ -1031,7 +1027,8 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 	queue_work(priv->restart_workq, &priv->restart_work);
 }
 
-int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
+int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
+	struct device_node *of_node)
 {
 	struct ieee80211_hw *hw;
 	struct mwl_priv *priv;
@@ -1068,21 +1065,21 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 			goto err_init_if;
 	}
 
+	rc = lrd_probe_of(priv, of_node);
+	if (rc == -EPROBE_DEFER)
+		goto err_of;
+
 	/* Setup timers */
 	timer_setup(&priv->roc.roc_timer, remain_on_channel_expire, 0);
 	timer_setup(&priv->period_timer,  timer_routine, 0);
 	timer_setup(&priv->ds_timer, ds_routine, 0);
 
 	rc = mwl_init_firmware(priv);
-
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to initialize firmware\n",
 			  MWL_DRV_NAME);
 		goto err_init_firmware;
 	}
-
-	/* firmware is loaded to H/W, it can be released now */
-	release_firmware(priv->fw_ucode);
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
@@ -1109,15 +1106,18 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops)
 
 	return rc;
 
+err_of:
 err_wl_init:
 err_init_firmware:
 	priv->if_ops.cleanup_if(priv);
 
 err_init_if:
+	destroy_workqueue(priv->ds_workq);
+	destroy_workqueue(priv->rx_defer_workq);
+
 	mwl_ieee80211_free_hw(priv);
 
 err_alloc_hw:
-
 	return rc;
 }
 EXPORT_SYMBOL_GPL(mwl_add_card);
@@ -1219,8 +1219,6 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 		goto err_init;
 	}
 
-	release_firmware(priv->fw_ucode);
-
 	/* card specific initialization after fw is loaded .. */
 	if (priv->if_ops.init_if_post) {
 		if (priv->if_ops.init_if_post(priv)) {
@@ -1289,9 +1287,80 @@ err_init:
 }
 EXPORT_SYMBOL_GPL(mwl_reinit_sw);
 
-
-
 #ifdef CONFIG_PM
+static irqreturn_t lrd_irq_wakeup_handler(int irq, void *dev_id)
+{
+	struct mwl_priv *priv = dev_id;
+
+	/* Notify PM core we are wakeup source */
+	pm_wakeup_event(priv->dev, 0);
+
+	wiphy_dbg(priv->hw->wiphy, "Wake by Wi-Fi\n");
+
+	return IRQ_HANDLED;
+}
+
+int lrd_probe_of(struct mwl_priv *priv, struct device_node *of_node)
+{
+	int ret;
+
+	if (!of_node) {
+		priv->wow.irq_wakeup = -ENODEV;
+		return 0;
+	}
+
+	ret = of_irq_get(of_node, 0);
+	if (ret <= 0) {
+		if (ret != -EPROBE_DEFER)
+			wiphy_err(priv->hw->wiphy,
+				"Fail to parse irq_wakeup from device tree\n");
+		priv->wow.irq_wakeup = -ENODEV;
+		return ret;
+	}
+
+	priv->wow.irq_wakeup = ret;
+
+	irq_set_status_flags(priv->wow.irq_wakeup, IRQ_NOAUTOEN);
+	ret = devm_request_threaded_irq(priv->dev, priv->wow.irq_wakeup, NULL,
+			   lrd_irq_wakeup_handler, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+			   "wifi_wake", priv);
+	if (ret) {
+		wiphy_err(priv->hw->wiphy, "Failed to request irq_wakeup %d (%d)\n",
+			priv->wow.irq_wakeup, ret);
+		return ret;
+	}
+
+	if (device_init_wakeup(priv->dev, true)) {
+		wiphy_err(priv->hw->wiphy, "Fail to init wake source\n");
+		return ret;
+	}
+
+	wiphy_info(priv->hw->wiphy, "Added WoWLan interrupt\n");
+
+	return 0;
+}
+
+/* Disable platform specific wakeup interrupt */
+void lrd_disable_wowlan(struct mwl_priv *priv)
+{
+	if (priv->wow.irq_wakeup >= 0) {
+		disable_irq_wake(priv->wow.irq_wakeup);
+		disable_irq_nosync(priv->wow.irq_wakeup);
+	}
+}
+EXPORT_SYMBOL_GPL(lrd_disable_wowlan);
+
+/* Enable platform specific wakeup interrupt */
+void lrd_enable_wowlan(struct mwl_priv *priv)
+{
+	/* Enable platform specific wakeup interrupt */
+	if (priv->wow.irq_wakeup >= 0) {
+		enable_irq(priv->wow.irq_wakeup);
+		enable_irq_wake(priv->wow.irq_wakeup);
+	}
+}
+EXPORT_SYMBOL_GPL(lrd_enable_wowlan);
+
 void lrd_report_wowlan_wakeup(struct mwl_priv *priv)
 {
 	int x = 0;

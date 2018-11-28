@@ -409,6 +409,7 @@ struct mwl_wowlan_cfg {
 	u8  wakeSigType;       /* Data sheet indicate this is to be active low */
 	u32 wowlanCond;        /* Conditions to wake for */
 	unsigned long jiffies; /* time resume called */
+	int irq_wakeup;
 
 	/* Configuration data */
 	u16 addrListCnt;
@@ -588,7 +589,8 @@ struct mwl_priv {
 #ifdef CONFIG_PM
 	struct mwl_wowlan_cfg wow;
 #endif
-	/*Remain on channel info*/
+
+	/* Remain on channel info */
 	struct mwl_roc_info roc;
 
 	/* keep survey information */
@@ -596,7 +598,7 @@ struct mwl_priv {
 	int survey_info_idx;
 	struct mwl_survey_info survey_info[SYSADPT_MAX_NUM_CHANNELS];
 	struct mwl_survey_info cur_survey_info;
-    bool cur_survey_valid;
+	bool cur_survey_valid;
 
 	s8 noise;                    /* Most recently reported noise in dBm */
 
