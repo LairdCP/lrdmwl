@@ -2680,7 +2680,7 @@ static int mwl_sdio_probe(struct sdio_func *func,
 			return -ENODEV;
 
 		of_node = func->dev.of_node;
-	} else {
+	} else if (func->card->dev.of_node) {
 		for_each_child_of_node(func->card->dev.of_node, np) {
 			if (of_match_node(mwl_sdio_of_match_table, np)) {
 				of_node = np;
