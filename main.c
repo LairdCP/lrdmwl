@@ -205,6 +205,14 @@ int ds_enable = DS_ENABLE_ON;
 int SISO_mode = 0;
 int lrd_debug = 0;
 
+static int lrd_send_fw_event(struct device *dev, bool on)
+{
+	static char *env_on[] = { "FIRMWARE=on", NULL };
+	static char *env_off[] = { "FIRMWARE=off", NULL };
+
+	return kobject_uevent_env(&dev->kobj, KOBJ_CHANGE, on ? env_on : env_off);
+}
+
 static bool mwl_is_world_mode(struct mwl_priv *priv)
 {
 	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
@@ -849,6 +857,8 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas. (%08x)/(%08x)\n",
 		   priv->ant_tx_num, priv->ant_rx_num, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
+	lrd_send_fw_event(priv->dev, true);
+
 	return rc;
 
 err_wl_init:
@@ -859,6 +869,9 @@ err_thermal_register:
 void mwl_wl_deinit(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
+
+	device_init_wakeup(priv->dev, false);
+	lrd_send_fw_event(priv->dev, false);
 
 	priv->shutdown = true;
 
@@ -1106,9 +1119,11 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 
 	return rc;
 
-err_of:
 err_wl_init:
 err_init_firmware:
+	device_init_wakeup(priv->dev, false);
+
+err_of:
 	priv->if_ops.cleanup_if(priv);
 
 err_init_if:
@@ -1130,8 +1145,10 @@ int mwl_shutdown_sw(struct mwl_priv *priv)
 	struct ieee80211_hw *hw = priv->hw;
 	struct mwl_vif *mwl_vif, *tmp_vif;
 	struct mwl_sta *mwl_sta, *tmp_sta;
-	
+
 	WARN_ON(!priv->recovery_in_progress);
+
+	lrd_send_fw_event(priv->dev, false);
 
 	wiphy_info(priv->hw->wiphy, "%s: Shutting down software...\n", MWL_DRV_NAME);
 
@@ -1276,6 +1293,8 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
 	mwl_restart_ds_timer(priv, true);
 
+	lrd_send_fw_event(priv->dev, true);
+
 err_init:
 
 	if (rc) {
@@ -1330,8 +1349,9 @@ int lrd_probe_of(struct mwl_priv *priv, struct device_node *of_node)
 		return ret;
 	}
 
-	if (device_init_wakeup(priv->dev, true)) {
-		wiphy_err(priv->hw->wiphy, "Fail to init wake source\n");
+	ret = device_init_wakeup(priv->dev, true);
+	if (ret) {
+		wiphy_err(priv->hw->wiphy, "Fail to init wake source (%d)\n", ret);
 		return ret;
 	}
 
