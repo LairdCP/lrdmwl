@@ -742,13 +742,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		priv->band_50.n_bitrates = ARRAY_SIZE(mwl_rates_50);
 	}
 
-	/* card specific initialization after fw is loaded .. */
-	if (priv->if_ops.init_if_post) {
-		if (priv->if_ops.init_if_post(priv)) {
-			goto err_wl_init;
-		}
-	}
-
 	/* bus specific device registration */
 	if (priv->if_ops.register_dev)
 		rc = priv->if_ops.register_dev(priv);
@@ -778,6 +771,13 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			wiphy_err(hw->wiphy,
 			     "Detected non Laird hardware: 0x%x\n", priv->hw_data.fw_release_num);
 			rc = -ENODEV;
+			goto err_wl_init;
+		}
+	}
+
+	/* interface specific initialization after fw is loaded and hw specs retrieved .. */
+	if (priv->if_ops.init_if_post) {
+		if (priv->if_ops.init_if_post(priv)) {
 			goto err_wl_init;
 		}
 	}
