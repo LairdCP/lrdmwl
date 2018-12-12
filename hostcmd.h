@@ -262,6 +262,7 @@ struct hostcmd_header {
 	__le16 result;
 } __packed;
 
+#define WCB_BASE_COUNT     20
 /* HOSTCMD_CMD_GET_HW_SPEC */
 struct hostcmd_cmd_get_hw_spec {
 	struct hostcmd_header cmd_hdr;
@@ -277,7 +278,7 @@ struct hostcmd_cmd_get_hw_spec {
 	__le32 rxpd_wr_ptr;
 	__le32 rxpd_rd_ptr;
 	__le32 fw_awake_cookie;
-	__le32 wcb_base[SYSADPT_TOTAL_TX_QUEUES - 1];
+	__le32 wcb_base[WCB_BASE_COUNT - 1];
 } __packed;
 
 /* HOSTCMD_CMD_SET_HW_SPEC */
@@ -306,7 +307,7 @@ struct hostcmd_cmd_set_hw_spec {
 	/* Actual number of TX queues in WcbBase array */
 	__le32 num_tx_queues;
 	/* TX WCB Rings */
-	__le32 wcb_base[SYSADPT_NUM_OF_DESC_DATA];
+	__le32 wcb_base[WCB_BASE_COUNT];
 	/* Max AMSDU size (00 - AMSDU Disabled,
 	 * 01 - 4K, 10 - 8K, 11 - not defined)
 	 */
