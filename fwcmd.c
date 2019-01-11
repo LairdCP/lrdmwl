@@ -4179,7 +4179,8 @@ int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability)
 		return -EIO;
 	}
 
-	*capability = le16_to_cpu(caps->capability);
+	/* Note these fields are reverse of structure's fields */
+	*capability = ((le16_to_cpu(caps->capability)<<16) | le16_to_cpu(caps->num_mac_addr));
 
 	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;

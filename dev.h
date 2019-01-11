@@ -506,7 +506,8 @@ struct otp_data {
 #define DS_ENABLE_PAUSE    2
 
 //Laird radio capability bits
-#define LRD_CAP_SU60 BIT(0)
+#define LRD_CAP_SU60 BIT(16)
+#define LRD_CAP_NUM_MAC_MASK   0x0000FFFF
 
 struct mwl_priv {
 	struct ieee80211_hw *hw;

@@ -403,12 +403,83 @@ static void mwl_set_vht_caps(struct mwl_priv *priv,
 	}
 }
 
+static struct ieee80211_iface_combination*
+mwl_alloc_intf_combos(const struct ieee80211_iface_combination *c, int n_c)
+{
+	int size = 0;
+	int    x = 0;
+	u8  *end = 0;
+	struct ieee80211_iface_combination *combo = NULL;
+
+	if (!c) {
+		return NULL;
+	}
+
+	size  = sizeof(struct ieee80211_iface_combination) * n_c;
+	for (x = 0; x < n_c; x++) {
+		//figure out size of limits
+		size += sizeof(struct ieee80211_iface_limit) * c[x].n_limits;
+	}
+
+	//Allocate memory
+	combo = (struct ieee80211_iface_combination *)kzalloc(size, GFP_KERNEL);
+
+	if (combo) {
+		//Copy interface combination array
+		memcpy(combo, c, sizeof(struct ieee80211_iface_combination) * n_c);
+
+		end = ((u8*)combo) + (sizeof(struct ieee80211_iface_combination) * n_c);
+
+		//Copy limit arrays
+		for (x = 0; x < combo->n_limits; x++) {
+			//Fix limits array to point to end of combo array
+			combo[x].limits = (struct ieee80211_iface_limit*)end;
+			memcpy((void*)combo[x].limits, c[x].limits, sizeof(struct ieee80211_iface_limit)*combo[x].n_limits);
+			end += sizeof(struct ieee80211_iface_limit) * combo[x].n_limits;
+		}
+	}
+
+	return combo;
+}
+
+static void lrd_adjust_iface_combo(struct mwl_priv *priv, struct ieee80211_iface_combination *combos, int n_c)
+{
+	int x = 0;
+	int y = 0;
+	u16 max_intf = (u16)(priv->radio_caps & LRD_CAP_NUM_MAC_MASK);
+
+	if (NULL == combos) {
+		return;
+	}
+
+	for (x = 0; x < n_c; x++) {
+		if (combos[x].max_interfaces > max_intf) {
+		wiphy_info(priv->hw->wiphy,"Adjusting combo %d's number of supported interfaces to %d\n", x, max_intf);
+
+			combos[x].max_interfaces = max_intf;
+
+			for (y = 0; y < combos[x].n_limits; y++) {
+				if (combos[x].limits[y].max > max_intf) {
+					((struct ieee80211_iface_limit*)combos[x].limits)[y].max = max_intf;
+				}
+			}
+		}
+	}
+}
+
 static int lrd_set_su_caps(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 
-	hw->wiphy->iface_combinations   = &if_su_comb[0];
-	hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_su_comb);
+	//Allocate and adjust interface combinations
+	hw->wiphy->iface_combinations   = mwl_alloc_intf_combos(if_su_comb, ARRAY_SIZE(if_su_comb));
+	if (hw->wiphy->iface_combinations) {
+		hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_su_comb);
+
+		lrd_adjust_iface_combo( priv,
+		                       (struct ieee80211_iface_combination *)hw->wiphy->iface_combinations,
+		                        hw->wiphy->n_iface_combinations);
+	}
 
 	#ifdef CONFIG_PM
 	if (priv->wow.capable) {
@@ -421,8 +492,11 @@ static int lrd_set_su_caps(struct mwl_priv *priv)
 	/* Register for monitor interfaces, to work around mac80211 bug */
 	ieee80211_hw_set(hw, WANT_MONITOR_VIF);
 
-	/* Caller will do actual allocation */
-	hw->wiphy->n_addresses = if_su_comb[0].max_interfaces;
+	if (hw->wiphy->iface_combinations) {
+		/* Caller will do actual allocation */
+		/*Note:  This assumes first combo element contains the max number of interfaces */
+		hw->wiphy->n_addresses =  hw->wiphy->iface_combinations[0].max_interfaces;
+	}
 
 	return 0;
 }
@@ -432,8 +506,15 @@ static int lrd_set_st_caps(struct mwl_priv *priv)
 	struct ieee80211_hw *hw = priv->hw;
 	int x = 0;
 
-	hw->wiphy->iface_combinations   = &if_st_comb[0];
-	hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_st_comb);
+	//Allocate and adjust interface combinations
+	hw->wiphy->iface_combinations   = mwl_alloc_intf_combos(if_st_comb, ARRAY_SIZE(if_st_comb));;
+	if (hw->wiphy->iface_combinations) {
+		hw->wiphy->n_iface_combinations = ARRAY_SIZE(if_st_comb);
+
+		lrd_adjust_iface_combo( priv,
+		                        (struct ieee80211_iface_combination *)hw->wiphy->iface_combinations,
+		                        hw->wiphy->n_iface_combinations);
+	}
 
 	/* sterling fw supports fewer AP interfaces - adjust for that here*/
 	priv->ap_macids_supported = 0;
@@ -441,8 +522,11 @@ static int lrd_set_st_caps(struct mwl_priv *priv)
 		priv->ap_macids_supported |= 1 << x;
 	}
 
-	/* Caller will do actual allocation */
-	hw->wiphy->n_addresses = if_st_comb[0].max_interfaces;
+	if (hw->wiphy->iface_combinations) {
+		/* Caller will do actual allocation */
+		/*Note:  This assumes first combo element contains the max number of interfaces */
+		hw->wiphy->n_addresses =  hw->wiphy->iface_combinations[0].max_interfaces;
+	}
 
 	return 0;
 }
@@ -451,8 +535,17 @@ void mwl_ieee80211_free_hw(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 
-	if (hw && hw->wiphy->n_addresses) {
-		kfree(hw->wiphy->addresses);
+	if (hw) {
+		//Free driver allocated memory
+		if (hw->wiphy->iface_combinations) {
+			kfree(hw->wiphy->iface_combinations);
+			hw->wiphy->iface_combinations = NULL;
+		}
+
+		if (hw->wiphy->n_addresses) {
+			kfree(hw->wiphy->addresses);
+			hw->wiphy->addresses = NULL;
+		}
 	}
 
 	ieee80211_free_hw(hw);
@@ -844,7 +937,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	}
 
 	/* Success - dump relevant info to log */
-	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
+	wiphy_info(hw->wiphy, "Radio Type %s (%d)\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60", priv->radio_caps & LRD_CAP_NUM_MAC_MASK);
 	wiphy_info(hw->wiphy, "Firmware version: 0x%x\n", priv->hw_data.fw_release_num);
 	wiphy_info(hw->wiphy, "Firmware region code: %x\n", priv->fw_region_code);
 	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
