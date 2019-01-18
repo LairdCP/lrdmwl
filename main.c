@@ -580,8 +580,7 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	ieee80211_hw_set(hw, MFP_CAPABLE);
 	ieee80211_hw_set(hw, SPECTRUM_MGMT);
 	if (priv->chip_type == MWL8997) {
-		if (priv->host_if != MWL_IF_USB)
-			ieee80211_hw_set(hw, SUPPORTS_PS);
+		ieee80211_hw_set(hw, SUPPORTS_PS);
 	}
 
 	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
