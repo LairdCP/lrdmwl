@@ -26,11 +26,7 @@
 #define INTF_HEADER_LEN      0
 #define INTF_HEADER_LEN_MFG  4
 
-#ifdef CONFIG_ARCH_BERLIN
-#define MWL_FW_ROOT     "mrvl"
-#else
 #define MWL_FW_ROOT     "lrdmwl"
-#endif
 
 /* PCIe interrupt mode = legacy (default) */
 int pcie_intr_mode = 0;
@@ -870,7 +866,7 @@ static int mwl_pcie_init_post(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card = priv->intf;
 	int i;
-	
+
 	priv->ds_enable = DS_ENABLE_OFF;
 
 	if (priv->mfg_mode) {
@@ -1111,9 +1107,9 @@ static int mwl_extract_wifi_fw(struct mwl_priv *priv) {
 	u32 offset = 0, data_len, dnld_cmd;
 	int ret = 0;
 	bool cmd7_before = false, first_cmd = false;
-	
+
 	hw = priv->hw;
-	
+
 	firmware = priv->fw_ucode->data;
 	firmware_len = priv->fw_ucode->size;
 
@@ -1244,7 +1240,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	/* make sure SCRATCH2 C40 is clear, in case we are too quick */
 	while (readl(card->iobase1 + MACREG_REG_CMD_SIZE) == 0)
 		cond_resched();
-		
+
 	int_code = readl(card->iobase1 + PCIE_SCRATCH_13_REG);
 	if (int_code == MWIFIEX_PCIE_FLR_HAPPENS)
 	{
@@ -2252,12 +2248,12 @@ static int mwl_pcie_restart_handler(struct mwl_priv *priv)
 	* can't grab the device lock, maybe we'll get another chance later.
 	*/
 	rc = pci_try_reset_function(card->pdev);
-	
+
 	if (rc == -EAGAIN && !card->priv->shutdown) {
 		WARN_ON(!priv->restart_workq);
 		queue_work(priv->restart_workq, &priv->restart_work);
 	}
-	
+
 	return rc;
 }
 #endif

@@ -37,11 +37,8 @@
 
 #define INTF_HEADER_LEN         4
 
-#ifdef CONFIG_ARCH_BERLIN
-#define MWL_FW_ROOT     "mrvl"
-#else
 #define MWL_FW_ROOT     "lrdmwl"
-#endif
+
 static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8864] = {
 		.part_name	= "88W8864",
