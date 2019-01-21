@@ -873,6 +873,11 @@ static int mwl_pcie_init_post(struct mwl_priv *priv)
 	
 	priv->ds_enable = DS_ENABLE_OFF;
 
+	if (priv->mfg_mode) {
+		//Assume ST 60 with one interface
+		priv->radio_caps = 1;
+	}
+
 	if (!IS_PFU_ENABLED(priv->chip_type)) {
 		writel(priv->desc_data[0].pphys_tx_ring,
 			card->iobase0 + priv->desc_data[0].wcb_base);

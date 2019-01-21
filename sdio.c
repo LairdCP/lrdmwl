@@ -402,6 +402,9 @@ static int mwl_sdio_init_post(struct mwl_priv *priv)
 {
 	if (priv->mfg_mode) {
 		priv->ds_enable = DS_ENABLE_OFF;
+
+		//Assume ST 60 with one interface
+		priv->radio_caps = 1;
 	}
 
 	return 0;

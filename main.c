@@ -875,10 +875,12 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		}
 	}
 
-	rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
-	if (rc) {
-		wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
-		priv->radio_caps = 0;
+	if (!priv->mfg_mode) {
+		rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
+		if (rc) {
+			wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
+			priv->radio_caps = 0;
+		}
 	}
 
 	if (priv->radio_caps & LRD_CAP_SU60) {
@@ -1355,11 +1357,13 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 		}
 	}
 
-	rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
+	if (!priv->mfg_mode) {
+		rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
 
-	if (rc) {
-		wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
-		priv->radio_caps = 0;
+		if (rc) {
+			wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
+			priv->radio_caps = 0;
+		}
 	}
 
 	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");

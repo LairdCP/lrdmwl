@@ -1288,7 +1288,12 @@ int mwl_fwcmd_get_hw_specs(struct ieee80211_hw *hw)
 		msleep(1000);
 	}
 
-	ether_addr_copy(&priv->hw_data.mac_addr[0], pcmd->permanent_addr);
+	if (!priv->mfg_mode) {
+		//MFG firmware does not return consistent permanent mac, so only
+		//use it if running protocol firmware
+		ether_addr_copy(&priv->hw_data.mac_addr[0], pcmd->permanent_addr);
+	}
+
 	priv->desc_data[0].wcb_base =
 		le32_to_cpu(pcmd->wcb_base0) & 0x0000ffff;
 	for (i = 1; i < SYSADPT_TOTAL_TX_QUEUES; i++)
@@ -1677,7 +1682,8 @@ int mwl_fwcmd_rf_antenna(struct ieee80211_hw *hw, int ant_tx_bmp,
 	}
 
 	if (pcmd->cmd_hdr.result != 0) {
-		wiphy_err(hw->wiphy, "Command Rejected by FW\n");
+		wiphy_err(hw->wiphy, "Command %s Rejected by FW\n",
+		mwl_fwcmd_get_cmd_string(HOSTCMD_CMD_802_11_RF_ANTENNA_V2));
 		retval = -EINVAL;
 	}
 
