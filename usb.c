@@ -51,6 +51,7 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8997] = {
 		.part_name      = "88W8997",
 		.fw_image       = MWL_FW_ROOT"/88W8997_usb.bin",
+		.mfg_image      = MWL_FW_ROOT"/88W8997_usb_mfg.bin",
 		.antenna_tx     = ANTENNA_TX_2,
 		.antenna_rx     = ANTENNA_RX_2,
 	},
@@ -231,11 +232,14 @@ static void mwl_usb_free(struct usb_card_rec *card)
 	struct mwl_priv * priv = card->priv;
 	int i, j;
 
-	if (atomic_read(&card->rx_cmd_urb_pending) && card->rx_cmd.urb)
+	if (atomic_read(&card->rx_cmd_urb_pending) && card->rx_cmd.urb) {
 		usb_kill_urb(card->rx_cmd.urb);
+	}
 
-	usb_free_urb(card->rx_cmd.urb);
-	card->rx_cmd.urb = NULL;
+	if (card->rx_cmd.urb) {
+		usb_free_urb(card->rx_cmd.urb);
+		card->rx_cmd.urb = NULL;
+	}
 
 	if(likely(!priv->mfg_mode)) {
 		if (atomic_read(&card->rx_data_urb_pending)) {
@@ -260,19 +264,22 @@ static void mwl_usb_free(struct usb_card_rec *card)
 		}
 	}
 
+	if (card->tx_cmd.urb) {
+		usb_free_urb(card->tx_cmd.urb);
+		card->tx_cmd.urb = NULL;
+	}
+
 	return;
 }
 
 
 static int mwl_usb_resume(struct usb_interface *intf)
 {
-	printk("Dummy Resume\n");
 	return 0;
 }
 
 static int mwl_usb_suspend(struct usb_interface *intf,pm_message_t message)
 {
-	printk("Dummy Suspend\n");
 	return 0;
 }
 
@@ -280,28 +287,35 @@ static void mwl_usb_disconnect(struct usb_interface *intf)
 {
 	struct usb_card_rec *card = usb_get_intfdata(intf);
 	struct mwl_priv *adapter;
-	printk(KERN_ALERT"In disconnect ********\n");
-/*TODO	wait_for_completion(&card->fw_done);*/
+
+	/*TODO	wait_for_completion(&card->fw_done);*/
 
 	adapter = card->priv;
-	if(likely(!adapter->mfg_mode))
-		mwl_wl_deinit(adapter);
+
+	mwl_wl_deinit(adapter);
+
 	/*TODO : deauthenticate and shutdown firmware*/
 
 	mwl_usb_free(card);
 
 	/* TODO mwl_remove_card(adapter);*/
 
+	if (adapter->if_ops.ptx_task != NULL)
+		tasklet_kill(adapter->if_ops.ptx_task);
+
+	/* Tasklet should have already been disabled*/
+	tasklet_kill(&adapter->rx_task);
+
 	usb_put_dev(interface_to_usbdev(intf));
 }
 
 static struct usb_driver mwl_usb_driver = {
-	.name = MWL_DRV_NAME,
-	.probe = mwl_usb_probe,
-	.disconnect = mwl_usb_disconnect,
-	.id_table = mwl_usb_table,
-	.suspend = mwl_usb_suspend,
-	.resume = mwl_usb_resume,
+	.name        = MWL_DRV_NAME,
+	.probe       = mwl_usb_probe,
+	.disconnect  = mwl_usb_disconnect,
+	.id_table    = mwl_usb_table,
+	.suspend     = mwl_usb_suspend,
+	.resume      = mwl_usb_resume,
 	.soft_unbind = 1,
 };
 
@@ -317,7 +331,7 @@ static bool mwl_usb_check_card_status(struct mwl_priv *priv)
 
 static void mwl_usb_tx_aggr_tmo(struct timer_list *t)
 {
-	printk(KERN_ALERT"Dummy function %s\n",__FUNCTION__);
+
 }
 
 /*
@@ -356,9 +370,9 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 		!(priv->roc.tmr_running && priv->roc.in_progress &&
 			(pdesc->channel == priv->roc.chan))) {
 		dev_kfree_skb_any(prx_skb);
-		wiphy_debug(priv->hw->wiphy,
-			"<= %s(), not accepted channel (%d, %d)\n", __func__,
-			pdesc->channel, hw->conf.chandef.chan->hw_value);
+//		wiphy_debug(priv->hw->wiphy,
+//			"<= %s(), not accepted channel (%d, %d)\n", __func__,
+//			pdesc->channel, hw->conf.chandef.chan->hw_value);
 		return;
 	}
 
@@ -428,8 +442,6 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	*/
 	wh = (struct ieee80211_hdr *)prx_skb->data;
 
-#if KERNEL_VERSION(4, 6, 0) > LINUX_VERSION_CODE
-
 	if (ieee80211_is_mgmt(wh->frame_control)) {
 		struct ieee80211_mgmt *mgmt;
 		__le16 capab;
@@ -445,7 +457,6 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 				mwl_rx_enable_sta_amsdu(priv, mgmt->sa);
 		}
 	}
-#endif
 
 #if 0 //def CONFIG_MAC80211_MESH
 		if (ieee80211_is_data_qos(wh->frame_control) &&
@@ -511,12 +522,12 @@ static int mwl_usb_init(struct mwl_priv *priv)
 	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
 	int num;
 
-	card->priv = priv;
+	card->priv    = priv;
 	priv->host_if = MWL_IF_USB;
 
-	priv->dev = &card->udev->dev;
+	priv->dev       = &card->udev->dev;
 	priv->chip_type = card->chip_type;
-	priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
+	priv->pcmd_buf  = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
 
 	if (!priv->pcmd_buf) {
 		wiphy_err(priv->hw->wiphy,
@@ -533,8 +544,9 @@ static int mwl_usb_init(struct mwl_priv *priv)
 	init_waitqueue_head(&card->cmd_wait_q.wait);
 	card->cmd_wait_q.status = 0;
 
-	if (priv->mfg_mode)
+	if (priv->mfg_mode) {
 		return 0;
+	}
 
 	skb_queue_head_init(&card->rx_data_q);
 
@@ -548,7 +560,7 @@ static int mwl_usb_init(struct mwl_priv *priv)
 	return 0;
 }
 
-static int mwl_register_dev(struct mwl_priv *priv)
+static int mwl_usb_register_dev(struct mwl_priv *priv)
 {
 	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
 
@@ -589,11 +601,8 @@ static int mwl_register_dev(struct mwl_priv *priv)
 	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs, (unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.ptx_task);
 
-	printk(KERN_ALERT"Registering device\n");
 	return 0;
 }
-
-
 
 /* This function handles received packet. Necessary action is taken based on
  * cmd/event/data.
@@ -625,7 +634,7 @@ static int mwl_usb_recv(struct mwl_priv *adapter,
 			skb_copy_from_linear_data(skb, adapter->pcmd_buf, skb->len);
 			card->cmd_wait_q.status = 0;
 			card->cmd_cond = true;
-			wake_up_interruptible(&card->cmd_wait_q.wait);
+			wake_up(&card->cmd_wait_q.wait);
 			break;
 
 		case MWIFIEX_USB_TYPE_EVENT:
@@ -678,7 +687,7 @@ exit_restore_skb:
 
 static void  mwl_usb_cleanup(struct mwl_priv *adapter)
 {
-	printk(KERN_ALERT"cleanup device\n");
+
 }
 
 
@@ -1171,7 +1180,6 @@ static int mwl_prog_fw_w_helper(struct mwl_priv * priv)
 cleanup:
 	mwifiex_dbg(priv, MSG,
 		    "info: FW download over, size %d bytes, ret %d\n", tlen, ret);
-	printk(KERN_ALERT"retries = %d\n",retries);
 
 	if (recv_buff)
 		kfree(recv_buff);
@@ -1276,7 +1284,7 @@ static int mwl_usb_cmd_resp_wait_completed(struct mwl_priv *priv,
 	int status;
 
 	/* Wait for completion */
-	status = wait_event_interruptible_timeout(card->cmd_wait_q.wait,
+	status = wait_event_timeout(card->cmd_wait_q.wait,
 											  (card->cmd_cond == true),
 											  (30 * HZ));
 	if (status <= 0) {
@@ -1477,7 +1485,7 @@ static int mwl_usb_is_deepsleep(struct mwl_priv * priv)
 
 static struct mwl_if_ops usb_ops1 = {
 	.inttf_head_len    = INTF_HEADER_LEN,
-	.register_dev      = mwl_register_dev,
+	.register_dev      = mwl_usb_register_dev,
 	.cleanup_if        = mwl_usb_cleanup,
 	.prog_fw           = mwl_usb_dnld_fw,
 	.init_if           = mwl_usb_init,
