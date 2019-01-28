@@ -577,6 +577,8 @@ static int mwl_register_dev(struct mwl_priv *priv)
         adapter->usb_mc_status = false;
         adapter->usb_mc_setup = false;
 #endif
+
+	priv->if_ops.ptx_task = &card->tx_task;
 	tasklet_init(priv->if_ops.ptx_task, (void *)mwl_tx_skbs, (unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.ptx_task);
 
