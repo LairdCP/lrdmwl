@@ -969,14 +969,24 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 
 	priv->shutdown = true;
 
+	//Stop Timers
 	del_timer_sync(&priv->period_timer);
+	del_timer_sync(&priv->ds_timer);
+	del_timer_sync(&priv->roc.roc_timer);
 
 	ieee80211_unregister_hw(hw);
 
 	mwl_thermal_unregister(priv);
 
+	/*Cancel iee80211 queue work itmes */
 	cancel_work_sync(&priv->watchdog_ba_handle);
 	cancel_work_sync(&priv->chnl_switch_handle);
+
+	/* Cancel/Destroy allocated queues */
+	if (priv->restart_workq) {
+		cancel_work_sync(&priv->restart_work);
+		destroy_workqueue(priv->restart_workq);
+	}
 
 	cancel_work_sync(&priv->rx_defer_work);
 	destroy_workqueue(priv->rx_defer_workq);
@@ -1012,7 +1022,7 @@ void mwl_restart_ds_timer(struct mwl_priv *priv, bool force)
 {
 	struct ieee80211_conf *conf = &priv->hw->conf;
 
-	if(priv->ds_enable != DS_ENABLE_ON) {
+	if(priv->ds_enable != DS_ENABLE_ON || priv->shutdown) {
 		return;
 	}
 
@@ -1149,7 +1159,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 		goto err_alloc_hw;
 	}
 
-	priv = hw->priv;
+	priv       = hw->priv;
 	priv->hw   = hw;
 	priv->intf = card;
 

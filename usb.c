@@ -108,24 +108,25 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	struct usb_device *udev = interface_to_usbdev(intf);
 	struct usb_host_interface *iface_desc = intf->cur_altsetting;
 	struct usb_endpoint_descriptor *epd;
-	int ret, i;
+	int rc, i;
 	struct usb_card_rec *card;
 	u16 id_vendor, id_product, bcd_device;
 
 	card = devm_kzalloc(&intf->dev, sizeof(*card), GFP_KERNEL);
-	if (!card)
+	if (!card) {
+		dev_err(&intf->dev, "allocate usb_card_rec structure failed\n");
 		return -ENOMEM;
+	}
 
 	init_completion(&card->fw_done);
 
-	id_vendor = le16_to_cpu(udev->descriptor.idVendor);
+	id_vendor  = le16_to_cpu(udev->descriptor.idVendor);
 	id_product = le16_to_cpu(udev->descriptor.idProduct);
 	bcd_device = le16_to_cpu(udev->descriptor.bcdDevice);
 	pr_debug("info: VID/PID = %X/%X, Boot2 version = %X\n",
 		 id_vendor, id_product, bcd_device);
 
 	card->chip_type = MWL8997;
-
 
 	/* PID_1 is used for firmware downloading only */
 	switch (id_product) {
@@ -156,55 +157,62 @@ static int mwl_usb_probe(struct usb_interface *intf,
 		    usb_endpoint_num(epd) == MWIFIEX_USB_EP_CMD_EVENT &&
 		    (usb_endpoint_xfer_bulk(epd) ||
 		     usb_endpoint_xfer_int(epd))) {
-			card->rx_cmd_ep_type = usb_endpoint_type(epd);
+
+			card->rx_cmd_ep_type  = usb_endpoint_type(epd);
 			card->rx_cmd_interval = epd->bInterval;
-			pr_debug("info: Rx CMD/EVT:: max pkt size: %d, addr: %d, ep_type: %d\n",
-				 le16_to_cpu(epd->wMaxPacketSize),
-				 epd->bEndpointAddress, card->rx_cmd_ep_type);
-			card->rx_cmd_ep = usb_endpoint_num(epd);
+			card->rx_cmd_ep       = usb_endpoint_num(epd);
 			atomic_set(&card->rx_cmd_urb_pending, 0);
+
+			pr_debug("info: Rx CMD/EVT:: max pkt size: %d, addr: %d, ep_type: %d\n",
+				 le16_to_cpu(epd->wMaxPacketSize), epd->bEndpointAddress, card->rx_cmd_ep_type);
 		}
+
 		if (usb_endpoint_dir_in(epd) &&
 		    usb_endpoint_num(epd) == MWIFIEX_USB_EP_DATA &&
 		    usb_endpoint_xfer_bulk(epd)) {
-			pr_debug("info: bulk IN: max pkt size: %d, addr: %d\n",
-				 le16_to_cpu(epd->wMaxPacketSize),
-				 epd->bEndpointAddress);
+
 			card->rx_data_ep = usb_endpoint_num(epd);
 			atomic_set(&card->rx_data_urb_pending, 0);
+
+			pr_debug("info: bulk IN: max pkt size: %d, addr: %d\n",
+				 le16_to_cpu(epd->wMaxPacketSize), epd->bEndpointAddress);
 		}
+
 		if (usb_endpoint_dir_out(epd) &&
 		    usb_endpoint_num(epd) == MWIFIEX_USB_EP_DATA &&
 		    usb_endpoint_xfer_bulk(epd)) {
-			pr_debug("info: bulk OUT 0: max pkt size: %d, addr: %d\n",
-				 le16_to_cpu(epd->wMaxPacketSize),
-				 epd->bEndpointAddress);
+
 			card->port[0].tx_data_ep = usb_endpoint_num(epd);
 			atomic_set(&card->port[0].tx_data_urb_pending, 0);
+
+			pr_debug("info: bulk OUT 0: max pkt size: %d, addr: %d\n",
+				 le16_to_cpu(epd->wMaxPacketSize), epd->bEndpointAddress);
 		}
+
 		if (usb_endpoint_dir_out(epd) &&
 		    usb_endpoint_num(epd) == MWIFIEX_USB_EP_DATA_CH2 &&
 		    usb_endpoint_xfer_bulk(epd)) {
-			pr_debug("info: bulk OUT chan2:\t"
-				 "max pkt size: %d, addr: %d\n",
-				 le16_to_cpu(epd->wMaxPacketSize),
-				 epd->bEndpointAddress);
+
 			card->port[1].tx_data_ep = usb_endpoint_num(epd);
 			atomic_set(&card->port[1].tx_data_urb_pending, 0);
+
+			pr_debug("info: bulk OUT chan2:\t max pkt size: %d, addr: %d\n",
+				 le16_to_cpu(epd->wMaxPacketSize), epd->bEndpointAddress);
 		}
+
 		if (usb_endpoint_dir_out(epd) &&
 		    usb_endpoint_num(epd) == MWIFIEX_USB_EP_CMD_EVENT &&
 		    (usb_endpoint_xfer_bulk(epd) ||
 		     usb_endpoint_xfer_int(epd))) {
-			card->tx_cmd_ep_type = usb_endpoint_type(epd);
-			card->tx_cmd_interval = epd->bInterval;
-			pr_debug("info: bulk OUT: max pkt size: %d, addr: %d\n",
-				 le16_to_cpu(epd->wMaxPacketSize),
-				 epd->bEndpointAddress);
-			card->tx_cmd_ep = usb_endpoint_num(epd);
+
+			card->tx_cmd_ep_type      = usb_endpoint_type(epd);
+			card->tx_cmd_interval     = epd->bInterval;
+			card->tx_cmd_ep           = usb_endpoint_num(epd);
+			card->bulk_out_maxpktsize = le16_to_cpu(epd->wMaxPacketSize);
 			atomic_set(&card->tx_cmd_urb_pending, 0);
-			card->bulk_out_maxpktsize =
-					le16_to_cpu(epd->wMaxPacketSize);
+
+			pr_debug("info: bulk OUT: max pkt size: %d, addr: %d\n",
+				 le16_to_cpu(epd->wMaxPacketSize), epd->bEndpointAddress);
 		}
 	}
 
@@ -212,18 +220,20 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	memcpy(&usb_ops1.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
                 sizeof(struct mwl_chip_info));
 
-	ret = mwl_add_card(card, &usb_ops1, NULL);
-	pr_debug("mwl_add_card successful");
-	if (ret) {
-		pr_err("%s: mwlwifi_add_card failed: %d\n", __func__, ret);
-		//TODO mwl_usb_free(card);
-		//usb_reset_device(udev);
-		return ret;
+	rc = mwl_add_card(card, &usb_ops1, NULL);
+
+	if (rc) {
+		pr_err("%s: Failed to add card: %d\n", __func__, rc);
+		goto err_add_card;
 	}
 
 	usb_get_dev(udev);
 
 	return 0;
+
+err_add_card:
+	mwl_usb_free(card);
+	return rc;
 }
 
 static void mwl_usb_free(struct usb_card_rec *card)
@@ -244,22 +254,27 @@ static void mwl_usb_free(struct usb_card_rec *card)
 	if(likely(!priv->mfg_mode)) {
 		if (atomic_read(&card->rx_data_urb_pending)) {
 			for (i = 0; i < MWIFIEX_RX_DATA_URB; i++) {
-				if (card->rx_data_list[i].urb)
+				if (card->rx_data_list[i].urb) {
 					usb_kill_urb(card->rx_data_list[i].urb);
+				}
 			}
 		}
 
 		for (i = 0; i < MWIFIEX_RX_DATA_URB; i++) {
-			usb_free_urb(card->rx_data_list[i].urb);
-			card->rx_data_list[i].urb = NULL;
+			if (card->rx_data_list[i].urb) {
+				usb_free_urb(card->rx_data_list[i].urb);
+				card->rx_data_list[i].urb = NULL;
+			}
 		}
 
 		for (i = 0; i < MWIFIEX_TX_DATA_PORT; i++) {
 			port = &card->port[i];
 			for (j = 0; j < MWIFIEX_TX_DATA_URB; j++) {
-				usb_kill_urb(port->tx_data_list[j].urb);
-				usb_free_urb(port->tx_data_list[j].urb);
-				port->tx_data_list[j].urb = NULL;
+				if (port->tx_data_list[j].urb) {
+					usb_kill_urb(port->tx_data_list[j].urb);
+					usb_free_urb(port->tx_data_list[j].urb);
+					port->tx_data_list[j].urb = NULL;
+				}
 			}
 		}
 	}
@@ -319,9 +334,6 @@ static struct usb_driver mwl_usb_driver = {
 	.soft_unbind = 1,
 };
 
-
-
-static struct tasklet_struct tx_task;
 
 
 static bool mwl_usb_check_card_status(struct mwl_priv *priv)
@@ -442,6 +454,8 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	*/
 	wh = (struct ieee80211_hdr *)prx_skb->data;
 
+#if KERNEL_VERSION(4, 6, 0) > LINUX_VERSION_CODE
+
 	if (ieee80211_is_mgmt(wh->frame_control)) {
 		struct ieee80211_mgmt *mgmt;
 		__le16 capab;
@@ -457,6 +471,7 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 				mwl_rx_enable_sta_amsdu(priv, mgmt->sa);
 		}
 	}
+#endif
 
 #if 0 //def CONFIG_MAC80211_MESH
 		if (ieee80211_is_data_qos(wh->frame_control) &&
@@ -837,7 +852,6 @@ static void mwl_usb_rx_complete(struct urb *urb)
 	int recv_length = urb->actual_length;
 	int size, status;
 	__le32 tmp;
-
 
 	if (!adapter || !adapter->intf) {
 		pr_err("mwl adapter or card structure is not valid\n");
@@ -1495,7 +1509,8 @@ static struct mwl_if_ops usb_ops1 = {
 	.cmd_resp_wait_completed = mwl_usb_cmd_resp_wait_completed,
 	.host_to_card      = mwl_usb_host_to_card,
 	.is_tx_available   = mwl_usb_is_tx_available,
-	.ptx_task          = &tx_task,
+	//Tasklets are assigned per instance during device registration
+	.ptx_task          = NULL,
 	.enter_deepsleep   = mwl_usb_enter_deepsleep,
 	.wakeup_card       = mwl_usb_wakeup_card,
 	.is_deepsleep      = mwl_usb_is_deepsleep,

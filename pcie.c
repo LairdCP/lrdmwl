@@ -1853,10 +1853,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 		if (int_status & MACREG_A2HRIC_BIT_TX_DONE) {
 			if (!priv->is_tx_done_schedule) {
 				mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_TX_DONE, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
-
-
-					tasklet_schedule(
-						priv->if_ops.ptx_done_task);
+				tasklet_schedule(priv->if_ops.ptx_done_task);
 				priv->is_tx_done_schedule = true;
 			}
 		}
@@ -1879,8 +1876,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 				if (time_after(jiffies,
 					       (priv->qe_trigger_time + 1))) {
 					mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_QUE_EMPTY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
-						tasklet_schedule(
-						    priv->if_ops.pqe_task);
+					tasklet_schedule(priv->if_ops.pqe_task);
 					priv->qe_trigger_num++;
 					priv->is_qe_schedule = true;
 					priv->qe_trigger_time = jiffies;
@@ -1949,6 +1945,7 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 		(unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.pqe_task);
 #endif
+
 	tasklet_init(&priv->rx_task, (void *)mwl_pcie_rx_recv,
 		(unsigned long)priv->hw);
 	tasklet_disable(&priv->rx_task);
@@ -1976,6 +1973,7 @@ static void mwl_pcie_unregister_dev(struct mwl_priv *priv)
 		tasklet_kill(priv->if_ops.pqe_task);
 #endif /* NEW_DP */
 
+	tasklet_kill(&priv->rx_task);
 }
 
 static void mwl_pcie_tx_flush_amsdu(unsigned long data)
@@ -2131,27 +2129,24 @@ static void mwl_pcie_down_dev(struct mwl_priv *priv)
 }
 
 
-static struct tasklet_struct tx_task;
-static struct tasklet_struct tx_done_task;
-static struct tasklet_struct qe_task;
-
 static struct mwl_if_ops pcie_ops = {
 	.inttf_head_len = INTF_HEADER_LEN,
-	.ptx_task          = &tx_task,
-	.ptx_done_task     = &tx_done_task,
-	.pqe_task          = &qe_task,
-	.init_if =			mwl_pcie_init,
+	//Tasklets are assigned per instance during device registration
+	.ptx_task          = NULL,
+	.ptx_done_task     = NULL,
+	.pqe_task          = NULL,
+	.init_if           = mwl_pcie_init,
 	.init_if_post      = mwl_pcie_init_post,
-	.cleanup_if =		mwl_pcie_cleanup,
-	.check_card_status =		mwl_pcie_check_card_status,
-	.prog_fw =			mwl_pcie_program_firmware,
-	.enable_int =		mwl_pcie_enable_int,
-	.disable_int =  mwl_pcie_disable_int,
-	.send_cmd =     mwl_pcie_send_command,
+	.cleanup_if        = mwl_pcie_cleanup,
+	.check_card_status = mwl_pcie_check_card_status,
+	.prog_fw           = mwl_pcie_program_firmware,
+	.enable_int        = mwl_pcie_enable_int,
+	.disable_int       =  mwl_pcie_disable_int,
+	.send_cmd          = mwl_pcie_send_command,
 	.cmd_resp_wait_completed = mwl_pcie_cmd_resp_wait_completed,
 	.card_reset        = mwl_pcie_card_reset,
 	.register_dev      = mwl_pcie_register_dev,
-	.unregister_dev    = mwl_pcie_unregister_dev,
+//	.unregister_dev    = mwl_pcie_unregister_dev,
 	.is_tx_available   = mwl_pcie_is_tx_available,
 	.host_to_card      = mwl_pcie_host_to_card,
 	.read_reg          = mwl_pcie_read_register,

@@ -2539,9 +2539,14 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
 
+	mwl_sdio_cleanup(priv);
+
 	cancel_work_sync(&card->tx_work);
 	destroy_workqueue(card->tx_workq);
 
+	cancel_work_sync(&card->cmd_work);
+	cancel_work_sync(&card->event_work);
+	destroy_workqueue(card->cmd_workq);
 }
 
 static void mwl_sdio_enter_deepsleep(struct mwl_priv * priv)
@@ -2603,7 +2608,7 @@ static struct mwl_if_ops sdio_ops = {
 	.check_card_status       = mwl_sdio_check_card_status,
 	.prog_fw                 = mwl_sdio_program_firmware,
 	.register_dev            = mwl_sdio_register_dev,
-	.unregister_dev          = mwl_sdio_unregister_dev,
+//	.unregister_dev          = mwl_sdio_unregister_dev,
 	.send_cmd                = mwl_sdio_send_command,
 	.cmd_resp_wait_completed = mwl_sdio_cmd_resp_wait_completed,
 	.host_to_card            = mwl_sdio_host_to_card,
@@ -2668,7 +2673,7 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	INIT_WORK(&card->cmd_work, mwl_sdio_enter_ps_sleep);
 	INIT_WORK(&card->event_work, mwl_sdio_wakeup_complete);
 
-	sdio_ops.ptx_work = &card->tx_work;
+	sdio_ops.ptx_work  = &card->tx_work;
 	sdio_ops.ptx_workq = card->tx_workq;
 
 	memcpy(&sdio_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
@@ -2718,10 +2723,7 @@ static void mwl_sdio_remove(struct sdio_func *func)
 
 	mwl_wl_deinit(priv);
 
-	mwl_sdio_cleanup(priv);
 	mwl_sdio_unregister_dev(priv);
-
-	mwl_delete_ds_timer(priv);
 
 	mwl_sdio_reset(priv);
 
