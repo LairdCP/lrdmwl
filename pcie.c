@@ -28,8 +28,8 @@
 
 #define MWL_FW_ROOT     "lrdmwl"
 
-/* PCIe interrupt mode = legacy (default) */
-int pcie_intr_mode = 0;
+/* PCIe interrupt mode = MSI (default) */
+int pcie_intr_mode = 1;
 
 static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8864] = {
