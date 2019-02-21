@@ -2675,6 +2675,9 @@ int mwl_fwcmd_set_new_stn_add(struct ieee80211_hw *hw,
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_NEW_STN);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->cmd_hdr.macid = mwl_vif->macid;
 
 	if ((vif->type == NL80211_IFTYPE_STATION) ||
 		(vif->type == NL80211_IFTYPE_P2P_CLIENT)) {
@@ -2756,6 +2759,8 @@ int mwl_fwcmd_set_new_stn_del(struct ieee80211_hw *hw,
 	if ((vif->type == NL80211_IFTYPE_STATION) ||
 		(vif->type == NL80211_IFTYPE_P2P_CLIENT)) {
 		ether_addr_copy(pcmd->mac_addr, mwl_vif->sta_mac);
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_NEW_STN);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 
 		if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN)) {
 			mutex_unlock(&priv->fwcmd_mutex);
@@ -3400,6 +3405,9 @@ int mwl_fwcmd_set_wfd_ie(struct ieee80211_hw *hw, u8 len, u8 *data)
 	}
 
 	pcmd->ie_type = cpu_to_le16(WFD_IE_SET_PROBE_RESPONSE);
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_WFD_IE);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->len = cpu_to_le16(len);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WFD_IE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
@@ -3433,6 +3441,9 @@ int mwl_fwcmd_set_wsc_ie(struct ieee80211_hw *hw, u8 len, u8 *data)
 	}
 
 	pcmd->ie_type = cpu_to_le16(WSC_IE_SET_PROBE_RESPONSE);
+	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_WSC_IE);
+	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+	pcmd->len = cpu_to_le16(len);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_WSC_IE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
