@@ -8,7 +8,6 @@
 #include <linux/skbuff.h>
 #include "sysadpt.h"
 #include "dev.h"
-#include "fwdl.h"
 #include "fwcmd.h"
 #include "hostcmd.h"
 #include "main.h"
@@ -66,6 +65,11 @@ static void mwl_tx_ring_cleanup(struct mwl_priv *priv);
 static void mwl_tx_ring_free(struct mwl_priv *priv);
 static void mwl_set_bit(struct mwl_priv *priv, int bit_num, volatile void * addr);
 static void mwl_clear_bit(struct mwl_priv *priv, int bit_num, volatile void * addr);
+static int mwl_pcie_restart_handler(struct mwl_priv *priv);
+static void mwl_pcie_up_dev(struct mwl_priv *priv);
+static void mwl_pcie_down_dev(struct mwl_priv *priv);
+static bool mwl_pcie_check_fw_status(struct mwl_priv *priv);
+
 #define MAX_WAIT_FW_COMPLETE_ITERATIONS         8000
 
 static irqreturn_t mwl_pcie_isr(int irq, void *dev_id);
@@ -74,7 +78,26 @@ static struct pci_device_id mwl_pci_id_tbl[] = {
 	{ },
 };
 
-extern int mwl_init_firmware(struct mwl_priv *priv);
+
+static void lrd_pci_fw_reset_workfn(struct work_struct *work)
+{
+	int rc;
+	struct ieee80211_hw  *hw;
+	struct mwl_pcie_card *card = container_of(work,
+				struct mwl_pcie_card, fw_reset_work);
+
+	hw = pci_get_drvdata(card->pdev);
+
+	rc = pci_reset_function(card->pdev);
+
+	if (rc != 0)
+	{
+		wiphy_err(hw->wiphy, "%s: PCI reset failed! %d\n",
+			  MWL_DRV_NAME, rc);
+	}
+}
+
+
 
 static void mwl_pcie_reset_notify(struct pci_dev *pdev, bool prepare)
 {
@@ -87,12 +110,36 @@ static void mwl_pcie_reset_notify(struct pci_dev *pdev, bool prepare)
 		return;
 
 	priv = hw->priv;
+	
+	if (prepare)
+	{
+		wiphy_err(hw->wiphy, "%s: Prepare for reset...\n", __func__);
 
-	if (prepare) {
-		mwl_shutdown_sw(priv);
+		if (priv->recovery_in_progress)
+			mwl_shutdown_sw(priv);
+
+		wiphy_err(hw->wiphy, "%s: Resetting...\n", __func__);
 	}
-	else {
-		mwl_reinit_sw(priv);
+	else
+	{
+		wiphy_err(hw->wiphy, "%s: Reset complete...\n", __func__);
+
+		// Give FLR handler in firmware opportunity to run
+		// Typically takes ~125ms for FW Ready signature to be cleared after FLR
+		msleep(150);
+
+		if (priv->recovery_in_progress)
+			mwl_reinit_sw(priv);
+		else
+		{
+			int rc;
+			rc = mwl_fw_dnld_and_init(priv);
+			if (rc)
+			{
+				wiphy_err(hw->wiphy, "%s: Initialization failed after reset!! %d\n",
+					MWL_DRV_NAME, rc);
+			}
+		}
 	}
 }
 
@@ -867,8 +914,6 @@ static int mwl_pcie_init_post(struct mwl_priv *priv)
 	struct mwl_pcie_card *card = priv->intf;
 	int i;
 
-	priv->ds_enable = DS_ENABLE_OFF;
-
 	if (priv->mfg_mode) {
 		//Assume ST 60 with one interface
 		priv->radio_caps = 1;
@@ -1089,6 +1134,51 @@ static void mwl_fwdl_trig_pcicmd_bootcode(struct mwl_priv *priv)
 	       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
 }
 
+static bool mwl_pcie_check_fw_status(struct mwl_priv *priv)
+{
+	struct mwl_pcie_card *card;
+	u32 int_code = 0;
+	bool rc = false;
+
+	u32 fwreadyReg = MACREG_REG_FW_STATUS;
+	u32 curr_iteration = 0;
+
+	card = (struct mwl_pcie_card *)priv->intf;
+
+	/* TBD do we need to disable interrupts before this */
+	if (priv->mfg_mode) {
+		u32 fwreadysignature = MFG_FW_READY_SIGNATURE;
+
+		writel(fwreadysignature, card->iobase1 + MACREG_REG_DRV_READY);
+		curr_iteration = 10;
+
+		do {
+			curr_iteration--;
+			lrdmwl_delay(10);
+
+			int_code = readl(card->iobase1 + fwreadyReg);
+		} while ((curr_iteration) &&
+				((int_code != MFG_FW_READY_SIGNATURE) && (int_code != HOSTCMD_SOFTAP_FWRDY_SIGNATURE)));
+
+		if (curr_iteration) {
+			rc = true;
+		}
+	}
+	else 
+	{
+		int_code = readl(card->iobase1 + fwreadyReg);
+
+		if ((int_code == MFG_FW_READY_SIGNATURE) ||
+			(int_code == HOSTCMD_SOFTAP_FWRDY_SIGNATURE))
+		{
+			rc = true;
+		}
+	}
+
+	return rc;
+}
+
+
 /* Combo firmware image is a combination of
  * (1) combo crc heaer, start with CMD5
  * (2) bluetooth image, start with CMD7, end with CMD6, data wrapped in CMD1.
@@ -1202,7 +1292,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	const struct firmware *fw;
 	struct ieee80211_hw *hw;
 	struct mwl_pcie_card *card;
-	u32 curr_iteration = 0;
+	u32 curr_iteration;
 	u32 size_fw_downloaded = 0;
 	u32 int_code = 0;
 	u32 len = 0;
@@ -1223,7 +1313,15 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	/* FW before jumping to boot rom, it will enable PCIe transaction retry,
 	 * wait for boot code to stop it.
 	 */
-	usleep_range(FW_CHECK_MSECS * 1000, FW_CHECK_MSECS * 2000);
+	lrdmwl_delay(5*1000);
+
+	if(mwl_pcie_check_fw_status(priv))
+	{
+		wiphy_err(hw->wiphy, "%s: FW already running - resetting\n", __func__);
+		INIT_WORK(&card->fw_reset_work, lrd_pci_fw_reset_workfn);
+		schedule_work(&card->fw_reset_work);
+		return -EAGAIN;
+	}
 
 	writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CLEAR_SEL);
 	writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CAUSE);
@@ -1235,16 +1333,32 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	 * reside on its respective blocks such as ITCM, DTCM, SQRAM,
 	 * (or even DDR, AFTER DDR is init'd before fw download
 	 */
-	wiphy_info(hw->wiphy, "fw download start %x\n",FW_MAX_NUM_CHECKS);
+	wiphy_info(hw->wiphy, "Starting fw download\n");
 
-	/* make sure SCRATCH2 C40 is clear, in case we are too quick */
-	while (readl(card->iobase1 + MACREG_REG_CMD_SIZE) == 0)
-		cond_resched();
+	/* make sure SCRATCH2 C40 (MACREG_REG_CMD_SIZE) is clear, in case we are too quick
+	 * Worst case observed is ~150ms after FLR reset, which should already have been
+	 * accounted for by the time we reach here.
+	 */
+	curr_iteration = 10;
+	while (((readl(card->iobase1 + MACREG_REG_CMD_SIZE) == 0) ||
+			(readl(card->iobase1 + MACREG_REG_CMD_SIZE) == 0xffffffff)) && curr_iteration)
+	{
+		msleep(50);
+		curr_iteration--;
+	}
+
+	if (!curr_iteration)
+	{
+		wiphy_err(hw->wiphy, "err polling MACREG_REG_CMD_SIZE!\n");
+		goto err_download;
+	}
 
 	int_code = readl(card->iobase1 + PCIE_SCRATCH_13_REG);
 	if (int_code == MWIFIEX_PCIE_FLR_HAPPENS)
 	{
 		int ret;
+
+		wiphy_info(hw->wiphy, "Function Level Reset detected!  Downloading WiFi FW only...\n");
 		ret = mwl_extract_wifi_fw(priv);
 		if (ret < 0)
 		{
@@ -1253,8 +1367,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 		}
 
 		size_fw_downloaded = ret;
-		wiphy_info(hw->wiphy,
-			    "info: dnld wifi firmware from %d bytes\n", size_fw_downloaded);
+		wiphy_info(hw->wiphy, "info: dnld wifi firmware from %d bytes\n", size_fw_downloaded);
 	}
 
 	while (size_fw_downloaded < fw->size) {
@@ -1275,18 +1388,17 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 		/* this function writes pdata to c10, then write 2 to c18 */
 		mwl_fwdl_trig_pcicmd_bootcode(priv);
 
-		/* this is arbitrary per your platform; we use 0xffff */
-		curr_iteration = FW_MAX_NUM_CHECKS;
-
-		/* Wait for cmd done */
+		curr_iteration = 1000;
+		/* Wait for cmd done
+		 * Worst case observed is ~1ms
+		 */
 		do {
 			int_code = readl(card->iobase1 + MACREG_REG_H2A_INTERRUPT_CAUSE);
 			if ((int_code & MACREG_H2ARIC_BIT_DOOR_BELL) !=
 			    MACREG_H2ARIC_BIT_DOOR_BELL)
 				break;
 
-			usleep_range(10, 20);
-			cond_resched();
+			lrdmwl_delay(10);
 			curr_iteration--;
 		} while (curr_iteration);
 
@@ -1304,8 +1416,8 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	}
 
 	wiphy_info(hw->wiphy,
-		    "FwSize = %d downloaded Size = %d curr_iteration %d\n",
-		    (int)fw->size, size_fw_downloaded, curr_iteration);
+		    "FwSize = %d downloaded Size = %d\n",
+		    (int)fw->size, size_fw_downloaded);
 
 	/* Now firware is downloaded successfully, so this part is to check
 	 * whether fw can properly execute to an extent that write back
@@ -1322,26 +1434,22 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 		writel(fwreadysignature, card->iobase1 + MACREG_REG_DRV_READY);
 	}
 
-	curr_iteration = FW_MAX_NUM_CHECKS;
-
+	// Firmware initialization has been observed to take ~2.5 seconds
+	curr_iteration = 200;
 	do {
 		curr_iteration--;
 		if (!priv->mfg_mode) {
 			writel(HOSTCMD_SOFTAP_MODE, card->iobase1 + MACREG_REG_GEN_PTR);
 		}
 
-		usleep_range(FW_CHECK_MSECS * 1000, FW_CHECK_MSECS * 2000);
+		msleep(50);
 
 		int_code = readl(card->iobase1 + fwreadyReg);
-
-		if (!(curr_iteration % 0xff) && (int_code != 0))
-			wiphy_err(hw->wiphy, "%x;", int_code);
 
 	} while ((curr_iteration) && (int_code != fwreadysignature));
 
 	if (curr_iteration == 0) {
-		wiphy_err(hw->wiphy,
-			  "Exhausted curr_iteration for fw signature\n");
+		wiphy_err(hw->wiphy, "No response from firmware!  sig = 0x%x\n", int_code);
 		goto err_download;
 	}
 
@@ -1352,19 +1460,15 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 
 err_download:
 
-	if (!priv->recovery_in_progress) {
-		mwl_fwcmd_reset(hw);
-	}
-
 	return -EIO;
 }
 
 static bool mwl_pcie_check_card_status(struct mwl_priv *priv)
 {
-        struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
-		u32 regval;
+	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
+	u32 regval;
 
-        regval = readl(card->iobase1 + MACREG_REG_INT_CODE);
+	regval = readl(card->iobase1 + MACREG_REG_INT_CODE);
 	if (regval == 0xffffffff) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
 		return false;
@@ -1378,10 +1482,8 @@ static void mwl_pcie_enable_int(struct mwl_priv *priv)
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
 
 	if (mwl_pcie_check_card_status(priv)) {
-		writel(0x00,
-		       card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
-		writel(MACREG_A2HRIC_BIT_MASK,
-		       card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
+		writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
+		writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
 	}
 }
 
@@ -1390,8 +1492,7 @@ static void mwl_pcie_disable_int(struct mwl_priv *priv)
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
 
 	if (mwl_pcie_check_card_status(priv))
-		writel(0x00,
-		       card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
+		writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
 }
 
 static int mwl_pcie_send_command(struct mwl_priv *priv)
@@ -1451,14 +1552,6 @@ static int mwl_pcie_cmd_resp_wait_completed(struct mwl_priv *priv,
 	return 0;
 }
 
-static void mwl_pcie_card_reset(struct mwl_priv *priv)
-{
-	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
-
-	if (mwl_pcie_check_card_status(priv))
-		writel(ISR_RESET,
-		       card->iobase1 + MACREG_REG_H2A_INTERRUPT_EVENTS);
-}
 static int mwl_pcie_host_to_card(struct mwl_priv *priv, int desc_num,
 		struct sk_buff *tx_skb)
 {
@@ -2144,7 +2237,6 @@ static struct mwl_if_ops pcie_ops = {
 	.disable_int       =  mwl_pcie_disable_int,
 	.send_cmd          = mwl_pcie_send_command,
 	.cmd_resp_wait_completed = mwl_pcie_cmd_resp_wait_completed,
-	.card_reset        = mwl_pcie_card_reset,
 	.register_dev      = mwl_pcie_register_dev,
 //	.unregister_dev    = mwl_pcie_unregister_dev,
 	.is_tx_available   = mwl_pcie_is_tx_available,
@@ -2160,9 +2252,7 @@ static struct mwl_if_ops pcie_ops = {
 	.down_dev          = mwl_pcie_down_dev,
 	.up_dev            = mwl_pcie_up_dev,
 
-	// Restart handler not supported
-	// until firmware supports Function Level Reset
-	//.hardware_restart  = mwl_pcie_restart_handler,
+	.hardware_restart  = mwl_pcie_restart_handler,
 };
 
 
@@ -2219,9 +2309,11 @@ static void mwl_remove(struct pci_dev *pdev)
 
 	card->surprise_removed = true;
 
-	mwl_wl_deinit(priv);
+	if (priv->init_complete)
+		mwl_wl_deinit(priv);
 
 	mwl_pcie_cleanup(priv);
+
 	mwl_pcie_unregister_dev(priv);
 
 	mwl_ieee80211_free_hw(priv);
@@ -2233,7 +2325,6 @@ static void mwl_remove(struct pci_dev *pdev)
 
 }
 
-#if 0
 static int mwl_pcie_restart_handler(struct mwl_priv *priv)
 {
 	int rc = 0;
@@ -2242,16 +2333,13 @@ static int mwl_pcie_restart_handler(struct mwl_priv *priv)
 	/* We can't afford to wait here; remove() might be waiting on us. If we
 	* can't grab the device lock, maybe we'll get another chance later.
 	*/
-	rc = pci_try_reset_function(card->pdev);
+	rc = pci_reset_function(card->pdev);
 
-	if (rc == -EAGAIN && !card->priv->shutdown) {
-		WARN_ON(!priv->restart_workq);
-		queue_work(priv->restart_workq, &priv->restart_work);
-	}
+	if (rc != 0)
+		pr_err("%s: PCI reset attempt failed with error %d!", MWL_DRV_NAME, rc);
 
 	return rc;
 }
-#endif
 
 
 #if 0

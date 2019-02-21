@@ -24,7 +24,6 @@
 #include "sysadpt.h"
 #include "dev.h"
 #include "pcie.h"
-#include "fwdl.h"
 #include "fwcmd.h"
 #include "tx.h"
 #include "rx.h"
@@ -257,9 +256,10 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 
 	rc = priv->if_ops.prog_fw(priv);
 	if (rc) {
-		wiphy_err(priv->hw->wiphy,
-			  "%s: firmware download/init failed! <%s> %d\n",
-			  MWL_DRV_NAME, fw_name, rc);
+		if (rc != -EAGAIN)
+			wiphy_err(priv->hw->wiphy,
+				"%s: firmware download/init failed! <%s> %d\n",
+				MWL_DRV_NAME, fw_name, rc);
 		goto err_download_fw;
 	}
 
@@ -729,11 +729,34 @@ void ds_routine(struct timer_list *t)
 	}
 }
 
+static void mwl_ds_workq(struct work_struct *work)
+{
+	struct mwl_priv  *priv = container_of(work,
+                        struct mwl_priv, ds_work);
+
+	if (priv->mfg_mode) {
+		return;
+	}
+
+	mwl_fwcmd_enter_deepsleep(priv->hw);
+	priv->if_ops.enter_deepsleep(priv);
+}
+
 static int mwl_wl_init(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw   = priv->hw;
 	struct mwl_if_ops *if_ops = &priv->if_ops;
 	int rc = 0;
+
+	/* Setup queues */
+	priv->rx_defer_workq = alloc_workqueue("lrdwifi-rx_defer_workq",
+	                       WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
+	skb_queue_head_init(&priv->rx_defer_skb_q);
+
+	priv->ds_workq = alloc_workqueue("lrdwifi-ds_workq",
+	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+	INIT_WORK(&priv->ds_work, mwl_ds_workq);
 
 	priv->fw_device_pwrtbl  = false;
 	priv->forbidden_setting = false;
@@ -887,7 +910,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		if (rc) {
 			wiphy_err(hw->wiphy, "%s: fail to register thermal framework\n",
 				MWL_DRV_NAME);
-			goto err_thermal_register;
+			goto err_wl_init;
 		}
 	}
 
@@ -956,7 +979,10 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	return rc;
 
 err_wl_init:
-err_thermal_register:
+	destroy_workqueue(priv->ds_workq);
+	destroy_workqueue(priv->rx_defer_workq);
+
+printk("%s-\n", __func__);
 	return rc;
 }
 
@@ -1002,20 +1028,6 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 #endif
 }
 EXPORT_SYMBOL_GPL(mwl_wl_deinit);
-
-
-static void mwl_ds_workq(struct work_struct *work)
-{
-	struct mwl_priv  *priv = container_of(work,
-                        struct mwl_priv, ds_work);
-
-	if (priv->mfg_mode) {
-		return;
-	}
-
-	mwl_fwcmd_enter_deepsleep(priv->hw);
-	priv->if_ops.enter_deepsleep(priv);
-}
 
 
 void mwl_restart_ds_timer(struct mwl_priv *priv, bool force)
@@ -1143,6 +1155,7 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 
 	queue_work(priv->restart_workq, &priv->restart_work);
 }
+EXPORT_SYMBOL_GPL(lrd_radio_recovery);
 
 int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	struct device_node *of_node)
@@ -1163,15 +1176,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	priv->hw   = hw;
 	priv->intf = card;
 
-	/* Setup queues */
-	priv->rx_defer_workq = alloc_workqueue("lrdwifi-rx_defer_workq",
-	                       WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
-	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
-	skb_queue_head_init(&priv->rx_defer_skb_q);
-
-	priv->ds_workq = alloc_workqueue("lrdwifi-ds_workq",
-	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
-	INIT_WORK(&priv->ds_work, mwl_ds_workq);
+	priv->init_complete = false;
 
 	/* Save interface specific operations in adapter */
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
@@ -1182,6 +1187,11 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 			goto err_init_if;
 	}
 
+	// Disable deep sleep via global config parameter for all interfaces
+	// that do not support it.
+	if (priv->host_if != MWL_IF_SDIO)
+		ds_enable = DS_ENABLE_OFF;
+
 	rc = lrd_probe_of(priv, of_node);
 	if (rc == -EPROBE_DEFER)
 		goto err_of;
@@ -1191,16 +1201,51 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	timer_setup(&priv->period_timer,  timer_routine, 0);
 	timer_setup(&priv->ds_timer, ds_routine, 0);
 
+	rc = mwl_fw_dnld_and_init(priv);
+
+	// mwl_fw_dnld_and_init returns -EAGAIN when target must be reset
+	// and reinitialized.  Reset/restart handler is responsible for 
+	// calling mwl_fw_dnld_and_init again, but remainder of init sequence
+	// should complete successfully
+	if (rc && (rc != -EAGAIN))
+		goto err_dnld_and_init;
+	else
+		rc = 0;
+
+	return rc;
+
+err_dnld_and_init:
+	device_init_wakeup(priv->dev, false);
+
+err_of:
+	priv->if_ops.cleanup_if(priv);
+
+err_init_if:
+	mwl_ieee80211_free_hw(priv);
+
+err_alloc_hw:
+	return rc;
+}
+EXPORT_SYMBOL_GPL(mwl_add_card);
+
+int mwl_fw_dnld_and_init(struct mwl_priv *priv)
+{
+	int rc;
+	struct ieee80211_hw *hw;
+
+	hw = priv->hw;
+
 	rc = mwl_init_firmware(priv);
 	if (rc) {
-		wiphy_err(hw->wiphy, "%s: fail to initialize firmware\n",
-			  MWL_DRV_NAME);
+		if (rc != -EAGAIN)
+			wiphy_err(hw->wiphy, "%s: failed to initialize firmware\n",
+				MWL_DRV_NAME);
 		goto err_init_firmware;
 	}
 
 	rc = mwl_wl_init(priv);
 	if (rc) {
-		wiphy_err(hw->wiphy, "%s: fail to initialize wireless lan\n",
+		wiphy_err(hw->wiphy, "%s: failed to initialize wireless lan\n",
 			  MWL_DRV_NAME);
 		goto err_wl_init;
 	}
@@ -1221,25 +1266,17 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	mwl_debugfs_init(hw);
 #endif
 
-	return rc;
+	priv->init_complete = true;
+	return 0;
 
 err_wl_init:
+	mwl_disable_ds(priv);
+
 err_init_firmware:
-	device_init_wakeup(priv->dev, false);
-
-err_of:
-	priv->if_ops.cleanup_if(priv);
-
-err_init_if:
-	destroy_workqueue(priv->ds_workq);
-	destroy_workqueue(priv->rx_defer_workq);
-
-	mwl_ieee80211_free_hw(priv);
-
-err_alloc_hw:
 	return rc;
 }
-EXPORT_SYMBOL_GPL(mwl_add_card);
+EXPORT_SYMBOL_GPL(mwl_fw_dnld_and_init);
+
 
 /*
  * This function gets called during restart

@@ -708,6 +708,7 @@ struct mwl_priv {
 
 	u32  radio_caps;
 	bool monitor_mode;
+	bool init_complete;
 };
 
 struct beacon_info {

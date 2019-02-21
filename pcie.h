@@ -40,6 +40,8 @@ struct mwl_pcie_card {
 	struct tasklet_struct tx_task;
 	struct tasklet_struct tx_done_task;
 	struct tasklet_struct qe_task;
+
+	struct work_struct fw_reset_work;
 };
 
 void mwl_pcie_tx_done(unsigned long data);

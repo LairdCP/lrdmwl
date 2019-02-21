@@ -21,6 +21,7 @@ void mwl_ieee80211_free_hw(struct mwl_priv *);
 extern void timer_routine(struct timer_list *t);
 extern void mwl_restart_ds_timer(struct mwl_priv *priv, bool force);
 extern void mwl_delete_ds_timer(struct mwl_priv *priv);
+extern int mwl_fw_dnld_and_init(struct mwl_priv *priv);
 extern int mwl_shutdown_sw(struct mwl_priv *priv);
 extern int mwl_reinit_sw(struct mwl_priv *priv);
 extern void mwl_mac80211_stop(struct ieee80211_hw *hw);

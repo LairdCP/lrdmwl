@@ -523,8 +523,6 @@ static void mwl_usb_rx_recv(unsigned long data)
 
 static int mwl_usb_init_post(struct mwl_priv *priv)
 {
-	priv->ds_enable = DS_ENABLE_OFF;
-
 	if (priv->mfg_mode) {
 		//Assume ST 60 with one interface
 		priv->radio_caps = 1;

@@ -1,7 +1,6 @@
 obj-$(CONFIG_LRDMWL)	+= lrdmwl.o
 lrdmwl-y			+= main.o
 lrdmwl-y			+= mac80211.o
-lrdmwl-y			+= fwdl.o
 lrdmwl-y			+= fwcmd.o
 lrdmwl-y			+= tx.o
 lrdmwl-y			+= rx.o

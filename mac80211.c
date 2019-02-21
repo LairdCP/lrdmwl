@@ -632,11 +632,29 @@ int mwl_mac80211_sta_remove(struct ieee80211_hw *hw,
 	int i;
 	struct mwl_vif *mwl_vif;
 	struct ieee80211_key_conf *key;
-	struct mwl_sta *sta_info = mwl_dev_get_sta(sta);
+	struct mwl_sta *sta_info;
+	bool bfound = false;
 
 	wiphy_dbg(hw->wiphy,"mwl_mac80211_sta_remove \n");
 
-    mwl_vif = mwl_dev_get_vif(vif);
+	// Ensure the station is on our list of managed stations
+	// Could have already been removed locally in reset/recovery scenario
+	spin_lock_bh(&priv->sta_lock);
+	list_for_each_entry(sta_info, &priv->sta_list, list) {
+		if (sta_info->sta == sta)
+		{
+			bfound = true;
+			break;
+		}
+	}
+	spin_unlock_bh(&priv->sta_lock);
+
+	if (!bfound)
+	{
+		return 0;
+	}
+
+	mwl_vif = mwl_dev_get_vif(vif);
 	cancel_work_sync(&sta_info->rc_update_work);
 
 	mwl_tx_del_sta_amsdu_pkts(sta);
