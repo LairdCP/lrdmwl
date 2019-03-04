@@ -200,6 +200,9 @@ int tx_amsdu_enable = 0;
 
 int ds_enable = DS_ENABLE_ON;
 
+/* MFG mode control*/
+int mfg_mode = 0;
+
 /*Laird additions */
 int SISO_mode = 0;
 int lrd_debug = 0;
@@ -226,18 +229,47 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 	int rc = 0;
 	const char *fw_name;
 
+	/* Attempt to load mfg firmware first.
+	 *
+	 * If mfg_mode module parameter is set, mfg firmware is expected to be
+	 * present so request_firmware() can be safely used.
+	 * Otherwise, attempt to load mfg firmware from standard location
+	 */
 	fw_name = priv->if_ops.mwl_chip_tbl.mfg_image;
 
-	rc = request_firmware_direct((const struct firmware **)&priv->fw_ucode,
-				      fw_name, priv->dev);
+	if (mfg_mode) {
+		wiphy_info(priv->hw->wiphy, "%s: Manufacturing mode forced on!\n", MWL_DRV_NAME);
 
-	if (rc) {
-		rc = 0;
+		priv->mfg_mode = true;
 
-		fw_name = priv->if_ops.mwl_chip_tbl.fw_image;
-
+		/* request_firmware() may hang if firmware is not present and
+		 * FW user mode helper support is enabled in kernel
+		 */
 		rc = request_firmware((const struct firmware **)&priv->fw_ucode,
 				       fw_name, priv->dev);
+	}
+	else {
+		/* request_firmware_direct() will only find firmware if it is present in
+		 * standard locations, but will not hang
+		 */
+		rc = request_firmware_direct((const struct firmware **)&priv->fw_ucode,
+				      fw_name, priv->dev);
+		if (!rc)
+		{
+			/* mfg firmware found and loaded directly */
+			priv->mfg_mode = true;
+		}
+	}
+
+	if (rc) {
+
+		if (!mfg_mode) {
+
+			fw_name = priv->if_ops.mwl_chip_tbl.fw_image;
+
+			rc = request_firmware((const struct firmware **)&priv->fw_ucode,
+								fw_name, priv->dev);
+		}
 
 		if (rc) {
 			wiphy_err(priv->hw->wiphy,
@@ -246,9 +278,6 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 
 			goto err_load_fw;
 		}
-
-	} else {
-		priv->mfg_mode = true;
 	}
 
 	wiphy_info(priv->hw->wiphy, "%s: found firmware image <%s>\n",
@@ -1610,6 +1639,9 @@ MODULE_PARM_DESC(lrd_debug, "Debug mode 0:Disable 1:Enable");
 
 module_param(ds_enable, uint, 0444);
 MODULE_PARM_DESC(ds_enable, "Deep Sleep mode 0:Disable 1:Enable");
+
+module_param(mfg_mode, int, 0);
+MODULE_PARM_DESC(mfg_mode, "MFG mode 0:disable 1:enable");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);
