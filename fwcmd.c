@@ -3780,7 +3780,7 @@ int mwl_fwcmd_get_survey(struct ieee80211_hw *hw, int rstReg)
 {
 	struct mwl_priv *priv = hw->priv;
 	struct mwl_survey_info *survey_info;
-	int last_read_val, cca_cnt_val, txpe_cnt_val;
+	int last_read_val = 0, cca_cnt_val = 0, txpe_cnt_val = 0;
 
 	if(!priv->cur_survey_valid)
 		return 0;
