@@ -530,21 +530,29 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	}
 
 	priv->chip_type = card->chip_type;
-	priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
+
+	/* This routine is called during restart scenarios, but we keep the
+	 * original pcmd_buf/pcmd_event_buf until driver unload
+	 */
 	if (!priv->pcmd_buf) {
-		wiphy_err(priv->hw->wiphy,
-			  "%s: cannot alloc memory for command buffer\n",
-			  MWL_DRV_NAME);
-		return -ENOMEM;
+		priv->pcmd_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
+		if (!priv->pcmd_buf) {
+			wiphy_err(priv->hw->wiphy,
+				  "%s: cannot alloc memory for command buffer\n",
+				  MWL_DRV_NAME);
+			return -ENOMEM;
+		}
 	}
 
 	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 
-	priv->pcmd_event_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
 	if (!priv->pcmd_event_buf) {
-		wiphy_err(priv->hw->wiphy,"%s: cannot alloc memory for command_event buffer\n",
-			  MWL_DRV_NAME);
-		return -ENOMEM;
+		priv->pcmd_event_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
+		if (!priv->pcmd_event_buf) {
+			wiphy_err(priv->hw->wiphy,"%s: cannot alloc memory for command_event buffer\n",
+				  MWL_DRV_NAME);
+			return -ENOMEM;
+		}
 	}
 
 	memset(priv->pcmd_event_buf, 0x00, CMD_BUF_SIZE);
@@ -678,10 +686,6 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	kfree(card->mpa_rx.skb_arr); card->mpa_rx.skb_arr = NULL;
 	kfree(card->mpa_rx.len_arr); card->mpa_rx.len_arr = NULL;
 	kfree(card->mp_regs); card->mp_regs = NULL;
-
-	/* Free pcmd buf */
-	kfree(priv->pcmd_buf); priv->pcmd_buf = NULL;
-	kfree(priv->pcmd_event_buf); priv->pcmd_event_buf = NULL;
 
 	sdio_claim_host(card->func);
 	sdio_disable_func(card->func);
@@ -2546,7 +2550,12 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 
 	cancel_work_sync(&card->cmd_work);
 	cancel_work_sync(&card->event_work);
+
 	destroy_workqueue(card->cmd_workq);
+
+	/* Free pcmd_buf/pcmd_event_buf */
+	kfree(priv->pcmd_buf); priv->pcmd_buf = NULL;
+	kfree(priv->pcmd_event_buf); priv->pcmd_event_buf = NULL;
 }
 
 static void mwl_sdio_enter_deepsleep(struct mwl_priv * priv)
