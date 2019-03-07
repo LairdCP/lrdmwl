@@ -1011,7 +1011,6 @@ err_wl_init:
 	destroy_workqueue(priv->ds_workq);
 	destroy_workqueue(priv->rx_defer_workq);
 
-printk("%s-\n", __func__);
 	return rc;
 }
 

@@ -314,9 +314,21 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
-		rc = mwl_fwcmd_powersave_EnblDsbl(hw, conf);
-		if (rc)
-			goto out;
+		int empty_list;
+
+		// Firmware will hang if powersave mode is attempted with empty station list
+		// This is possible due to race conditions during restart attempts, block it here
+		spin_lock_bh(&priv->sta_lock);
+		empty_list = list_empty(&priv->sta_list);
+		spin_unlock_bh(&priv->sta_lock);
+		if (empty_list && (conf->flags & IEEE80211_CONF_PS)) {
+			wiphy_err(hw->wiphy, "%s() Warning! Attempt to change power mode with empty station list!\n", __FUNCTION__);
+		}
+		else {
+			rc = mwl_fwcmd_powersave_EnblDsbl(hw, conf);
+			if (rc)
+				goto out;
+		}
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
