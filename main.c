@@ -643,9 +643,10 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_AP);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_STATION);
 #ifndef CONFIG_ANDROID
-#warning Building for Android bug (Laird) 14292
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_CLIENT);
+#else
+#warning Building for Android bug (Laird) 14292
 #endif
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_ADHOC);
 
