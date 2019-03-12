@@ -1036,6 +1036,8 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	device_init_wakeup(priv->dev, false);
 	lrd_send_fw_event(priv->dev, false);
 
+	// priv->shutdown must be set prior to ieee80211_unregister_hw() so that
+	// it is set before call to mwl_mac_80211_stop()
 	priv->shutdown = true;
 
 	//Stop Timers

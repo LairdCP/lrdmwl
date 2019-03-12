@@ -56,6 +56,7 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 		tasklet_enable(priv->if_ops.ptx_task);
 
 	tasklet_enable(&priv->rx_task);
+
 	if (priv->if_ops.ptx_done_task != NULL)
 		tasklet_enable(priv->if_ops.ptx_done_task);
 
@@ -91,6 +92,7 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 		goto fwcmd_fail;
 
 	ieee80211_wake_queues(hw);
+
 	return 0;
 
 fwcmd_fail:
@@ -131,7 +133,12 @@ void mwl_mac80211_stop(struct ieee80211_hw *hw)
 
 	if (priv->if_ops.pqe_task != NULL)
 		tasklet_disable(priv->if_ops.pqe_task);
-	tasklet_disable(&priv->rx_task);
+
+	// Disable rx tasklet only if we are not shutting down
+	// Interface cleanup code will call tasklet_kill at shutdown, and tasklet must
+	// not be allowed to be both disabled and queued simultaneously
+	if (!priv->shutdown)
+		tasklet_disable(&priv->rx_task);
 
 	/* Return all skbs to mac80211 */
 	if (priv->if_ops.tx_done != NULL)

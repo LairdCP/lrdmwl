@@ -318,7 +318,6 @@ static void mwl_usb_disconnect(struct usb_interface *intf)
 	if (adapter->if_ops.ptx_task != NULL)
 		tasklet_kill(adapter->if_ops.ptx_task);
 
-	/* Tasklet should have already been disabled*/
 	tasklet_kill(&adapter->rx_task);
 
 	usb_put_dev(interface_to_usbdev(intf));

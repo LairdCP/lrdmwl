@@ -672,7 +672,13 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	sdio_release_irq(card->func);
 	sdio_release_host(card->func);
 
-	tasklet_kill(&priv->rx_task);
+	// mwl_sdio_cleanup is called both in driver shutdown and recovery scenarios
+	// Only kill tasklet (which just means remove from CPU queue if it exists there) in shutdown scenario
+	// Logic is synchronized with mwl_mac80211_stop() to ensure tasklet is not both
+	// disabled and queued to avoid CPU hang
+	if (priv->shutdown) {
+		tasklet_kill(&priv->rx_task);
+	}
 
 	/* Free Tx bufs */
 	for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++) {
@@ -1776,8 +1782,7 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 		}
 
 		/* Indicate the received packets (card->rx_data_q)to MAC80211 */
-		if (!priv->is_rx_schedule) {
-			priv->is_rx_schedule = true;
+		if (!priv->shutdown) {
 			tasklet_schedule(&priv->rx_task);
 		}
 	}
@@ -2090,6 +2095,12 @@ static void mwl_sdio_rx_recv(unsigned long data)
 	mwl_restart_ds_timer(priv, false);
 
 	while (work_done < priv->recv_limit) {
+
+		// shutdown flag set in other thread
+		// Ensure compiler doesn't play games with the read...
+		if (READ_ONCE(priv->shutdown))
+			break;
+
 		prx_skb = skb_dequeue(&card->rx_data_q);
 		if (prx_skb == NULL) {
 			break;
@@ -2105,7 +2116,6 @@ static void mwl_sdio_rx_recv(unsigned long data)
 		work_done++;
 	}
 
-	priv->is_rx_schedule = false;
 	return;
 }
 
