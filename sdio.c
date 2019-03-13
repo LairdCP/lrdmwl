@@ -558,9 +558,13 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	memset(priv->pcmd_event_buf, 0x00, CMD_BUF_SIZE);
 
 	/* Init the tasklet first in case there are tx/rx interrupts */
-	tasklet_init(&priv->rx_task, (void *)mwl_sdio_rx_recv,
-		(unsigned long)priv->hw);
-	tasklet_disable(&priv->rx_task);
+	if (!priv->recovery_in_progress) {
+		// Do not reinitialize the tasklet; it could be on the CPU queue
+		// Tasklet has been disabled in mwl_mac80211_stop
+		tasklet_init(&priv->rx_task, (void *)mwl_sdio_rx_recv,
+			(unsigned long)priv->hw);
+		tasklet_disable(&priv->rx_task);
+	}
 
 	for (num = 0; num < SYSADPT_NUM_OF_DESC_DATA; num++)
 		skb_queue_head_init(&priv->txq[num]);
