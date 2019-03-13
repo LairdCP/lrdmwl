@@ -216,6 +216,7 @@ int mfg_mode = 0;
 /*Laird additions */
 int SISO_mode = 0;
 int lrd_debug = 0;
+int null_scan_count = 0;
 
 static int lrd_send_fw_event(struct device *dev, bool on)
 {
@@ -869,6 +870,8 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	spin_lock_init(&priv->sta_lock);
 	spin_lock_init(&priv->stream_lock);
 
+	atomic_set(&priv->null_scan_count, null_scan_count);
+
 	/* set up band information for 2.4G */
 	memset(&priv->band_24, 0,sizeof(struct ieee80211_supported_band));
 	if (!priv->disable_2g) {
@@ -1415,6 +1418,8 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 	priv->is_rx_schedule = false;
 	priv->cmd_timeout = false;
 
+	atomic_set(&priv->null_scan_count, null_scan_count);
+
 	rc = mwl_init_firmware(priv);
 
 	if (rc) {
@@ -1658,6 +1663,10 @@ MODULE_PARM_DESC(ds_enable, "Deep Sleep mode 0:Disable 1:Enable");
 
 module_param(mfg_mode, int, 0);
 MODULE_PARM_DESC(mfg_mode, "MFG mode 0:disable 1:enable");
+
+module_param(null_scan_count, int, 0);
+MODULE_PARM_DESC(null_scan_count, "Null scan response recovery count");
+
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);

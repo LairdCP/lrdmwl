@@ -291,6 +291,12 @@ void mwl_rx_upload_pkt(struct ieee80211_hw *hw,
 
 	wh = (struct ieee80211_hdr *)rx_skb->data;
 
+	// We've received at least one packet
+	// Clear the scan count to prevent recovery logic from kicking in
+	if (atomic_read(&priv->null_scan_count)) {
+		atomic_set(&priv->null_scan_count, 0);
+	}
+
 	if (unlikely(ieee80211_is_mgmt(wh->frame_control)) &&
 		mwl_rx_needs_defered_processing(rx_skb) &&
 		((skb_save = skb_copy(rx_skb, GFP_ATOMIC)) != NULL)){

@@ -709,6 +709,9 @@ struct mwl_priv {
 	u32  radio_caps;
 	bool monitor_mode;
 	bool init_complete;
+
+	/** Work around for startup failure */
+	atomic_t null_scan_count;
 };
 
 struct beacon_info {

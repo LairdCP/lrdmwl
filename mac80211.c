@@ -1072,6 +1072,7 @@ static void mwl_mac80211_sw_scan_complete(struct ieee80211_hw *hw,
 					  struct ieee80211_vif *vif)
 {
 	struct mwl_priv *priv = hw->priv;
+	int scan_cnt;
 
 
 	priv->sw_scanning = false;
@@ -1081,6 +1082,18 @@ static void mwl_mac80211_sw_scan_complete(struct ieee80211_hw *hw,
 		/* Start BA timer again */
 		mod_timer(&priv->period_timer, jiffies +
 			msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
+	}
+
+	if (!priv->recovery_in_progress) {
+		scan_cnt = atomic_read(&priv->null_scan_count);
+		if (scan_cnt == 1) {
+			wiphy_err(hw->wiphy, "%s: No packets received, resetting!", __func__);
+			lrd_radio_recovery(priv);
+		}
+		else if (scan_cnt > 1) {
+			wiphy_err(hw->wiphy, "%s: No packets received, checking %d more scans before resetting!", __func__, scan_cnt-1);
+			atomic_cmpxchg(&priv->null_scan_count, scan_cnt, scan_cnt-1);
+		}
 	}
 }
 
