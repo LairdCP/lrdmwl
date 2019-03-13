@@ -778,7 +778,7 @@ static void mwl_ds_workq(struct work_struct *work)
 	struct mwl_priv  *priv = container_of(work,
                         struct mwl_priv, ds_work);
 
-	if (priv->mfg_mode) {
+	if (priv->mfg_mode || priv->recovery_in_progress) {
 		return;
 	}
 
@@ -1079,7 +1079,7 @@ void mwl_restart_ds_timer(struct mwl_priv *priv, bool force)
 {
 	struct ieee80211_conf *conf = &priv->hw->conf;
 
-	if(priv->ds_enable != DS_ENABLE_ON || priv->shutdown) {
+	if(priv->ds_enable != DS_ENABLE_ON || priv->shutdown || priv->recovery_in_progress) {
 		return;
 	}
 
@@ -1181,7 +1181,7 @@ void lrd_radio_recovery(struct mwl_priv *priv)
 		return;
 	}
 
-	priv->recovery_in_progress = 1;
+	priv->recovery_in_progress = true;
 
 	if (!priv->if_ops.hardware_restart)
 	{

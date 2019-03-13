@@ -1128,6 +1128,9 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	struct mwl_priv *priv = card->priv;
 	int num,ret;
 
+	if (priv->recovery_in_progress)
+		return;
+
 	if(!mutex_trylock(&priv->fwcmd_mutex))
 	{
 		return;
