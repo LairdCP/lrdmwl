@@ -123,7 +123,7 @@ static const struct ieee80211_iface_limit ap_if_su_limits[] = {
 	{ .max = SYSADPT_NUM_OF_SU_AP, .types = BIT(NL80211_IFTYPE_AP) },
 #ifdef CONFIG_ANDROID
 #warning Building for Android bug (Laird) 14292
-	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) },
+	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION)
 #else
 	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) |
 	                                        BIT(NL80211_IFTYPE_P2P_GO) |
@@ -159,7 +159,7 @@ static const struct ieee80211_iface_limit if_st_limits[] = {
 	{ .max = SYSADPT_NUM_OF_ST_AP, .types = BIT(NL80211_IFTYPE_AP) },
 #ifdef CONFIG_ANDROID
 #warning Building for Android bug (Laird) 14292
-	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) },
+	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION)
 #else
 	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) |
 	                                        BIT(NL80211_IFTYPE_P2P_GO) |
@@ -644,7 +644,6 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_AP);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_STATION);
 #ifndef CONFIG_ANDROID
-
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_CLIENT);
 #else
