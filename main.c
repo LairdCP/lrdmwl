@@ -121,14 +121,9 @@ static const struct ieee80211_iface_limit ibss_if_limits[] = {
 
 static const struct ieee80211_iface_limit ap_if_su_limits[] = {
 	{ .max = SYSADPT_NUM_OF_SU_AP, .types = BIT(NL80211_IFTYPE_AP) },
-#ifdef CONFIG_ANDROID
-#warning Building for Android bug (Laird) 14292
-	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION)
-#else
 	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) |
 	                                        BIT(NL80211_IFTYPE_P2P_GO) |
 	                                        BIT(NL80211_IFTYPE_P2P_CLIENT)},
-#endif
 };
 
 static const struct ieee80211_iface_combination if_su_comb[] = {
@@ -157,14 +152,9 @@ static const struct ieee80211_iface_combination if_su_comb[] = {
 
 static const struct ieee80211_iface_limit if_st_limits[] = {
 	{ .max = SYSADPT_NUM_OF_ST_AP, .types = BIT(NL80211_IFTYPE_AP) },
-#ifdef CONFIG_ANDROID
-#warning Building for Android bug (Laird) 14292
-	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION)
-#else
 	{ .max = SYSADPT_NUM_OF_STA,   .types = BIT(NL80211_IFTYPE_STATION) |
 	                                        BIT(NL80211_IFTYPE_P2P_GO) |
 	                                        BIT(NL80211_IFTYPE_P2P_CLIENT)},
-#endif
 };
 
 static const struct ieee80211_iface_combination if_st_comb[] = {
@@ -643,11 +633,8 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	hw->wiphy->interface_modes = 0;
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_AP);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_STATION);
-#ifndef CONFIG_ANDROID
-#warning Building for Android bug (Laird) 14292
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_GO);
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_CLIENT);
-#endif
 	hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_ADHOC);
 
 	/* set up band information for 2.4G */
