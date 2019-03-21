@@ -458,6 +458,7 @@ struct mwl_sdio_card {
 	/*
 	 */
 	bool is_suspended;
+	bool expect_recovery;
 	bool host_disable_sdio_rx_aggr;
 	bool sdio_rx_aggr_enable;
 	bool rx_work_enabled;
@@ -479,7 +480,7 @@ struct mwl_sdio_card {
 
 	/* Host capabilities fixups */
 	u32 caps_fixups;
-
+	int reset_pwd_gpio;
 };
 
 static inline bool

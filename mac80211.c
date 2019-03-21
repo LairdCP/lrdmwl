@@ -66,6 +66,14 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 	if (priv->if_ops.pqe_task != NULL)
 		tasklet_enable(priv->if_ops.pqe_task);
 
+	priv->mac_init_complete = true;
+
+	if (priv->stop_shutdown) {
+		rc = mwl_reinit_sw(priv, true);
+		if (rc)
+			goto fwcmd_fail;
+	}
+
 	/* Enable interrupts */
 	mwl_fwcmd_int_enable(hw);
 
@@ -153,6 +161,10 @@ void mwl_mac80211_stop(struct ieee80211_hw *hw)
 	/* Return all skbs to mac80211 */
 	if (priv->if_ops.tx_done != NULL)
 		priv->if_ops.tx_done((unsigned long)hw);
+
+	if (priv->stop_shutdown && !priv->recovery_in_progress) {
+		mwl_shutdown_sw(priv, true);
+	}
 }
 
 static int mwl_mac80211_add_interface(struct ieee80211_hw *hw,
@@ -327,7 +339,7 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 		if (rc)
 			goto out;
 
-		priv->monitor_mode = (conf->flags & IEEE80211_CONF_MONITOR)?true:false;
+		priv->monitor_mode = (conf->flags & IEEE80211_CONF_MONITOR) != 0;
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
@@ -1128,11 +1140,12 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 		}
 
 		if (priv->wow.state & WOWLAN_STATE_ENABLED) {
-			bool ds_status = priv->ds_state ? true : false;
+			bool ds_status = priv->ds_state != 0;
 
-			wiphy_info(hw->wiphy, "Enabling WOW for conditions 0x%x, 0x%x ch=0x%d\n", priv->wow.wowlanCond, ds_status, hw->conf.chandef.chan->hw_value);
+			wiphy_info(hw->wiphy, "Enabling WOW for conditions 0x%x, 0x%x ch=0x%d\n",
+				priv->wow.wowlanCond, ds_status, hw->conf.chandef.chan->hw_value);
 
-			/*Configure AP detect settings */
+			/* Configure AP detect settings */
 			if (priv->wow.wowlanCond & MWL_WOW_CND_AP_INRANGE) {
 				mwl_fwcmd_wowlan_apinrange_config(priv->hw);
 			}
@@ -1143,19 +1156,16 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 			/* Enable the Host Sleep */
 			priv->wow.state &= ~(WOWLAN_STATE_HS_SENT);
 
-			if ( !mwl_fwcmd_hostsleep_control(priv->hw, true, ds_status, priv->wow.wowlanCond) ) {
+			rc = mwl_fwcmd_hostsleep_control(priv->hw, true, ds_status, priv->wow.wowlanCond);
+			if (!rc) {
 				priv->wow.state |= WOWLAN_STATE_HS_SENT;
 
-				if(ds_status == DS_SLEEP)
-				{
+				if (ds_status == DS_SLEEP) {
 					mwl_delete_ds_timer(priv);
 					priv->if_ops.enter_deepsleep(priv);
 				}
 
 				priv->ds_state = ds_status;
-			}
-			else {
-				rc = -1;
 			}
 		}
 	}

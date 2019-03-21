@@ -22,8 +22,8 @@ extern void timer_routine(struct timer_list *t);
 extern void mwl_restart_ds_timer(struct mwl_priv *priv, bool force);
 extern void mwl_delete_ds_timer(struct mwl_priv *priv);
 extern int mwl_fw_dnld_and_init(struct mwl_priv *priv);
-extern int mwl_shutdown_sw(struct mwl_priv *priv);
-extern int mwl_reinit_sw(struct mwl_priv *priv);
+extern int mwl_shutdown_sw(struct mwl_priv *priv, bool suspend);
+extern int mwl_reinit_sw(struct mwl_priv *priv, bool suspend);
 extern void mwl_mac80211_stop(struct ieee80211_hw *hw);
 extern void mwl_mac80211_remove_vif(struct mwl_priv *priv, struct ieee80211_vif *vif);
 extern int mwl_mac80211_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif, struct ieee80211_sta *sta);
@@ -38,7 +38,7 @@ extern int mwl_mac80211_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif
 
 extern void lrd_enable_wowlan(struct mwl_priv *priv);
 extern void lrd_disable_wowlan(struct mwl_priv *priv);
-int lrd_probe_of(struct mwl_priv *priv, struct device_node *of_node);
+int lrd_probe_of_wowlan(struct mwl_priv *priv, struct device_node *of_node);
 
 extern void lrd_report_wowlan_wakeup(struct mwl_priv *priv);
 
@@ -52,4 +52,5 @@ static inline int lrd_probe_of(struct mwl_priv *priv,
 #endif
 
 void lrd_radio_recovery(struct mwl_priv *priv);
+
 #endif

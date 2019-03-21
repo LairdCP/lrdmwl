@@ -116,7 +116,7 @@ static void mwl_pcie_reset_notify(struct pci_dev *pdev, bool prepare)
 		wiphy_err(hw->wiphy, "%s: Prepare for reset...\n", __func__);
 
 		if (priv->recovery_in_progress)
-			mwl_shutdown_sw(priv);
+			mwl_shutdown_sw(priv, false);
 
 		wiphy_err(hw->wiphy, "%s: Resetting...\n", __func__);
 	}
@@ -129,7 +129,7 @@ static void mwl_pcie_reset_notify(struct pci_dev *pdev, bool prepare)
 		msleep(150);
 
 		if (priv->recovery_in_progress)
-			mwl_reinit_sw(priv);
+			mwl_reinit_sw(priv, false);
 		else
 		{
 			int rc;

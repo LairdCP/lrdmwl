@@ -712,6 +712,11 @@ struct mwl_priv {
 	bool mac_started;
 
 
+	bool stop_shutdown;
+	bool mac_init_complete;
+	struct timer_list stop_shutdown_timer;
+	struct work_struct stop_shutdown_work;
+
 	/** Work around for startup failure */
 	atomic_t null_scan_count;
 };

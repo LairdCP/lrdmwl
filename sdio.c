@@ -22,6 +22,7 @@
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
 #include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include "sysadpt.h"
 #include "dev.h"
 #include "main.h"
@@ -38,6 +39,18 @@
 #define INTF_HEADER_LEN         4
 
 #define MWL_FW_ROOT     "lrdmwl"
+
+enum mwl_pm_action {
+	MWL_PM_PREPARE,
+	MWL_PM_COMPLETE,
+	MWL_PM_RESUME,
+	MWL_PM_RESUME_EARLY,
+	MWL_PM_RESTORE_EARLY,
+	MWL_PM_SUSPEND,
+	MWL_PM_SUSPEND_LATE,
+	MWL_PM_FREEZE,
+	MWL_PM_POWEROFF
+};
 
 static struct mwl_chip_info mwl_chip_tbl[] = {
 	[MWL8864] = {
@@ -61,22 +74,22 @@ static struct mwl_chip_info mwl_chip_tbl[] = {
 	},
 };
 
-static int
-mwl_write_data_sync(struct mwl_priv *priv,
+static unsigned int reset_pwd_gpio = ARCH_NR_GPIOS;
+
+static int mwl_write_data_sync(struct mwl_priv *priv,
 			u8 *buffer, u32 pkt_len, u32 port);
 static int mwl_sdio_enable_int(struct mwl_priv *priv, bool enable);
 static int mwl_sdio_complete_cmd(struct mwl_priv *priv);
 static int mwl_sdio_event(struct mwl_priv *priv);
 static void mwl_sdio_tx_workq(struct work_struct *work);
 static void mwl_sdio_rx_recv(unsigned long data);
-static void mwl_sdio_flush_amsdu(unsigned long data);
-static void mwl_sdio_flush_amsdu_no_lock(unsigned long data);
 static int mwl_sdio_read_fw_status(struct mwl_priv *priv, u16 *dat);
 
 static int mwl_sdio_init_gpio(void);
 static int mwl_sdio_release_gpio(void);
 static int mwl_sdio_reset_gpio(struct mwl_priv *priv);
 static int mwl_sdio_reset(struct mwl_priv *priv);
+static int mwl_sdio_set_gpio(struct mwl_sdio_card *card, int value);
 static int mwl_sdio_restart_handler(struct mwl_priv *priv);
 
 /* Device ID for SD8897 */
@@ -384,13 +397,10 @@ static int mwl_sdio_init_irq(struct mwl_priv *priv)
 	sdio_claim_host(func);
 	/* Request the SDIO IRQ */
 	ret = sdio_claim_irq(func, mwl_sdio_interrupt);
-	if (ret) {
+	if (ret)
 		wiphy_err(priv->hw->wiphy,
 			    "claim irq failed: ret=%d\n", ret);
-		goto out;
-	}
 
-out:
 	sdio_release_host(func);
 	return ret;
 }
@@ -415,9 +425,6 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	int rc;
 	u8 sdio_ireg;
 	int num;
-#ifdef CONFIG_PM
-	mmc_pm_flag_t pm_flag = 0;
-#endif
 
 	/* not sure this patch is needed or not?? */
 	func->card->quirks |= MMC_QUIRK_BLKSZ_FOR_BYTE_MODE;
@@ -427,14 +434,14 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	sdio_release_host(func);
 
 	if (rc != 0) {
-		pr_err("%s: failed to enable sdio function\n", __func__);
+		dev_err(&func->dev, "%s: failed to enable sdio function\n", __func__);
 		return rc;
 	}
 
 	priv->host_if = MWL_IF_SDIO;
 	card->priv = priv;
 	priv->dev = &func->dev;
-	sdio_set_drvdata(card->func,priv->hw);
+	sdio_set_drvdata(card->func, priv->hw);
 
 	// Initialize default restart handler if not already configured
 	if (!priv->if_ops.hardware_restart)
@@ -511,6 +518,7 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	spin_lock_init(&card->rx_proc_lock);
 	init_waitqueue_head(&card->cmd_wait_q.wait);
 	skb_queue_head_init(&card->rx_data_q);
+
 	card->cmd_wait_q.status = 0;
 	card->cmd_sent = false;
 	card->cmd_cond = false;
@@ -543,8 +551,8 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 			return -ENOMEM;
 		}
 	}
-
-	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
+	else
+		memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 
 	if (!priv->pcmd_event_buf) {
 		priv->pcmd_event_buf = kzalloc(CMD_BUF_SIZE, GFP_KERNEL);
@@ -554,10 +562,10 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 			return -ENOMEM;
 		}
 	}
+	else
+		memset(priv->pcmd_event_buf, 0x00, CMD_BUF_SIZE);
 
-	memset(priv->pcmd_event_buf, 0x00, CMD_BUF_SIZE);
-
-	/* Init the tasklet first in case there are tx/rx interrupts */
+	/* Initialize the tasklet first in case there are tx/rx interrupts */
 	if (!priv->recovery_in_progress) {
 		// Do not reinitialize the tasklet; it could be on the CPU queue
 		// Tasklet has been disabled in mwl_mac80211_stop
@@ -572,14 +580,22 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	mwl_sdio_init_irq(priv);
 
 #ifdef CONFIG_PM
-	//check WOW
-	pm_flag = sdio_get_host_pm_caps(func);
-	if ((pm_flag & MMC_PM_KEEP_POWER)) {
-		priv->wow.capable = true;
-	}
+	priv->wow.capable =
+		(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) != 0;
 #endif
 
-	// Reinitialization needed in case of restart
+	if (priv->stop_shutdown) {
+		if (mmc_card_is_removable(func->card->host) ||
+			!gpio_is_valid(card->reset_pwd_gpio)) {
+			priv->stop_shutdown = false;
+
+			dev_err(&func->dev,
+				"Power down when network down mode supported only,\n"
+				"when card set to non-removable and reset gpio defined\n");
+		}
+	}
+
+	// Re-initialization needed in case of restart
 	card->is_deepsleep = 0;
 
 	return 0;
@@ -675,6 +691,7 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 	sdio_claim_host(card->func);
 	sdio_release_irq(card->func);
 	sdio_release_host(card->func);
+	wiphy_info(priv->hw->wiphy, "%s, unregister IRQ\n", __func__);
 
 	// mwl_sdio_cleanup is called both in driver shutdown and recovery scenarios
 	// Only kill tasklet (which just means remove from CPU queue if it exists there) in shutdown scenario
@@ -727,7 +744,7 @@ mwl_write_data_sync(struct mwl_priv *priv,
 				MWL_SDIO_BLOCK_SIZE) : pkt_len;
 	u32 ioport = (port & MWL_SDIO_IO_PORT_MASK);
 
-	if (card->is_suspended) {
+	if (card->is_suspended && !priv->recovery_in_progress) {
 		wiphy_err(priv->hw->wiphy,
 			    "%s: not allowed while suspended\n", __func__);
 		return -1;
@@ -1718,7 +1735,7 @@ static int mwl_sdio_process_int_status(struct mwl_priv *priv)
 			mwl_sdio_event(priv);
 	}
 
-	/* Tx-Done interrut */
+	/* Tx-Done interrupt */
 	if (sdio_ireg & DN_LD_HOST_INT_STATUS) {
 		bitmap = (u32) card->mp_regs[reg->wr_bitmap_l];
 		bitmap |= ((u32) card->mp_regs[reg->wr_bitmap_u]) << 8;
@@ -2187,6 +2204,55 @@ static int mwl_write_data_complete(struct mwl_priv *priv,
 	return 0;
 }
 
+static void mwl_sdio_flush_amsdu(unsigned long data)
+{
+	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
+	struct mwl_priv *priv = hw->priv;
+	struct mwl_amsdu_frag *amsdu_frag;
+
+	struct mwl_sta *sta_info;
+	int i;
+
+	list_for_each_entry(sta_info, &priv->sta_list, list) {
+		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
+			amsdu_frag = &sta_info->amsdu_ctrl.frag[i];
+			if (amsdu_frag->num) {
+				spin_unlock_bh(&sta_info->amsdu_lock);
+				mwl_tx_skb(priv, i,
+					   amsdu_frag->skb);
+				spin_lock_bh(&sta_info->amsdu_lock);
+				amsdu_frag->num = 0;
+				amsdu_frag->cur_pos = NULL;
+			}
+		}
+	}
+}
+
+static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
+{
+	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
+	struct mwl_priv *priv = hw->priv;
+	struct mwl_amsdu_frag *amsdu_frag;
+
+	struct mwl_sta *sta_info;
+	int i;
+
+	list_for_each_entry(sta_info, &priv->sta_list, list) {
+		if (sta_info == NULL) {
+			return;
+		}
+		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
+			amsdu_frag = &sta_info->amsdu_ctrl.frag[i];
+			if (amsdu_frag->num) {
+				mwl_tx_skb(priv, i,
+					   amsdu_frag->skb);
+				amsdu_frag->num = 0;
+				amsdu_frag->cur_pos = NULL;
+			}
+		}
+	}
+}
+
 static void mwl_sdio_tx_workq(struct work_struct *work)
 {
 	struct mwl_sdio_card *card = container_of(work,
@@ -2591,41 +2657,45 @@ static int mwl_sdio_is_deepsleep(struct mwl_priv * priv)
 
 static void mwl_sdio_up_dev(struct mwl_priv *priv)
 {
+	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
+
 	wiphy_info(priv->hw->wiphy, "%s: Bringing up adapter...\n", MWL_DRV_NAME);
 
+	mwl_sdio_set_gpio(card, 1);
+
 	mwl_sdio_init(priv);
-	return;
 }
 
 static void mwl_sdio_down_dev(struct mwl_priv *priv)
 {
+	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
+
 	wiphy_info(priv->hw->wiphy, "%s: Taking down adapter...\n", MWL_DRV_NAME);
 	mwl_sdio_cleanup(priv);
-	return;
+
+	mwl_sdio_set_gpio(card, 0);
 }
 
 static int mwl_sdio_restart_handler(struct mwl_priv *priv)
 {
 	int ret;
 
-	wiphy_info(priv->hw->wiphy, "%s: Restarting adapter...\n", MWL_DRV_NAME);
+	wiphy_debug(priv->hw->wiphy, "%s: Restarting adapter...\n", MWL_DRV_NAME);
 
-	mwl_shutdown_sw(priv);
+	mwl_shutdown_sw(priv, false);
 
-	ret = mwl_sdio_reset(priv);
+	mdelay(1);
 
-	if (!ret)
-	{
-		ret = mwl_reinit_sw(priv);
-		if (ret)
-			wiphy_err(priv->hw->wiphy, "%s: reinit failed with error %d\n", MWL_DRV_NAME, ret);
-	}
-	else
-		wiphy_err(priv->hw->wiphy, "%s: Reset failed with error %d\n", MWL_DRV_NAME, ret);
+	ret = mwl_reinit_sw(priv, false);
+	if (ret)
+		wiphy_err(priv->hw->wiphy,
+			"%s: Re-initialization failed with error %d\n",
+			MWL_DRV_NAME, ret);
 
 	return ret;
 }
 
+MODULE_DEVICE_TABLE(sdio, mwl_sdio_id_tbl);
 static struct mwl_if_ops sdio_ops = {
 	.inttf_head_len          = INTF_HEADER_LEN,
 	.init_if                 = mwl_sdio_init,
@@ -2653,7 +2723,8 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	static bool printed_version;
 	struct mwl_sdio_card *card;
 	struct device_node *np, *of_node = NULL;
-	int rc = 0;
+	int gpio, rc = 0;
+	enum of_gpio_flags flags;
 
 	if (id->driver_data >= MWLUNKNOWN)
 		return -ENODEV;
@@ -2720,6 +2791,25 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		}
 	}
 
+	card->reset_pwd_gpio = reset_pwd_gpio;
+
+	if (of_node) {
+		gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
+
+		if (gpio_is_valid(gpio)) {
+			rc = devm_gpio_request_one(&func->dev, gpio,
+				flags | GPIOF_OUT_INIT_HIGH, "wifi-reset");
+
+			if (!rc)
+				card->reset_pwd_gpio = gpio;
+		}
+	}
+
+	if (gpio_is_valid(card->reset_pwd_gpio))
+		dev_info(&func->dev, "Reset GPIO %d configured\n", reset_pwd_gpio);
+	else
+		dev_info(&func->dev, "Reset GPIO not configured\n");
+
 	rc = mwl_add_card(card, &sdio_ops, of_node);
 	if (rc != 0) {
 		if (rc != -EPROBE_DEFER)
@@ -2728,9 +2818,10 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		destroy_workqueue(card->cmd_workq);
 		destroy_workqueue(card->tx_workq);
 		kfree(card);
-	}
 
-	return rc;
+		return rc;
+	}
+	return 0;
 }
 
 static void mwl_sdio_remove(struct sdio_func *func)
@@ -2757,236 +2848,147 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	dev_info(&func->dev, "Card removal complete!\n");
 }
 
-static void lrd_sdio_host_fixups(struct sdio_func *func)
+#ifdef CONFIG_PM
+static int mwl_sdio_pm_worker(struct device *dev, int action)
 {
-	struct ieee80211_hw *hw;
-
-	if (func) {
-		hw = sdio_get_drvdata(func);
-
-		if (hw && hw->priv) {
-			struct mwl_priv      *priv = (struct mwl_priv*)hw->priv;
-			struct mwl_sdio_card *card = (struct mwl_sdio_card *)priv->intf;
-
-			if (card && mmc_card_is_removable(func->card->host)) {
-				card->caps_fixups      |= MMC_CAP_NONREMOVABLE;
-
-				func->card->host->caps |= MMC_CAP_NONREMOVABLE;
-			}
-		}
-	}
-}
-
-static void lrd_sdio_remove_host_fixups(struct sdio_func *func)
-{
-	struct ieee80211_hw *hw;
-
-	if (func) {
-		hw = sdio_get_drvdata(func);
-
-		if (hw && hw->priv) {
-			struct mwl_priv      *priv = (struct mwl_priv*)hw->priv;
-			struct mwl_sdio_card *card = (struct mwl_sdio_card *)priv->intf;
-
-			if (card && card->caps_fixups) {
-				func->card->host->caps &= ~(card->caps_fixups);
-			}
-		}
-	}
-}
-
-/*
-static int mwl_sdio_prepare(struct device *dev)
-{
-	struct sdio_func    *func = dev_to_sdio_func(dev);
-	struct ieee80211_hw *hw;
-	int rc = 0;
-
-	if (dev) {
-		hw = sdio_get_drvdata(func);
-
-		if (hw && hw->priv) {
-			struct mwl_priv *priv = (struct mwl_priv*)hw->priv;
-
-			if ((priv->wow.state & WOWLAN_STATE_ENABLED) && priv->sw_scanning) {
-				wiphy_err(priv->hw->wiphy, "Scanning, suspend request denied\n");
-				rc = -EPERM;
-			}
-		}
-	}
-
-	return rc;
-}
-*/
-
-/*
-static int mwl_sdio_prepare(struct device *dev)
-{
-	struct sdio_func     *func = dev_to_sdio_func(dev);
-	struct mwl_priv      *priv;
-	struct mwl_sdio_card *card;
-	int rc = 0;
-
-	if (func) {
-		card = sdio_get_drvdata(func);
-		if (card && card->priv) {
-			priv = card->priv;
-
-			if ((priv->wow.state & WOWLAN_STATE_ENABLED) &&
-			     priv->sw_scanning) {
-			wiphy_err(priv->hw->wiphy, "Scanning, suspend request denied\n");
-			rc = -EPERM;
-			}
-		}
-	}
-
-	return rc;
-}
-*/
-
-static int mwl_sdio_suspend(struct device *dev)
-{
-	struct sdio_func     *func = dev_to_sdio_func(dev);
+	struct sdio_func     *func;
 	struct ieee80211_hw  *hw;
 	struct mwl_priv      *priv;
 	struct mwl_sdio_card *card;
-	mmc_pm_flag_t pm_flag = 0;
-	int ret = 0;
 
-	if (func) {
-		pm_flag = sdio_get_host_pm_caps(func);
-		pr_info("cmd: %s: suspend: PM flag = 0x%x\n", sdio_func_id(func), pm_flag);
-
-		if (!(pm_flag & MMC_PM_KEEP_POWER)) {
-			pr_err("%s: cannot remain alive while host is"\
-				" suspended\n", sdio_func_id(func));
-			return -ENOSYS;
-		}
-
-		hw = sdio_get_drvdata(func);
-		if (!hw || !hw->priv || !((struct mwl_priv*)hw->priv)->intf) {
-			pr_err("suspend: invalid card or priv\n");
-			return 0;
-		}
-	} else {
-		pr_err("suspend: sdio_func is not specified\n");
+	func = dev_to_sdio_func(dev);
+	if (!func)
 		return 0;
-	}
+
+	hw = sdio_get_drvdata(func);
+	if (!hw || !hw->priv)
+		return 0;
 
 	priv = (struct mwl_priv*)hw->priv;
 	card = (struct mwl_sdio_card *)priv->intf;
+	if (!card)
+		return 0;
 
-	wiphy_debug(hw->wiphy, "cmd: suspend with MMC_PM_KEEP_POWER\n");
-	ret = sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+	// Since we do not own reset gpio, we need to restore it direction
+	// on resume from hibernate manually
+	if (action == MWL_PM_RESTORE_EARLY) {
+		if (gpio_is_valid(card->reset_pwd_gpio))
+			gpio_direction_output(card->reset_pwd_gpio, 0);
+	}
 
-	lrd_sdio_host_fixups(func);
+	// When we are in stop shutdown mode ignore PM callbacks
+	// mac80211 start/stop will control power state
+	if (priv->stop_shutdown)
+		return 0;
 
-	lrd_enable_wowlan(priv);
+	switch (action) {
+	case MWL_PM_PREPARE:
+		if (mmc_card_is_removable(func->card->host)) {
+			card->caps_fixups      |= MMC_CAP_NONREMOVABLE;
+			func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+		}
+		break;
 
-	/* Indicate device suspended */
-	card->is_suspended = true;
+	case MWL_PM_COMPLETE:
+		if (card->caps_fixups)
+			func->card->host->caps &= ~(card->caps_fixups);
+		break;
 
-	return ret;
+	case MWL_PM_RESUME_EARLY:
+		if (priv->wow.state & WOWLAN_STATE_ENABLED)
+			lrd_disable_wowlan(priv);
+
+		card->expect_recovery =
+			(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) == 0;
+		break;
+
+	case MWL_PM_RESTORE_EARLY:
+		card->expect_recovery = true;
+		break;
+
+	case MWL_PM_RESUME:
+		if (card->expect_recovery || !gpio_is_valid(card->reset_pwd_gpio)) {
+			mwl_shutdown_sw(priv, true);
+			mwl_reinit_sw(priv, true);
+
+			card->expect_recovery = false;
+		}
+
+		card->is_suspended = false;
+		break;
+
+	case MWL_PM_SUSPEND:
+		sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+		card->is_suspended = true;
+		break;
+
+	case MWL_PM_SUSPEND_LATE:
+		if (priv->wow.state & WOWLAN_STATE_ENABLED)
+			lrd_enable_wowlan(priv);
+
+		if ((sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) == 0)
+			mwl_sdio_set_gpio(card, 0);
+		break;
+
+	case MWL_PM_POWEROFF:
+		mwl_sdio_set_gpio(card, 0);
+		break;
+	}
+
+	return 0;
+}
+
+static int mwl_sdio_prepare(struct device *dev)
+{
+	return mwl_sdio_pm_worker(dev, MWL_PM_PREPARE);
+}
+
+static void mwl_sdio_complete(struct device *dev)
+{
+	mwl_sdio_pm_worker(dev, MWL_PM_COMPLETE);
+}
+
+static int mwl_sdio_suspend(struct device *dev)
+{
+	return mwl_sdio_pm_worker(dev, MWL_PM_SUSPEND);
+}
+
+static int mwl_sdio_suspend_late(struct device *dev)
+{
+	return mwl_sdio_pm_worker(dev, MWL_PM_SUSPEND_LATE);
 }
 
 static int mwl_sdio_resume(struct device *dev)
 {
-	struct sdio_func     *func = dev_to_sdio_func(dev);
-	struct ieee80211_hw  *hw;
-	struct mwl_priv      *priv;
-	struct mwl_sdio_card *card;
-	mmc_pm_flag_t pm_flag = 0;
-
-	if (func) {
-		pm_flag = sdio_get_host_pm_caps(func);
-
-		hw = sdio_get_drvdata(func);
-		if (!hw || !hw->priv || !((struct mwl_priv*)hw->priv)->intf) {
-			pr_err("resume: invalid card or priv\n");
-			return 0;
-		}
-	} else {
-		pr_err("resume: sdio_func is not specified\n");
-		return 0;
-	}
-
-	priv = (struct mwl_priv*)hw->priv;
-	card = (struct mwl_sdio_card *)priv->intf;
-
-	if (!card->is_suspended) {
-		wiphy_debug(hw->wiphy,"device already resumed\n");
-		return 0;
-	}
-
-	lrd_disable_wowlan(priv);
-
-	lrd_sdio_remove_host_fixups(func);
-
-	card->is_suspended = false;
-
-
-	return 0;
+	return mwl_sdio_pm_worker(dev, MWL_PM_RESUME);
 }
-MODULE_DEVICE_TABLE(sdio, mwl_sdio_id_tbl);
 
-static void mwl_sdio_flush_amsdu(unsigned long data)
+static int mwl_sdio_resume_early(struct device *dev)
 {
-	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
-	struct mwl_priv *priv = hw->priv;
-	struct mwl_amsdu_frag *amsdu_frag;
-
-	struct mwl_sta *sta_info;
-	int i;
-
-	list_for_each_entry(sta_info, &priv->sta_list, list) {
-		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
-			amsdu_frag = &sta_info->amsdu_ctrl.frag[i];
-			if (amsdu_frag->num) {
-				spin_unlock_bh(&sta_info->amsdu_lock);
-				mwl_tx_skb(priv, i,
-					   amsdu_frag->skb);
-				spin_lock_bh(&sta_info->amsdu_lock);
-				amsdu_frag->num = 0;
-				amsdu_frag->cur_pos = NULL;
-			}
-		}
-	}
+	return mwl_sdio_pm_worker(dev, MWL_PM_RESUME_EARLY);
 }
 
-static void mwl_sdio_flush_amsdu_no_lock(unsigned long data)
+static int mwl_sdio_restore_early(struct device *dev)
 {
-	struct ieee80211_hw *hw = (struct ieee80211_hw *)data;
-	struct mwl_priv *priv = hw->priv;
-	struct mwl_amsdu_frag *amsdu_frag;
-
-	struct mwl_sta *sta_info;
-	int i;
-
-	list_for_each_entry(sta_info, &priv->sta_list, list) {
-		if (sta_info == NULL) {
-			return;
-		}
-		for (i = 0; i < SYSADPT_TX_WMM_QUEUES; i++) {
-			amsdu_frag = &sta_info->amsdu_ctrl.frag[i];
-			if (amsdu_frag->num) {
-				mwl_tx_skb(priv, i,
-					   amsdu_frag->skb);
-				amsdu_frag->num = 0;
-				amsdu_frag->cur_pos = NULL;
-			}
-		}
-	}
+	return mwl_sdio_pm_worker(dev, MWL_PM_RESTORE_EARLY);
 }
 
-
-#define module_sdio_driver(__sdio_driver) \
-		module_driver(__sdio_driver, sdio_register_driver, \
-			sdio_unregister_driver)
+static int mwl_sdio_poweroff(struct device *dev)
+{
+	return mwl_sdio_pm_worker(dev, MWL_PM_POWEROFF);
+}
 
 static const struct dev_pm_ops mwl_sdio_pm_ops = {
-	.suspend  = mwl_sdio_suspend,
-	.resume   = mwl_sdio_resume,
+	.prepare        = mwl_sdio_prepare,
+	.complete       = mwl_sdio_complete,
+	.resume         = mwl_sdio_resume,
+	.resume_early   = mwl_sdio_resume_early,
+	.restore_early  = mwl_sdio_restore_early,
+	.suspend        = mwl_sdio_suspend,
+	.suspend_late   = mwl_sdio_suspend_late,
+	.poweroff_late  = mwl_sdio_poweroff,
 };
+#endif
 
 static struct sdio_driver mwl_sdio_driver = {
 	.name     = MWL_DRV_NAME,
@@ -2994,13 +2996,12 @@ static struct sdio_driver mwl_sdio_driver = {
 	.probe    = mwl_sdio_probe,
 	.remove   = mwl_sdio_remove,
 	.drv = {
-		   .owner = THIS_MODULE,
-		   .pm    = &mwl_sdio_pm_ops,
+		.owner = THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm    = &mwl_sdio_pm_ops,
+#endif
 	}
 };
-
-
-static unsigned int reset_pwd_gpio = ARCH_NR_GPIOS;
 
 #ifdef CONFIG_GPIOLIB
 module_param(reset_pwd_gpio, uint, 0644);
@@ -3011,38 +3012,54 @@ static int mwl_sdio_init_gpio(void)
 {
 	int ret;
 
-	if (!gpio_is_valid(reset_pwd_gpio)) {
-		pr_info("lrdmwl: No reset GPIO configured\n");
+	if (!gpio_is_valid(reset_pwd_gpio))
 		return 0;
-	}
 
-	ret = gpio_request_one(reset_pwd_gpio, GPIOF_INIT_HIGH, "WIFI_RESET");
+	ret = gpio_request_one(reset_pwd_gpio, GPIOF_OUT_INIT_HIGH, "WIFI_RESET");
 
 	/* Only return failure code if GPIO is configured but
 	 * request fails
 	 */
-	if (ret) {
+	if (ret)
 		pr_err("lrdmwl: Unable to obtain WIFI power gpio. %d\n", ret);
-	}
-	else {
-		pr_info("lrdmwl: Reset GPIO %d configured\n", reset_pwd_gpio);
+	else
 		gpio_export(reset_pwd_gpio, false);
-	}
 
 	return ret;
 }
 
 static int mwl_sdio_reset_gpio(struct mwl_priv *priv)
 {
-	if (gpio_is_valid(reset_pwd_gpio)) {
-		gpio_set_value(reset_pwd_gpio, 0);
-		msleep(1);
-		gpio_set_value(reset_pwd_gpio, 1);
+	struct mwl_sdio_card *card = priv->intf;
 
-		return 0;
+	if (!gpio_is_valid(card->reset_pwd_gpio))
+		return -ENOSYS;
+
+	gpio_set_value(card->reset_pwd_gpio, 0);
+	msleep(1);
+	gpio_set_value(card->reset_pwd_gpio, 1);
+
+	return 0;
+}
+
+static int mwl_sdio_set_gpio(struct mwl_sdio_card *card, int value)
+{
+	bool changed;
+
+	if (!gpio_is_valid(card->reset_pwd_gpio))
+		return -ENOSYS;
+
+	changed = gpio_get_value(card->reset_pwd_gpio) != value;
+
+	gpio_set_value(card->reset_pwd_gpio, value);
+
+	if (changed && value) {
+		sdio_claim_host(card->func);
+		mmc_hw_reset(card->func->card->host);
+		sdio_release_host(card->func);
 	}
 
-	return -ENOSYS;
+	return 0;
 }
 
 static int mwl_sdio_reset(struct mwl_priv *priv)
@@ -3107,6 +3124,7 @@ static void __exit mwl_sdio_driver_exit(void)
 
 module_init(mwl_sdio_driver_init);
 module_exit(mwl_sdio_driver_exit);
+
 MODULE_DESCRIPTION(LRD_SDIO_DESC);
 MODULE_VERSION(LRD_SDIO_VERSION);
 MODULE_AUTHOR(LRD_AUTHOR);

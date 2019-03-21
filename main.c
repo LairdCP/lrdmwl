@@ -286,10 +286,9 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 
 	rc = priv->if_ops.prog_fw(priv);
 	if (rc) {
-		if (rc != -EAGAIN)
-			wiphy_err(priv->hw->wiphy,
-				"%s: firmware download/init failed! <%s> %d\n",
-				MWL_DRV_NAME, fw_name, rc);
+		wiphy_err(priv->hw->wiphy,
+			"%s: firmware download/init failed! <%s> %d\n",
+			MWL_DRV_NAME, fw_name, rc);
 		goto err_download_fw;
 	}
 
@@ -511,13 +510,13 @@ static int lrd_set_su_caps(struct mwl_priv *priv)
 		                        hw->wiphy->n_iface_combinations);
 	}
 
-	#ifdef CONFIG_PM
+#ifdef CONFIG_PM
 	if (priv->wow.capable) {
 		hw->wiphy->wowlan = &lrd_wowlan_support;
 		/* max number of SSIDs device can scan for */
 		hw->wiphy->max_sched_scan_ssids = 1;
 	}
-	#endif
+#endif
 
 	/* Register for monitor interfaces, to work around mac80211 bug */
 	ieee80211_hw_set(hw, WANT_MONITOR_VIF);
@@ -580,7 +579,8 @@ void mwl_ieee80211_free_hw(struct mwl_priv *priv)
 
 	ieee80211_free_hw(hw);
 
-} EXPORT_SYMBOL(mwl_ieee80211_free_hw);
+}
+EXPORT_SYMBOL(mwl_ieee80211_free_hw);
 
 void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 {
@@ -755,7 +755,6 @@ void ds_routine(struct timer_list *t)
 	if (conf->flags & IEEE80211_CONF_IDLE) {
 		priv->ds_state = DS_SLEEP;
 		queue_work(priv->ds_workq, &priv->ds_work);
-		return;
 	}
 }
 
@@ -770,6 +769,32 @@ static void mwl_ds_workq(struct work_struct *work)
 
 	mwl_fwcmd_enter_deepsleep(priv->hw);
 	priv->if_ops.enter_deepsleep(priv);
+}
+
+void stop_shutdown_timer_routine(struct timer_list *t)
+{
+	struct mwl_priv *priv = from_timer(priv, t, stop_shutdown_timer);
+
+	pr_err("Queue stop shutdown\n");
+	queue_work(priv->ds_workq, &priv->stop_shutdown_work);
+}
+
+static void cancel_stop_shutdown_timer(struct mwl_priv  *priv)
+{
+	if (priv->stop_shutdown) {
+		del_timer_sync(&priv->stop_shutdown_timer);
+		cancel_work_sync(&priv->stop_shutdown_work);
+	}
+}
+
+static void lrd_stop_shutdown_workq(struct work_struct *work)
+{
+	struct mwl_priv  *priv = container_of(work, struct mwl_priv,
+		stop_shutdown_work);
+
+	pr_err("Work Queue stop shutdown\n");
+
+	mwl_shutdown_sw(priv, true);
 }
 
 static int mwl_wl_init(struct mwl_priv *priv)
@@ -787,6 +812,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->ds_workq = alloc_workqueue("lrdwifi-ds_workq",
 	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->ds_work, mwl_ds_workq);
+	INIT_WORK(&priv->stop_shutdown_work, lrd_stop_shutdown_workq);
 
 	priv->fw_device_pwrtbl  = false;
 	priv->forbidden_setting = false;
@@ -808,7 +834,8 @@ static int mwl_wl_init(struct mwl_priv *priv)
 
 	priv->ps_state  = PS_AWAKE;
 	priv->ds_state  = DS_AWAKE;
-	priv->ds_enable = ds_enable;
+	priv->ds_enable = priv->host_if == MWL_IF_SDIO ?
+		ds_enable : DS_ENABLE_OFF;
 	priv->ps_mode   = 0;
 
 	priv->ap_macids_supported    = 0x0000ffff;
@@ -897,12 +924,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		wiphy_err(hw->wiphy, "%s: fail to register device\n",
 			  MWL_DRV_NAME);
 		goto err_wl_init;
-	}
-
-	if (priv->host_if == MWL_IF_SDIO) {
-		/* Give SDIO interface some additional time before
-		 * sending first command */
-		msleep(1000);
 	}
 
 	/* Begin querying FW for information */
@@ -1019,6 +1040,8 @@ err_wl_init:
 void mwl_wl_deinit(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
+
+	cancel_stop_shutdown_timer(priv);
 
 	device_init_wakeup(priv->dev, false);
 	lrd_send_fw_event(priv->dev, false);
@@ -1147,7 +1170,7 @@ static void lrd_radio_recovery_work(struct work_struct *work)
 				struct mwl_priv, restart_work);
 	int ret;
 
-	wiphy_info(priv->hw->wiphy, "%s: Initiating radio recovery!!\n",
+	wiphy_debug(priv->hw->wiphy, "%s: Initiating radio recovery!!\n",
 		  MWL_DRV_NAME);
 
 	// Restart radio hardware
@@ -1221,32 +1244,29 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 			goto err_init_if;
 	}
 
-	// Disable deep sleep via global config parameter for all interfaces
-	// that do not support it.
-	if (priv->host_if != MWL_IF_SDIO)
-		ds_enable = DS_ENABLE_OFF;
-
-	rc = lrd_probe_of(priv, of_node);
+	rc = lrd_probe_of_wowlan(priv, of_node);
 	if (rc == -EPROBE_DEFER)
 		goto err_of;
+
+	if (of_node) {
+		priv->stop_shutdown =
+			of_property_read_bool(of_node, "remove-power-on-link-down");
+	}
 
 	/* Setup timers */
 	timer_setup(&priv->roc.roc_timer, remain_on_channel_expire, 0);
 	timer_setup(&priv->period_timer,  timer_routine, 0);
 	timer_setup(&priv->ds_timer, ds_routine, 0);
+	timer_setup(&priv->stop_shutdown_timer, stop_shutdown_timer_routine, 0);
 
 	rc = mwl_fw_dnld_and_init(priv);
-
-	// mwl_fw_dnld_and_init returns -EAGAIN when target must be reset
-	// and reinitialized.  Reset/restart handler is responsible for 
-	// calling mwl_fw_dnld_and_init again, but remainder of init sequence
-	// should complete successfully
-	if (rc && (rc != -EAGAIN))
+	if (rc)
 		goto err_dnld_and_init;
-	else
-		rc = 0;
 
-	return rc;
+	if (priv->stop_shutdown)
+		mod_timer(&priv->stop_shutdown_timer, jiffies + msecs_to_jiffies(8000));
+
+	return 0;
 
 err_dnld_and_init:
 	device_init_wakeup(priv->dev, false);
@@ -1271,9 +1291,8 @@ int mwl_fw_dnld_and_init(struct mwl_priv *priv)
 
 	rc = mwl_init_firmware(priv);
 	if (rc) {
-		if (rc != -EAGAIN)
-			wiphy_err(hw->wiphy, "%s: failed to initialize firmware\n",
-				MWL_DRV_NAME);
+		wiphy_err(hw->wiphy, "%s: failed to initialize firmware\n",
+			MWL_DRV_NAME);
 		goto err_init_firmware;
 	}
 
@@ -1315,21 +1334,24 @@ EXPORT_SYMBOL_GPL(mwl_fw_dnld_and_init);
 /*
  * This function gets called during restart
  */
-int mwl_shutdown_sw(struct mwl_priv *priv)
+int mwl_shutdown_sw(struct mwl_priv *priv, bool suspend)
 {
 	struct ieee80211_hw *hw = priv->hw;
 	struct mwl_vif *mwl_vif, *tmp_vif;
 	struct mwl_sta *mwl_sta, *tmp_sta;
 
+	if (suspend) {
+		priv->recovery_in_progress = true;
+		priv->mac_init_complete = true;
+	}
+	else
+		cancel_stop_shutdown_timer(priv);
+
 	WARN_ON(!priv->recovery_in_progress);
 
 	lrd_send_fw_event(priv->dev, false);
 
-	wiphy_info(priv->hw->wiphy, "%s: Shutting down software...\n", MWL_DRV_NAME);
-
-	// Save task context as mechanism to identify calls made in context
-	// of restart sequence
-	priv->recovery_owner = current;
+	wiphy_debug(priv->hw->wiphy, "%s: Shutting down software...\n", MWL_DRV_NAME);
 
 	/*
 	 * Disable radio (if possible)
@@ -1337,7 +1359,8 @@ int mwl_shutdown_sw(struct mwl_priv *priv)
 	 * Disable tasklets
 	 * Return completed TX SKBs
 	 */
-	mwl_mac80211_stop(hw);
+	if (!suspend)
+		mwl_mac80211_stop(hw);
 
 	del_timer_sync(&priv->roc.roc_timer);
 	del_timer_sync(&priv->period_timer);
@@ -1373,14 +1396,21 @@ EXPORT_SYMBOL_GPL(mwl_shutdown_sw);
 /* This function gets called during interface restart. Required
  * code is extracted from mwl_add_card()/mwl_wl_init()
  */
-int mwl_reinit_sw(struct mwl_priv *priv)
+int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 {
 	struct ieee80211_hw *hw = priv->hw;
 	int rc;
 
-	WARN_ON(!priv->recovery_in_progress);
+	if (!priv->recovery_in_progress) {
+		cancel_stop_shutdown_timer(priv);
+		return 0;
+	}
 
 	wiphy_info(priv->hw->wiphy, "%s: Re-initializing software...\n", MWL_DRV_NAME);
+
+	// Save task context as mechanism to identify calls made in context
+	// of restart sequence
+	priv->recovery_owner = current;
 
 	if (priv->if_ops.up_dev)
 		priv->if_ops.up_dev(priv);
@@ -1389,13 +1419,13 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 	priv->regulatory_set = false;
 	priv->ps_state=PS_AWAKE;
 	priv->ps_mode = 0;
-	priv->ds_enable = ds_enable;
 	priv->ds_state = DS_AWAKE;
 	priv->radio_on = false;
 	priv->radio_short_preamble = false;
 	priv->wmm_enabled = false;
 	priv->csa_active = false;
-
+	priv->ds_enable = priv->host_if == MWL_IF_SDIO ?
+		ds_enable : DS_ENABLE_OFF;
 	priv->is_tx_done_schedule = false;
 	priv->qe_trigger_num = 0;
 	priv->qe_trigger_time = jiffies;
@@ -1459,13 +1489,15 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 	mwl_fwcmd_radio_disable(hw);
 	mwl_fwcmd_rf_antenna(hw, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
-	wiphy_err(priv->hw->wiphy, "%s: Restarting mac80211...\n",
-			  MWL_DRV_NAME);
-
 	priv->recovery_in_progress = false;
 	priv->recovery_owner = NULL;
 
-	ieee80211_restart_hw(hw);
+	if (!suspend) {
+		wiphy_err(priv->hw->wiphy, "%s: Restarting mac80211...\n",
+				  MWL_DRV_NAME);
+
+		ieee80211_restart_hw(hw);
+	}
 
 	mod_timer(&priv->period_timer, jiffies +
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
@@ -1473,9 +1505,16 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 
 	lrd_send_fw_event(priv->dev, true);
 
+	if (priv->stop_shutdown  && !priv->mac_init_complete)
+		mod_timer(&priv->stop_shutdown_timer,
+			jiffies + msecs_to_jiffies(2000));
+
 err_init:
 
 	if (rc) {
+		if (priv->if_ops.down_dev)
+			priv->if_ops.down_dev(priv);
+
 		wiphy_err(hw->wiphy, "%s: fail to re-initialize wireless lan!\n",
 			  MWL_DRV_NAME);
 	}
@@ -1497,7 +1536,7 @@ static irqreturn_t lrd_irq_wakeup_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-int lrd_probe_of(struct mwl_priv *priv, struct device_node *of_node)
+int lrd_probe_of_wowlan(struct mwl_priv *priv, struct device_node *of_node)
 {
 	int ret;
 
