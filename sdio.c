@@ -150,8 +150,14 @@ mwl_write_reg(struct mwl_priv *priv, u32 reg, u8 data)
 static void mwl_free_sdio_mpa_buffers(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
+
 	kfree(card->mpa_tx.buf);
+	card->mpa_tx.buf = NULL;
+	card->mpa_tx.buf_size = 0;
+
 	kfree(card->mpa_rx.buf);
+	card->mpa_rx.buf = NULL;
+	card->mpa_rx.buf_size = 0;
 }
 
 
@@ -163,37 +169,28 @@ static int mwl_alloc_sdio_mpa_buffers(struct mwl_priv *priv,
 {
 	struct mwl_sdio_card *card = priv->intf;
 	u32 rx_buf_size;
-	int ret = 0;
 
 	card->mpa_tx.buf = kzalloc(mpa_tx_buf_size, GFP_KERNEL);
-	if (!card->mpa_tx.buf) {
-		ret = -1;
+	if (!card->mpa_tx.buf)
 		goto error;
-	}
 
 	card->mpa_tx.buf_size = mpa_tx_buf_size;
 
 	rx_buf_size = max_t(u32, mpa_rx_buf_size,
 			    (u32)SDIO_MAX_AGGR_BUF_SIZE);
 	card->mpa_rx.buf = kzalloc(rx_buf_size, GFP_KERNEL);
-	if (!card->mpa_rx.buf) {
-		ret = -1;
+	if (!card->mpa_rx.buf)
 		goto error;
-	}
 
 	card->mpa_rx.buf_size = rx_buf_size;
 
 	card->tx_pkt_unaligned_cnt = 0;
 
-error:
-	if (ret) {
-		kfree(card->mpa_tx.buf);
-		kfree(card->mpa_rx.buf);
-		card->mpa_tx.buf_size = 0;
-		card->mpa_rx.buf_size = 0;
-	}
+	return 0;
 
-	return ret;
+error:
+	mwl_free_sdio_mpa_buffers(priv);
+	return -ENOMEM;
 }
 
 static void *mwl_alloc_dma_align_buf(int rx_len, gfp_t flags)
@@ -2018,18 +2015,14 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 		if (ieee80211_has_tods(wh->frame_control))
 			mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr1);
 		else {
-            if(ieee80211_is_data(wh->frame_control)
-                && !ieee80211_has_fromds(wh->frame_control))
-			    mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr3);
-            else
-			    mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr2);
-        }
+			if(ieee80211_is_data(wh->frame_control)
+				&& !ieee80211_has_fromds(wh->frame_control))
+				mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr3);
+			else
+				mwl_vif = mwl_rx_find_vif_bss(priv, wh->addr2);
+		}
 
-		if  ((mwl_vif && mwl_vif->is_hw_crypto_enabled) ||
-		     is_multicast_ether_addr(wh->addr1) ||
-		     (ieee80211_is_mgmt(wh->frame_control) &&
-		     ieee80211_has_protected(wh->frame_control) &&
-		     !is_multicast_ether_addr(wh->addr1))) {
+		if  (mwl_vif && mwl_vif->is_hw_crypto_enabled) {
 			/* When MMIC ERROR is encountered
 			 * by the firmware, payload is
 			 * dropped and only 32 bytes of
@@ -2048,18 +2041,12 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 			}
 
 			if (!ieee80211_is_auth(wh->frame_control))
-#if 0
-				status.flag |= RX_FLAG_IV_STRIPPED |
-					       RX_FLAG_DECRYPTED |
-					       RX_FLAG_MMIC_STRIPPED;
-#else
 				/* For WPA2 frames, AES header/MIC are
 				 ** present to enable mac80211 to check
 				 ** for replay attacks
 				 */
 				status.flag |= RX_FLAG_DECRYPTED |
 					       RX_FLAG_MMIC_STRIPPED;
-#endif
 		}
 	}
 

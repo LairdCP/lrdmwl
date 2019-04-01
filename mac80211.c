@@ -27,6 +27,8 @@
 
 #define MAX_AMPDU_ATTEMPTS  5
 
+extern uint host_crypto;
+
 extern struct ieee80211_rate mwl_rates_24[];
 extern struct ieee80211_rate mwl_rates_50[];
 
@@ -547,6 +549,9 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 	int rc = 0;
 	u8 encr_type;
 	u8 *addr;
+
+	if (host_crypto)
+		return -EOPNOTSUPP;
 
 	mwl_vif = mwl_dev_get_vif(vif);
 

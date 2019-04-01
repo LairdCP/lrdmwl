@@ -203,10 +203,11 @@ int ds_enable = DS_ENABLE_ON;
 /* MFG mode control*/
 int mfg_mode = 0;
 
-/*Laird additions */
+/* Laird additions */
 int SISO_mode = 0;
 int lrd_debug = 0;
 int null_scan_count = 0;
+int host_crypto = 0;
 
 static int lrd_send_fw_event(struct device *dev, bool on)
 {
@@ -1691,6 +1692,9 @@ MODULE_PARM_DESC(mfg_mode, "MFG mode 0:disable 1:enable");
 module_param(null_scan_count, int, 0);
 MODULE_PARM_DESC(null_scan_count, "Null scan response recovery count");
 
+module_param(host_crypto, uint, 0444);
+MODULE_PARM_DESC(host_crypto, "Force host cryptography "
+	"0:FW Crypto 1:Host Crypto");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);

@@ -119,15 +119,16 @@ enum sdio_pkt_type {
 
 
 /* SDIO Tx aggregation in progress ? */
-#define MP_TX_AGGR_IN_PROGRESS(a) (a->mpa_tx.pkt_cnt > 0)
+#define MP_TX_AGGR_IN_PROGRESS(a) (a->mpa_tx.enabled && a->mpa_tx.pkt_cnt > 0)
 
 
 /* SDIO Tx aggregation buffer room for next packet ? */
-#define MP_TX_AGGR_BUF_HAS_ROOM(a, len) ((a->mpa_tx.buf_len+len)	\
-						<= a->mpa_tx.buf_size)
+#define MP_TX_AGGR_BUF_HAS_ROOM(a, len) (a->mpa_tx.enabled && \
+	((a->mpa_tx.buf_len + len) <= a->mpa_tx.buf_size))
 
 /* Copy current packet (SDIO Tx aggregation buffer) to SDIO buffer */
-#define MP_TX_AGGR_BUF_PUT(a, payload, pkt_len, port) do {		\
+#define MP_TX_AGGR_BUF_PUT(a, payload, pkt_len, port) 			\
+if (a->mpa_tx.enabled) {						\
 	memmove(&a->mpa_tx.buf[a->mpa_tx.buf_len],			\
 			payload, pkt_len);				\
 	a->mpa_tx.buf_len += pkt_len;					\
@@ -137,10 +138,10 @@ enum sdio_pkt_type {
 		a->mpa_tx.ports |= (1<<(a->mpa_tx.pkt_cnt));		\
 	else								\
 		a->mpa_tx.ports |= (1<<(a->mpa_tx.pkt_cnt+1+		\
-						(a->max_ports -	\
+						(a->max_ports -		\
 						a->mp_end_port)));	\
 	a->mpa_tx.pkt_cnt++;						\
-} while (0)
+}
 
 /* SDIO Tx aggregation limit ? */
 #define MP_TX_AGGR_PKT_LIMIT_REACHED(a)					\
