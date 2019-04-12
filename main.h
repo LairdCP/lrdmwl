@@ -13,6 +13,7 @@ extern int wmm_turbo;
 
 extern int EDMAC_Ctrl;
 extern int tx_amsdu_enable;
+extern int host_crypto;
 
 int mwl_add_card(void *, struct mwl_if_ops *, struct device_node *of_node);
 void mwl_wl_deinit(struct mwl_priv *);

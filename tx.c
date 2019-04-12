@@ -360,6 +360,7 @@ inline void mwl_tx_skb(struct mwl_priv *priv, int desc_num,
 			}
 		}
 	}
+
 	priv->if_ops.host_to_card(priv, desc_num, tx_skb);
 }
 EXPORT_SYMBOL_GPL(mwl_tx_skb);
@@ -1036,12 +1037,12 @@ void mwl_tx_skbs(unsigned long data)
 	struct sk_buff *tx_skb;
 	struct mwl_sta *sta_info;
 
-/* pr_alert( "%s() called\n", __FUNCTION__); */
+	/*pr_alert( "%s() called\n", __FUNCTION__);*/
 
 #if 0
-pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
-		priv->txbd_wrptr, priv->txbd_rdptr,
-		PCIE_TXBD_NOT_FULL(priv->txbd_wrptr, priv->txbd_rdptr));
+	pr_alert("wrptr=0x%x, rdptr=0x%x not_full=%d\n",
+			priv->txbd_wrptr, priv->txbd_rdptr,
+			PCIE_TXBD_NOT_FULL(priv->txbd_wrptr, priv->txbd_rdptr));
 #endif
 
 	spin_lock_bh(&priv->tx_desc_lock);

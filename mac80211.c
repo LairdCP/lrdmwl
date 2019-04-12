@@ -27,8 +27,6 @@
 
 #define MAX_AMPDU_ATTEMPTS  5
 
-extern uint host_crypto;
-
 extern struct ieee80211_rate mwl_rates_24[];
 extern struct ieee80211_rate mwl_rates_50[];
 
@@ -312,16 +310,13 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 
 	int rc;
 
-#if 1
-	if(changed & IEEE80211_CONF_CHANGE_IDLE) {
+	if (changed & IEEE80211_CONF_CHANGE_IDLE) {
 		if (conf->flags & IEEE80211_CONF_IDLE) {
 			mwl_restart_ds_timer(priv, false);
 		} else {
 			mwl_delete_ds_timer(priv);
 		}
-
 	}
-#endif
 
 	if (conf->flags & IEEE80211_CONF_IDLE)
 		rc = mwl_fwcmd_radio_disable(hw);
@@ -331,7 +326,7 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	if (rc)
 		goto out;
 
-	if((changed & IEEE80211_CONF_CHANGE_MONITOR) &&
+	if ((changed & IEEE80211_CONF_CHANGE_MONITOR) &&
 	   (priv->radio_caps & LRD_CAP_SU60)) {
 		if(conf->flags & IEEE80211_CONF_MONITOR)
 			rc = mwl_fwcmd_set_monitor_mode (hw, 1);

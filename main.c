@@ -776,7 +776,6 @@ void stop_shutdown_timer_routine(struct timer_list *t)
 {
 	struct mwl_priv *priv = from_timer(priv, t, stop_shutdown_timer);
 
-	pr_err("Queue stop shutdown\n");
 	queue_work(priv->ds_workq, &priv->stop_shutdown_work);
 }
 
@@ -792,8 +791,6 @@ static void lrd_stop_shutdown_workq(struct work_struct *work)
 {
 	struct mwl_priv  *priv = container_of(work, struct mwl_priv,
 		stop_shutdown_work);
-
-	pr_err("Work Queue stop shutdown\n");
 
 	mwl_shutdown_sw(priv, true);
 }
@@ -1002,7 +999,11 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	mwl_fwcmd_radio_disable(hw);
 	mwl_fwcmd_rf_antenna(hw, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
-	/*Set IEEE HW Capabilities */
+	if (priv->stop_shutdown)
+		mod_timer(&priv->stop_shutdown_timer, jiffies +
+			msecs_to_jiffies(8000));
+
+	/* Set IEEE HW Capabilities */
 	mwl_set_ieee_hw_caps(priv);
 
 	/* Register with MAC80211 */
@@ -1263,9 +1264,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	rc = mwl_fw_dnld_and_init(priv);
 	if (rc)
 		goto err_dnld_and_init;
-
-	if (priv->stop_shutdown)
-		mod_timer(&priv->stop_shutdown_timer, jiffies + msecs_to_jiffies(8000));
 
 	return 0;
 
