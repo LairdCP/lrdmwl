@@ -516,7 +516,6 @@ void mwl_pcie_rx_recv(unsigned long data)
 	if (!curr_hndl) {
 		mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_RX_RDY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
-		priv->is_rx_schedule = false;
 		wiphy_warn(hw->wiphy, "busy or no receiving packets\n");
 		return;
 	}
@@ -661,7 +660,6 @@ out:
 
 	mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_RX_RDY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
-	priv->is_rx_schedule = false;
 	return;
 }
 
@@ -1296,6 +1294,8 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 	u32 size_fw_downloaded = 0;
 	u32 int_code = 0;
 	u32 len = 0;
+	u32 regval = MACREG_A2HRIC_BIT_MASK;
+
 
 	u32 fwreadysignature = priv->mfg_mode ?
 		MFG_FW_READY_SIGNATURE : HOSTCMD_SOFTAP_FWRDY_SIGNATURE;
@@ -1323,10 +1323,13 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 		return -EAGAIN;
 	}
 
-	writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CLEAR_SEL);
+	if (!priv->tx_amsdu_enable)
+		regval &= ~MACREG_A2HRIC_BIT_QUE_EMPTY;
+
+	writel(regval, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CLEAR_SEL);
 	writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_CAUSE);
 	writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
-	writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
+	writel(regval, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
 	/* this routine interacts with SC2 bootrom to download firmware binary
 	 * to the device. After DMA'd to SC2, the firmware could be deflated to
@@ -1480,10 +1483,14 @@ static bool mwl_pcie_check_card_status(struct mwl_priv *priv)
 static void mwl_pcie_enable_int(struct mwl_priv *priv)
 {
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
+	u32 regval = MACREG_A2HRIC_BIT_MASK;
 
 	if (mwl_pcie_check_card_status(priv)) {
 		writel(0x00, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
-		writel(MACREG_A2HRIC_BIT_MASK, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
+
+		if (!priv->tx_amsdu_enable)
+			regval &= ~MACREG_A2HRIC_BIT_QUE_EMPTY;
+		writel(regval, card->iobase1 + MACREG_REG_A2H_INTERRUPT_MASK);
 	}
 }
 
@@ -1952,10 +1959,9 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 		}
 
 		if (int_status & MACREG_A2HRIC_BIT_RX_RDY) {
-			if (!priv->is_rx_schedule) {
+			if (priv->mac_started) {
 				mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_RX_RDY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 				tasklet_schedule(&priv->rx_task);
-				priv->is_rx_schedule = true;
 			}
 		}
 
@@ -1965,14 +1971,14 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 		}
 
 		if (int_status & MACREG_A2HRIC_BIT_QUE_EMPTY) {
-			if (!priv->is_qe_schedule) {
-				if (time_after(jiffies,
-					       (priv->qe_trigger_time + 1))) {
+			if (priv->mac_started) {
+				if (time_after(jiffies, (priv->qe_trigger_time + 1))) {
 					mwl_clear_bit(priv, MACREG_A2HRIC_BIT_NUM_QUE_EMPTY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
-					tasklet_schedule(priv->if_ops.pqe_task);
-					priv->qe_trigger_num++;
-					priv->is_qe_schedule = true;
-					priv->qe_trigger_time = jiffies;
+					if (priv->tx_amsdu_enable) {
+						tasklet_schedule(priv->if_ops.pqe_task);
+						priv->qe_trigger_num++;
+						priv->qe_trigger_time = jiffies;
+					}
 				}
 			}
 		}
@@ -2033,10 +2039,12 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 		(void *)mwl_pcie_tx_done, (unsigned long)priv->hw);
 	tasklet_disable(priv->if_ops.ptx_done_task);
 
-	priv->if_ops.pqe_task = &card->qe_task;
-	tasklet_init(priv->if_ops.pqe_task, (void *)mwl_pcie_tx_flush_amsdu,
-		(unsigned long)priv->hw);
-	tasklet_disable(priv->if_ops.pqe_task);
+	if (priv->tx_amsdu_enable) {
+		priv->if_ops.pqe_task = &card->qe_task;
+		tasklet_init(priv->if_ops.pqe_task, (void *)mwl_pcie_tx_flush_amsdu,
+			(unsigned long)priv->hw);
+		tasklet_disable(priv->if_ops.pqe_task);
+	}
 #endif
 
 	tasklet_init(&priv->rx_task, (void *)mwl_pcie_rx_recv,
@@ -2049,11 +2057,9 @@ static int mwl_pcie_register_dev(struct mwl_priv *priv)
 static void mwl_pcie_unregister_dev(struct mwl_priv *priv)
 {
 	wiphy_warn(priv->hw->wiphy,
-			"%s(): tasklet_pending[txd=%d rx=%d qe=%d]\n",
+			"%s(): tasklet_pending[txd=%d]\n",
 			__FUNCTION__,
-			priv->is_tx_done_schedule,
-			priv->is_rx_schedule,
-			priv->is_qe_schedule);
+			priv->is_tx_done_schedule);
 
 #ifndef NEW_DP
 	if (priv->if_ops.ptx_task != NULL)
@@ -2108,7 +2114,6 @@ static void mwl_pcie_tx_flush_amsdu(unsigned long data)
 
 	mwl_set_bit(priv, MACREG_A2HRIC_BIT_NUM_QUE_EMPTY, card->iobase1 + MACREG_REG_A2H_INTERRUPT_STATUS_MASK);
 
-	priv->is_qe_schedule = false;
 }
 
 static int mwl_pcie_dbg_info(struct mwl_priv *priv, char *p, int size, int len)

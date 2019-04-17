@@ -81,7 +81,10 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 	rc = mwl_fwcmd_set_dwds_stamode(hw, true);
 	if (rc)
 		goto fwcmd_fail;
-	rc = mwl_fwcmd_set_fw_flush_timer(hw, SYSADPT_AMSDU_FLUSH_TIME);
+	if (priv->tx_amsdu_enable)
+		rc = mwl_fwcmd_set_fw_flush_timer(hw, SYSADPT_AMSDU_FLUSH_TIME);
+	else
+		rc = mwl_fwcmd_set_fw_flush_timer(hw, 0);
 	if (rc)
 		goto fwcmd_fail;
 	rc = mwl_fwcmd_set_optimization_level(hw, wmm_turbo);
@@ -92,6 +95,8 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 		goto fwcmd_fail;
 
 	ieee80211_wake_queues(hw);
+
+	priv->mac_started = true;
 
 	return 0;
 
@@ -113,6 +118,8 @@ fwcmd_fail:
 void mwl_mac80211_stop(struct ieee80211_hw *hw)
 {
 	struct mwl_priv *priv = hw->priv;
+
+	priv->mac_started = false;
 
 	mwl_fwcmd_radio_disable(hw);
 

@@ -566,7 +566,6 @@ struct mwl_priv {
 	struct sk_buff_head delay_q;
 
 	bool is_tx_done_schedule;
-	bool is_qe_schedule;
 	u32 qe_trigger_num;
 	unsigned long qe_trigger_time;
 
@@ -709,6 +708,9 @@ struct mwl_priv {
 	u32  radio_caps;
 	bool monitor_mode;
 	bool init_complete;
+	bool tx_amsdu_enable;
+	bool mac_started;
+
 
 	/** Work around for startup failure */
 	atomic_t null_scan_count;

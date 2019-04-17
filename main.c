@@ -837,7 +837,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	INIT_WORK(&priv->chnl_switch_handle, mwl_chnl_switch_event);
 
 	priv->is_tx_done_schedule  = false;
-	priv->is_qe_schedule       = false;
 	priv->qe_trigger_num       = 0;
 	priv->qe_trigger_time      = jiffies;
 	priv->txq_limit            = SYSADPT_TX_QUEUE_LIMIT;
@@ -1211,6 +1210,8 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 
 	priv->init_complete = false;
 
+	priv->tx_amsdu_enable = tx_amsdu_enable;
+
 	/* Save interface specific operations in adapter */
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
 
@@ -1396,7 +1397,6 @@ int mwl_reinit_sw(struct mwl_priv *priv)
 	priv->csa_active = false;
 
 	priv->is_tx_done_schedule = false;
-	priv->is_qe_schedule = false;
 	priv->qe_trigger_num = 0;
 	priv->qe_trigger_time = jiffies;
 
