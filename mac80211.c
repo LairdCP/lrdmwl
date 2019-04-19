@@ -37,9 +37,12 @@ static void mwl_mac80211_tx(struct ieee80211_hw *hw,
 	struct mwl_priv *priv = hw->priv;
 
 	if (!priv->radio_on) {
-		wiphy_warn(hw->wiphy,
-			   "dropped TX frame since radio is disabled\n");
+
+		if (!priv->recovery_in_progress)
+			wiphy_warn(hw->wiphy, "dropped TX frame since radio is disabled\n");
+
 		dev_kfree_skb_any(skb);
+
 		return;
 	}
 
@@ -863,7 +866,14 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 			mwl_fwcmd_remove_stream(hw, stream);
 			ieee80211_stop_tx_ba_cb_irqsafe(vif, addr, tid);
 		} else {
-			rc = -EPERM;
+			/* In recovery scenarios mac80211 instructs us to IEEE80211_AMPDU_TX_STOP_FLUSH
+			 * and occasionally IEEE80211_AMPDU_TX_STOP_CONT.  We've already destroyed the 
+			 * stream, so there isn't anything we can do.  Don't return error here, as it 
+			 * does nothing but cause an ASSERT.  Simply call the callback indicating we are 
+			 * done, so mac is happy.
+			 */
+			if (action != IEEE80211_AMPDU_TX_STOP_FLUSH_CONT)
+				ieee80211_stop_tx_ba_cb_irqsafe(vif, addr, tid);
 		}
 		break;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
