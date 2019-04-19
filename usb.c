@@ -453,25 +453,6 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	*/
 	wh = (struct ieee80211_hdr *)prx_skb->data;
 
-#if KERNEL_VERSION(4, 6, 0) > LINUX_VERSION_CODE
-
-	if (ieee80211_is_mgmt(wh->frame_control)) {
-		struct ieee80211_mgmt *mgmt;
-		__le16 capab;
-
-		mgmt = (struct ieee80211_mgmt *)prx_skb->data;
-
-		if (unlikely(ieee80211_is_action(wh->frame_control) &&
-			mgmt->u.action.category == WLAN_CATEGORY_BACK &&
-			mgmt->u.action.u.addba_resp.action_code ==
-				WLAN_ACTION_ADDBA_RESP)) {
-			capab = mgmt->u.action.u.addba_resp.capab;
-			if (le16_to_cpu(capab) & 1)
-				mwl_rx_enable_sta_amsdu(priv, mgmt->sa);
-		}
-	}
-#endif
-
 #if 0 //def CONFIG_MAC80211_MESH
 		if (ieee80211_is_data_qos(wh->frame_control) &&
 		    ieee80211_has_a4(wh->frame_control)) {
