@@ -132,20 +132,14 @@ static const struct ieee80211_iface_combination if_su_comb[] = {
 		.n_limits               = ARRAY_SIZE(ap_if_su_limits),
 		.max_interfaces         = SYSADPT_NUM_OF_SU_AP,
 		.num_different_channels = 1,
-		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) |
-		                       BIT(NL80211_CHAN_WIDTH_20) |
-		                       BIT(NL80211_CHAN_WIDTH_40) |
-		                       BIT(NL80211_CHAN_WIDTH_80),
+		.radar_detect_widths    = 0,
 	},
 	{
-		.limits = ibss_if_limits,
-		.n_limits = ARRAY_SIZE(ibss_if_limits),
-		.max_interfaces = 1,
+		.limits                 = ibss_if_limits,
+		.n_limits               = ARRAY_SIZE(ibss_if_limits),
+		.max_interfaces         = 1,
 		.num_different_channels = 1,
-		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) |
-		                       BIT(NL80211_CHAN_WIDTH_20) |
-		                       BIT(NL80211_CHAN_WIDTH_40) |
-		                       BIT(NL80211_CHAN_WIDTH_80),
+		.radar_detect_widths    = 0,
 	}
 };
 
