@@ -1270,22 +1270,24 @@ int mwl_fwcmd_get_hw_specs(struct ieee80211_hw *hw)
 		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
 	mutex_lock(&priv->fwcmd_mutex);
+	for (retry = 0; retry < MAX_WAIT_GET_HW_SPECS_ITERATONS; retry++)
+	{
+		memset(pcmd, 0x00, sizeof(*pcmd));
+		eth_broadcast_addr(pcmd->permanent_addr);
+		pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_GET_HW_SPEC);
+		pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
+		pcmd->fw_awake_cookie = cpu_to_le32(priv->pphys_cmd_buf + 2048);
 
-	memset(pcmd, 0x00, sizeof(*pcmd));
-	eth_broadcast_addr(pcmd->permanent_addr);
-	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_GET_HW_SPEC);
-	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
-	pcmd->fw_awake_cookie = cpu_to_le32(priv->pphys_cmd_buf + 2048);
-
-	retry = 0;
-	while (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_GET_HW_SPEC)) {
-		if (retry++ > MAX_WAIT_GET_HW_SPECS_ITERATONS) {
-			wiphy_err(hw->wiphy, "can't get hw specs\n");
-			mutex_unlock(&priv->fwcmd_mutex);
-			return -EIO;
-		}
+		if (!mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_GET_HW_SPEC))
+			break;
 
 		msleep(1000);
+	}
+
+	if (retry == MAX_WAIT_GET_HW_SPECS_ITERATONS) {
+		wiphy_err(hw->wiphy, "can't get hw specs\n");
+		mutex_unlock(&priv->fwcmd_mutex);
+		return -EIO;
 	}
 
 	if (!priv->mfg_mode) {
