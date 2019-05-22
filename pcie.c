@@ -110,7 +110,7 @@ static void mwl_pcie_reset_notify(struct pci_dev *pdev, bool prepare)
 		return;
 
 	priv = hw->priv;
-	
+
 	if (prepare)
 	{
 		wiphy_err(hw->wiphy, "%s: Prepare for reset...\n", __func__);
@@ -1152,7 +1152,7 @@ static bool mwl_pcie_check_fw_status(struct mwl_priv *priv)
 			rc = true;
 		}
 	}
-	else 
+	else
 	{
 		int_code = readl(card->iobase1 + fwreadyReg);
 
@@ -1502,12 +1502,12 @@ static int mwl_pcie_send_command(struct mwl_priv *priv)
 
 	if (priv->mfg_mode) {
 
-		if (pcmd->cmd != HOSTCMD_CMD_MFG) {
+		if (pcmd->cmd != cpu_to_le16(HOSTCMD_CMD_MFG)) {
 			return 0;
 		}
 
 		// XXX: Keeping i/f hdr as 0s for now
-		writel(pcmd->len + priv->if_ops.inttf_head_len, card->iobase1 + MACREG_REG_CMD_SIZE);
+		writel(le16_to_cpu(pcmd->len) + priv->if_ops.inttf_head_len, card->iobase1 + MACREG_REG_CMD_SIZE);
 		writel(priv->pphys_cmd_buf, card->iobase1 + MACREG_REG_CMDRSP_BUF_LO);
 		writel(0x0, card->iobase1 + MACREG_REG_CMDRSP_BUF_HI);
 	}

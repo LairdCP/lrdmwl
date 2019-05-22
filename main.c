@@ -965,7 +965,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		goto err_wl_init;
 	}
 
-	rc = mwl_fwcmd_set_cfg_data(hw, cpu_to_le16(2));
+	rc = mwl_fwcmd_set_cfg_data(hw, 2);
 	if(rc) {
 		wiphy_err(hw->wiphy, "%s: fail to download calibaration data\n",
 			MWL_DRV_NAME);

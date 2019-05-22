@@ -217,7 +217,7 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		if (lrd_debug) {
 			wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
 				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
-			mwl_hex_dump((char*)pcmd, pcmd->len);
+			mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
 		}
 
 		rc = mwl_fwcmd_send_cmd(priv);
@@ -227,7 +227,7 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 				wiphy_err(priv->hw->wiphy, "DNLD_CMD (# %02x)=> (%04xh, %s) timeout\n",
 					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 
-				mwl_hex_dump((char*)pcmd, pcmd->len);
+				mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
 				// Fatal error, initiate firmware recovery
 				lrd_radio_recovery(priv);
 			}
@@ -244,7 +244,7 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 			wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
 				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
 
-			mwl_hex_dump((char*)pcmd, pcmd->len);
+			mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
 
 			priv->in_send_cmd = false;
 			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
@@ -260,8 +260,8 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 		if (lrd_debug) {
 			wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
-				presp->seq_num, presp->cmd);
-				mwl_hex_dump((char*)pcmd, pcmd->len);
+				presp->seq_num, le16_to_cpu(presp->cmd));
+				mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
 		}
 
 	} else {
@@ -1008,15 +1008,15 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 		             offsetof(struct rsn_ie, pws_key_cipher_list));
 		field_num = field_size >> 2;
 
-		if ((*(u16*)(pcmd->start_cmd.rsn_ie.pws_key_cnt)) > field_num) {
+		if (le16_to_cpu((*(u16*)(pcmd->start_cmd.rsn_ie.pws_key_cnt))) > field_num) {
 			/* Remove additional ciphers*/
 			wiphy_warn(priv->hw->wiphy,
 			    "WPA IE cipher list is longer than radio supports, " \
 			    "list will be truncated");
-			cnt = (*(u16*)rsn->pws_key_cnt) - field_num;
-			pcmd->start_cmd.rsn_ie.len -= cnt * 4;
+			cnt = le16_to_cpu((*(u16*)rsn->pws_key_cnt)) - field_num;
+			pcmd->start_cmd.rsn_ie.len -=  (u8)(cnt * 4);
 			akm += cnt * 4;
-			(*(u16*)pcmd->start_cmd.rsn_ie.pws_key_cnt) = field_num;
+			(*(u16*)pcmd->start_cmd.rsn_ie.pws_key_cnt) = cpu_to_le16(field_num);
 		}
 
 		/* AKM fields */
@@ -1028,14 +1028,14 @@ static int mwl_fwcmd_set_ap_beacon(struct mwl_priv *priv,
 		            offsetof(struct rsn_ie, auth_key_list);
 		field_num = field_size >> 2;
 
-		if ((*(u16*)(pcmd->start_cmd.rsn_ie.auth_key_cnt)) > field_num) {
+		if (le16_to_cpu((*(u16*)(pcmd->start_cmd.rsn_ie.auth_key_cnt))) > field_num) {
 			/* Remove additional AKMs*/
 			wiphy_warn(priv->hw->wiphy,
 			    "WPA IE AKM list is longer than radio supports, " \
 			    "list will be truncated");
 			cnt = (*(u16*)rsn->auth_key_cnt) - field_num;
-			pcmd->start_cmd.rsn_ie.len -= cnt * 4;
-			(*(u16*)pcmd->start_cmd.rsn_ie.auth_key_cnt) = field_num;
+			pcmd->start_cmd.rsn_ie.len -= (u8)(cnt * 4);
+			(*(u16*)pcmd->start_cmd.rsn_ie.auth_key_cnt) = cpu_to_le16(field_num);
 		}
 	}
 
@@ -1355,10 +1355,10 @@ int mwl_fwcmd_set_hw_specs(struct ieee80211_hw *hw)
 
 	pcmd->total_rx_wcb = cpu_to_le32(SYSADPT_MAX_NUM_RX_DESC);
 	pcmd->rxpd_wr_ptr = cpu_to_le32(priv->desc_data[0].pphys_rx_ring);
-	pcmd->features |= HW_SET_PARMS_FEATURES_HOST_PROBE_RESP;
+	pcmd->features |= cpu_to_le32(HW_SET_PARMS_FEATURES_HOST_PROBE_RESP);
 
 	if (host_crypto)
-		pcmd->features |= HW_SET_PARMS_FEATURES_HOST_ENCRDECRMGT;
+		pcmd->features |= cpu_to_le32(HW_SET_PARMS_FEATURES_HOST_ENCRDECRMGT);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_HW_SPEC)) {
 		mutex_unlock(&priv->fwcmd_mutex);
@@ -1370,7 +1370,7 @@ int mwl_fwcmd_set_hw_specs(struct ieee80211_hw *hw)
 	return 0;
 }
 
-static __le16 wlan_parse_cal_cfg(const u8 *src, size_t len, u8 *dst)
+static u16 wlan_parse_cal_cfg(const u8 *src, size_t len, u8 *dst)
 {
 	const u8 *ptr;
 	u8 *dptr;
@@ -1392,10 +1392,10 @@ static __le16 wlan_parse_cal_cfg(const u8 *src, size_t len, u8 *dst)
 		}
 	}
 
-	return cpu_to_le16(dptr - dst);
+	return (dptr - dst);
 }
 
-int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, __le16 type)
+int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, u16 type)
 {
 	struct mwl_priv *priv = hw->priv;
 	struct hostcmd_cmd_set_cfg *pcmd;
@@ -1409,13 +1409,13 @@ int mwl_fwcmd_set_cfg_data(struct ieee80211_hw *hw, __le16 type)
 
 	memset(pcmd, 0x00, sizeof(*pcmd));
 
-	pcmd->data_len = wlan_parse_cal_cfg(priv->cal_data->data,
-		priv->cal_data->size, pcmd->data);
+	pcmd->data_len = cpu_to_le16(wlan_parse_cal_cfg(priv->cal_data->data,
+		priv->cal_data->size, pcmd->data));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_CMD_SET_CFG);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) +
 		le16_to_cpu(pcmd->data_len) - sizeof(pcmd->data));
 	pcmd->action = cpu_to_le16(HOSTCMD_ACT_GEN_SET);
-	pcmd->type = type;
+	pcmd->type = cpu_to_le16(type);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_CFG)) {
 		mutex_unlock(&priv->fwcmd_mutex);
@@ -1482,14 +1482,14 @@ int mwl_fwcmd_reg_mac(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->offset = cpu_to_le16(reg);
 	pcmd->action = cpu_to_le16(flag);
-	pcmd->value = *val;
+	pcmd->value  = cpu_to_le32(*val);
 
     if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MAC_REG_ACCESS)) {
         mutex_unlock(&priv->fwcmd_mutex);
         return -EIO;
     }
 
-	*val = pcmd->value;
+	*val = le32_to_cpu(pcmd->value);
 
 	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;
@@ -1511,14 +1511,14 @@ int mwl_fwcmd_reg_bb(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->offset = cpu_to_le16(reg);
 	pcmd->action = cpu_to_le16(flag);
-	pcmd->value = *val;
+	pcmd->value  = (u8)cpu_to_le32(*val);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_BBP_REG_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
 
-	*val = pcmd->value;
+	*val = (u32)pcmd->value;
 
 	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;
@@ -1540,14 +1540,14 @@ int mwl_fwcmd_reg_rf(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->offset = cpu_to_le16(reg);
 	pcmd->action = cpu_to_le16(flag);
-	pcmd->value = *val;
+	pcmd->value  = (u8)cpu_to_le32(*val);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_RF_REG_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
 
-	*val = pcmd->value;
+	*val = (u32)pcmd->value;
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
@@ -1676,7 +1676,7 @@ int mwl_fwcmd_rf_antenna(struct ieee80211_hw *hw, int ant_tx_bmp,
 		cpu_to_le16(HOSTCMD_CMD_802_11_RF_ANTENNA_V2);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 
-	pcmd->action = 0;
+	pcmd->action = cpu_to_le16(0);  //Not need - just making things obvious
 
 	pcmd->ant_tx_bmp = cpu_to_le16(ant_tx_bmp);
 	pcmd->ant_rx_bmp = cpu_to_le16(ant_rx_bmp);
@@ -1757,7 +1757,7 @@ int mwl_fwcmd_powersave_EnblDsbl(struct ieee80211_hw *hw,
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->action = cpu_to_le16(WL_SET);
 	pcmd->powermode = cpu_to_le16(conf->flags & IEEE80211_CONF_PS);
-	priv->ps_mode = pcmd->powermode;
+	priv->ps_mode = le16_to_cpu(pcmd->powermode);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_802_11_PS_MODE)) {
 		mutex_unlock(&priv->fwcmd_mutex);
@@ -1796,7 +1796,7 @@ int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, bool hs_enable, bool ds
 	//pcmd->options = cpu_to_le32(0x1);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_HOSTSLEEP_CTRL) ||
-	    (pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK)) {
+	    (pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK))) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		wiphy_err(hw->wiphy, " %s failed execution %x\n",
 		          mwl_fwcmd_get_cmd_string(HOSTCMD_CMD_HOSTSLEEP_CTRL),
@@ -2365,7 +2365,7 @@ int mwl_fwcmd_set_mac_addr_client(struct ieee80211_hw *hw,
 	ether_addr_copy(pcmd->mac_addr, mac_addr);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_MAC_ADDR) ||
-	    (pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK)) {
+	    (pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK))) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
@@ -2724,7 +2724,7 @@ int mwl_fwcmd_set_new_stn_add_self(struct ieee80211_hw *hw,
 	ether_addr_copy(pcmd->mac_addr, vif->addr);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_SET_NEW_STN) ||
-	    (pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK)) {
+	    (pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK))) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
@@ -3550,14 +3550,14 @@ int mwl_fwcmd_reg_cau(struct ieee80211_hw *hw, u8 flag, u32 reg, u32 *val)
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 	pcmd->offset = cpu_to_le16(reg);
 	pcmd->action = cpu_to_le16(flag);
-	pcmd->value = *val;
+	pcmd->value  = (u8)cpu_to_le32(*val);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_CAU_REG_ACCESS)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		return -EIO;
 	}
 
-	*val = pcmd->value;
+	*val = (u32)pcmd->value;
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
@@ -3911,7 +3911,7 @@ int mwl_fwcmd_get_region_mapping(struct ieee80211_hw *hw,
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd));
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_REGION_MAPPING) ||
-	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+	    pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
 		wiphy_err(hw->wiphy, "mwl_fwcmd_get_region_mapping failed execution\n");
 		return -EIO;
@@ -4003,12 +4003,12 @@ int lrd_fwcmd_mfg_start(struct ieee80211_hw *hw, u32 *data)
 	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(u32));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_LRD_MFG);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + sizeof(u32));
-	pcmd->action      = MFG_TYPE_START;
+	pcmd->action      = cpu_to_le32(MFG_TYPE_START);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_MFG) ||
-	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+	    pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_start failed execution %x\n", pcmd->cmd_hdr.result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_start failed execution %x\n", le16_to_cpu(pcmd->cmd_hdr.result));
 		return -EIO;
 	}
 
@@ -4033,12 +4033,12 @@ int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw)
 	memset(pcmd, 0x00, sizeof(*pcmd));
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_LRD_MFG);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + sizeof(u32));
-	pcmd->action      = MFG_TYPE_END;
+	pcmd->action      = cpu_to_le32(MFG_TYPE_END);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_MFG) ||
-	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+	    pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed execution %x\n", pcmd->cmd_hdr.result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_end failed execution %x\n", le16_to_cpu(pcmd->cmd_hdr.result));
 		return -EIO;
 	}
 
@@ -4065,14 +4065,14 @@ int lrd_fwcmd_mfg_write(struct ieee80211_hw *hw, void *data, int data_len)
 	memset(pcmd, 0x00, sizeof(*pcmd) + data_len);
 	pcmd->cmd_hdr.cmd = cpu_to_le16(HOSTCMD_LRD_MFG);
 	pcmd->cmd_hdr.len = cpu_to_le16(sizeof(*pcmd) + data_len);
-	pcmd->action      = MFG_TYPE_WRITE;
+	pcmd->action      = cpu_to_le32(MFG_TYPE_WRITE);
 
 	memcpy(pcmd->data, data, data_len);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_MFG) ||
-	    pcmd->cmd_hdr.result != HOSTCMD_RESULT_OK) {
+	    pcmd->cmd_hdr.result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_write failed execution %x\n", pcmd->cmd_hdr.result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_mfg_write failed execution %x\n", le16_to_cpu(pcmd->cmd_hdr.result));
 		return -EIO;
 	}
 
@@ -4098,26 +4098,26 @@ int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_CMD_MFG)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed execution %x\n", pcmd->result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed execution %x\n", le16_to_cpu(pcmd->result));
 		return -EIO;
 	}
 
-	if (pcmd->len) {
+	if (le16_to_cpu(pcmd->len)) {
 		/* To keep structures somewhat encapsulated we are going to squash
 		 * part of the hostcmd_mfgfw_header so that we are left only with
 		 * lrd_vndr_header and data response
 		 */
-		u16 len =  pcmd->len - sizeof(struct hostcmd_mfgfw_header) + sizeof(struct lrd_vndr_header);
+		u16 len = le16_to_cpu(pcmd->len) - sizeof(struct hostcmd_mfgfw_header) + sizeof(struct lrd_vndr_header);
 
 		*rsp = kzalloc(len, GFP_KERNEL);
 		if (!*rsp) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed allocation response %d\n", pcmd->len);
+			wiphy_err(hw->wiphy, "lrd_fwcmd_lru_write failed allocation response %d\n", le16_to_cpu(pcmd->len));
 			return -EIO;
 		}
 
-		((struct lrd_vndr_header*)*rsp)->command = pcmd->cmd;
-		((struct lrd_vndr_header*)*rsp)->result  = pcmd->result;
+		((struct lrd_vndr_header*)*rsp)->command = le16_to_cpu(pcmd->cmd);
+		((struct lrd_vndr_header*)*rsp)->result  = le16_to_cpu(pcmd->result);
 		((struct lrd_vndr_header*)*rsp)->len     = len;
 		memcpy(((u8*)*rsp) + (u8)sizeof(struct lrd_vndr_header), ((u8*)pcmd) + sizeof(struct hostcmd_mfgfw_header) , len - sizeof(struct lrd_vndr_header));
 	}
@@ -4145,7 +4145,7 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_write failed execution %x\n", pcmd->result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_write failed execution %x\n", le16_to_cpu(pcmd->result));
 		return -EIO;
 	}
 
@@ -4154,17 +4154,17 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 		 * part of the hostcmd_cmd_lrd so that we are left only with
 		 * lrd_vndr_header and data response
 		 */
-		u16 len =  pcmd->len - sizeof(struct hostcmd_header) + sizeof(struct lrd_vndr_header);
+		u16 len = le16_to_cpu(pcmd->len) - sizeof(struct hostcmd_header) + sizeof(struct lrd_vndr_header);
 
 		*rsp = kzalloc(len, GFP_KERNEL);
 		if (!*rsp) {
 			mutex_unlock(&priv->fwcmd_mutex);
-			wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_write failed allocation response %d\n", pcmd->len);
+			wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_write failed allocation response %d\n", le16_to_cpu(pcmd->len));
 			return -EIO;
 		}
 
-		((struct lrd_vndr_header*)*rsp)->command = pcmd->cmd;
-		((struct lrd_vndr_header*)*rsp)->result  = pcmd->result;
+		((struct lrd_vndr_header*)*rsp)->command = le16_to_cpu(pcmd->cmd);
+		((struct lrd_vndr_header*)*rsp)->result  = le16_to_cpu(pcmd->result);
 		((struct lrd_vndr_header*)*rsp)->len     = len;
 
 		memcpy(((u8*)*rsp) + sizeof(struct lrd_vndr_header), ((u8*)pcmd) + sizeof(struct hostcmd_header) , len - sizeof(struct lrd_vndr_header));
@@ -4195,9 +4195,9 @@ int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability)
 	caps->hdr.lrd_cmd = cpu_to_le16(LRD_CMD_CAPS);
 
 	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD) ||
-		pcmd->result != HOSTCMD_RESULT_OK) {
+		pcmd->result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
 		mutex_unlock(&priv->fwcmd_mutex);
-		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_get_caps failed execution %x\n", pcmd->result);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_get_caps failed execution %x\n", le16_to_cpu(pcmd->result));
 		return -EIO;
 	}
 

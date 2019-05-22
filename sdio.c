@@ -643,7 +643,7 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 
 	/* Wait till the card informs CMD_DNLD_RDY interrupt except
 	 * for get HW spec command */
-	if (cmd_hdr->command != HOSTCMD_CMD_GET_HW_SPEC) {
+	if (cmd_hdr->command != cpu_to_le16(HOSTCMD_CMD_GET_HW_SPEC)) {
 		status = wait_event_timeout(card->cmd_wait_q.wait,
 			(card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
 			(12 * HZ));
@@ -1205,10 +1205,10 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	struct mwl_hostevent *host_event = (struct mwl_hostevent *)(
 		&priv->pcmd_event_buf[0]);
 #endif
-	u16	event_id = host_event->mac_event.event_id;
+	u16	event_id = le16_to_cpu(host_event->mac_event.event_id);
 
 	// Remove SDIO Header
-	host_event->length -= INTF_HEADER_LEN;
+	host_event->length -= cpu_to_le16(INTF_HEADER_LEN);
 
 	wiphy_dbg(hw->wiphy,"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
 
