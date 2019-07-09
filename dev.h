@@ -572,7 +572,6 @@ struct mwl_priv {
 	struct sk_buff_head txq[SYSADPT_NUM_OF_DESC_DATA];
 
 	struct tasklet_struct rx_task;
-	bool is_rx_schedule;
 	int txq_limit;
 	int recv_limit;
 

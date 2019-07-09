@@ -41,7 +41,6 @@
 #define USB8XXX_FW_READY	2
 #define USB8XXX_FW_MAX_RETRY	3
 
-#define MWIFIEX_TX_DATA_PORT	2
 #define MWIFIEX_TX_DATA_URB	6
 #define MWIFIEX_RX_DATA_URB	6
 #define MWIFIEX_USB_TIMEOUT	100
@@ -54,7 +53,7 @@
 #define FW_CMD_7		0x00000007
 
 #define MWIFIEX_RX_DATA_BUF_SIZE     (4 * 1024)
-#define MWIFIEX_RX_CMD_BUF_SIZE      (2 * 1024)
+#define MWIFIEX_RX_CMD_BUF_SIZE      (4 * 1024)
 
 #define HIGH_RX_PENDING     50
 #define LOW_RX_PENDING      20
@@ -70,35 +69,11 @@ struct urb_context {
 	u8 ep;
 };
 
-#define MWIFIEX_USB_TX_AGGR_TMO_MIN	1
-#define MWIFIEX_USB_TX_AGGR_TMO_MAX	4
-
-struct tx_aggr_tmr_cnxt {
-	struct mwl_priv *priv;
-	struct usb_tx_data_port *port;
-	struct timer_list hold_timer;
-	bool is_hold_timer_set;
-	u32 hold_tmo_msecs;
-};
-
-struct usb_tx_aggr {
-	struct sk_buff_head aggr_list;
-	int aggr_len;
-	int aggr_num;
-	struct tx_aggr_tmr_cnxt timer_cnxt;
-};
-
 struct usb_tx_data_port {
 	u8 tx_data_ep;
-	u8 block_status;
 	atomic_t tx_data_urb_pending;
 	int tx_data_ix;
 	struct urb_context tx_data_list[MWIFIEX_TX_DATA_URB];
-	/* usb tx aggregation*/
-	struct usb_tx_aggr tx_aggr;
-	struct sk_buff *skb_aggr[MWIFIEX_TX_DATA_URB];
-	/* lock for protect tx aggregation data path*/
-	spinlock_t tx_aggr_lock;
 };
 
 struct mwl_wait_queue {
@@ -115,17 +90,14 @@ struct usb_card_rec {
 	struct completion fw_done;
 	u8 rx_cmd_ep;
 	struct urb_context rx_cmd;
-	atomic_t rx_cmd_urb_pending;
 	struct urb_context rx_data_list[MWIFIEX_RX_DATA_URB];
 	u8 usb_boot_state;
 	u8 rx_data_ep;
-	atomic_t rx_data_urb_pending;
 	u8 tx_cmd_ep;
 	atomic_t tx_cmd_urb_pending;
 	int bulk_out_maxpktsize;
 	struct urb_context tx_cmd;
-	u8 mc_resync_flag;
-	struct usb_tx_data_port port[MWIFIEX_TX_DATA_PORT];
+	struct usb_tx_data_port port;
 	int rx_cmd_ep_type;
 	u8 rx_cmd_interval;
 	int tx_cmd_ep_type;
@@ -137,6 +109,7 @@ struct usb_card_rec {
 	atomic_t rx_pending;
 	struct tasklet_struct tx_task;
 
+	int reset_pwd_gpio;
 };
 
 struct fw_header {

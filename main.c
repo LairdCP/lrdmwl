@@ -281,9 +281,10 @@ static int mwl_init_firmware(struct mwl_priv *priv)
 
 	rc = priv->if_ops.prog_fw(priv);
 	if (rc) {
-		wiphy_err(priv->hw->wiphy,
-			"%s: firmware download/init failed! <%s> %d\n",
-			MWL_DRV_NAME, fw_name, rc);
+		if (rc != -EINPROGRESS)
+			wiphy_err(priv->hw->wiphy,
+				"%s: firmware download/init failed! <%s> %d\n",
+				MWL_DRV_NAME, fw_name, rc);
 		goto err_download_fw;
 	}
 
@@ -861,7 +862,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->txq_limit            = SYSADPT_TX_QUEUE_LIMIT;
 
 	priv->is_rx_defer_schedule = false;
-	priv->is_rx_schedule       = false;
 	priv->recv_limit           = SYSADPT_RECEIVE_LIMIT;
 
 	priv->cmd_timeout          = false;
@@ -1284,8 +1284,9 @@ int mwl_fw_dnld_and_init(struct mwl_priv *priv)
 
 	rc = mwl_init_firmware(priv);
 	if (rc) {
-		wiphy_err(hw->wiphy, "%s: failed to initialize firmware\n",
-			MWL_DRV_NAME);
+		if (rc != -EINPROGRESS)
+			wiphy_err(hw->wiphy, "%s: failed to initialize firmware\n",
+				MWL_DRV_NAME);
 		goto err_init_firmware;
 	}
 
@@ -1423,7 +1424,6 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 	priv->qe_trigger_num = 0;
 	priv->qe_trigger_time = jiffies;
 
-	priv->is_rx_schedule = false;
 	priv->cmd_timeout = false;
 
 	atomic_set(&priv->null_scan_count, null_scan_count);
