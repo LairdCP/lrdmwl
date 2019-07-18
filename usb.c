@@ -497,7 +497,9 @@ static int mwl_usb_init_post(struct mwl_priv *priv)
 {
 	if (priv->mfg_mode) {
 		//Assume ST 60 with one interface
-		priv->radio_caps = 1;
+		priv->radio_caps.capability = 0;
+		priv->radio_caps.num_mac = 1;
+
 	}
 
 	return 0;
@@ -806,7 +808,7 @@ static void mwl_usb_rx_complete(struct urb *urb)
 		// Do not print when urb is killed or unlinked or recovery in progress
 		if (!adapter->recovery_in_progress) {
 			if ((urb->status != -ENOENT) && (urb->status != -ECONNRESET))
-				pr_err("%s: %s URB failed! status %d, length %d\n", __func__, 
+				pr_err("%s: %s URB failed! status %d, length %d\n", __func__,
 					card->rx_cmd_ep == context->ep ? "command" : "data",
 					urb->status, recv_length);
 		}
@@ -1338,7 +1340,7 @@ static int mwl_usb_host_to_card(struct mwl_priv *priv, int desc_num,
 	if (atomic_read(&port->tx_data_urb_pending) >= MWIFIEX_TX_DATA_URB) {
 		return -EBUSY;
 	}
-	if (port->tx_data_ix >= MWIFIEX_TX_DATA_URB) 
+	if (port->tx_data_ix >= MWIFIEX_TX_DATA_URB)
 		port->tx_data_ix = 0;
 	context = &port->tx_data_list[port->tx_data_ix++];
 

@@ -1218,6 +1218,7 @@ struct lrdcmd_cmd_cap
 	struct lrdcmd_header hdr;
 	__le16 capability;
 	__le16 num_mac_addr;
+	__le16 version;
 }__packed;
 
 struct hostcmd_cmd_deepsleep {

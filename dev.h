@@ -506,8 +506,14 @@ struct otp_data {
 #define DS_ENABLE_PAUSE    2
 
 //Laird radio capability bits
-#define LRD_CAP_SU60 BIT(16)
-#define LRD_CAP_NUM_MAC_MASK   0x0000FFFF
+#define LRD_CAP_SU60 BIT(0)
+#define LRD_CAP_440  BIT(1)
+
+struct lrd_radio_caps {
+	__le16 capability;
+	__le16 num_mac;
+	__le16 version;
+};
 
 struct mwl_priv {
 	struct ieee80211_hw *hw;
@@ -704,7 +710,7 @@ struct mwl_priv {
 	struct workqueue_struct *restart_workq;
 	struct work_struct restart_work;
 
-	u32  radio_caps;
+	struct lrd_radio_caps radio_caps;
 	bool monitor_mode;
 	bool init_complete;
 	bool tx_amsdu_enable;

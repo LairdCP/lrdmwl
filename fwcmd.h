@@ -294,7 +294,7 @@ int lrd_fwcmd_mfg_end(struct ieee80211_hw *hw);
 int lrd_fwcmd_lru_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
 int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void* data, int len, void** rsp);
 
-int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability);
+int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, struct lrd_radio_caps* caps);
 
 #ifdef CONFIG_PM
 int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, bool hs_enable, bool ds_enable, int wakeupCond);

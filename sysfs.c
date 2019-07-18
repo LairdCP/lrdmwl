@@ -28,7 +28,7 @@ static ssize_t radio_type_show(struct device *d, struct device_attribute *attr, 
 	if (hw && hw->priv) {
 		struct mwl_priv *priv = hw->priv;
 
-		return snprintf(buf, PAGE_SIZE, "%lx\n", priv->radio_caps & LRD_CAP_SU60);
+		return snprintf(buf, PAGE_SIZE, "%lx\n", priv->radio_caps.capability & (LRD_CAP_SU60| LRD_CAP_440));
 	}
 
 	return 0;

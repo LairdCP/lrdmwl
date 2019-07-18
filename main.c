@@ -43,6 +43,7 @@
 #define FILE_PATH_LEN    64
 
 #define NOT_LRD_HW  0x214C5244
+#define NUM_UNII3_CHANNELS  5
 
 static const struct ieee80211_channel mwl_channels_24[] = {
 	{ .band = NL80211_BAND_2GHZ, .center_freq = 2412, .hw_value = 1, },
@@ -214,6 +215,15 @@ static int lrd_send_fw_event(struct device *dev, bool on)
 static bool mwl_is_world_mode(struct mwl_priv *priv)
 {
 	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
+		return true;
+	}
+
+	return false;
+}
+
+static bool mwl_is_etsi_mode(struct mwl_priv *priv)
+{
+	if (priv->fw_alpha2[0] == 'F' && priv->fw_alpha2[1] == 'R') {
 		return true;
 	}
 
@@ -471,7 +481,7 @@ static void lrd_adjust_iface_combo(struct mwl_priv *priv, struct ieee80211_iface
 {
 	int x = 0;
 	int y = 0;
-	u16 max_intf = (u16)(priv->radio_caps & LRD_CAP_NUM_MAC_MASK);
+	u16 max_intf = (u16)(priv->radio_caps.num_mac);
 
 	if (NULL == combos) {
 		return;
@@ -656,7 +666,7 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 		hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
 	}
 
-	if (priv->radio_caps & LRD_CAP_SU60) {
+	if (priv->radio_caps.capability & LRD_CAP_SU60) {
 		lrd_set_su_caps(priv);
 	}
 	else {
@@ -945,11 +955,11 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		rc = lrd_fwcmd_lrd_get_caps(hw, &priv->radio_caps);
 		if (rc) {
 			wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
-			priv->radio_caps = 0;
+			memset(&priv->radio_caps, 0, sizeof(priv->radio_caps));
 		}
 	}
 
-	if (priv->radio_caps & LRD_CAP_SU60) {
+	if (priv->radio_caps.capability & LRD_CAP_SU60) {
 		rc = mwl_thermal_register(priv);
 		if (rc) {
 			wiphy_err(hw->wiphy, "%s: fail to register thermal framework\n",
@@ -979,9 +989,18 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		if (mwl_is_world_mode(priv)) {
 			/* when configured for WW, firmware does not allow
 			 * channels 12-14 to be configured, remove them here
-			 * to keep ma80211 in synce with FW.
+			 * to keep mac80211 in synce with FW.
 			 * TODO:  Revisit for Summit Radio */
 			priv->band_24.n_channels -= 3;
+		}
+		else if (mwl_is_etsi_mode(priv) ) {
+			if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
+				//If 440 isn't set in caps fw does not allow
+				//channels 149-165 to be configured.  Remove
+				//them here to keep mac80211 in sync with FW.
+				//TODO:  Revisit for Summit Radio */
+				priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
+			}
 		}
 	}
 
@@ -1009,7 +1028,10 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	}
 
 	/* Success - dump relevant info to log */
-	wiphy_info(hw->wiphy, "Radio Type %s (%d)\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60", priv->radio_caps & LRD_CAP_NUM_MAC_MASK);
+	wiphy_info(hw->wiphy, "Radio Type %s%s (0x%x)\n", (priv->radio_caps.capability & LRD_CAP_SU60)?"SU60":"ST60",
+	                                                  (priv->radio_caps.capability & LRD_CAP_440)?"_440":"",
+	                                                   priv->radio_caps.capability);
+	wiphy_info(hw->wiphy, "Num mac %d : OTP Version (%d)\n", priv->radio_caps.num_mac, priv->radio_caps.version);
 	wiphy_info(hw->wiphy, "Firmware version: 0x%x\n", priv->hw_data.fw_release_num);
 	wiphy_info(hw->wiphy, "Firmware region code: %x\n", priv->fw_region_code);
 	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
@@ -1466,11 +1488,13 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 
 		if (rc) {
 			wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
-			priv->radio_caps = 0;
+			memset(&priv->radio_caps, 0, sizeof(priv->radio_caps));
 		}
 	}
 
-	wiphy_info(hw->wiphy, "Radio Type %s\n", (priv->radio_caps & LRD_CAP_SU60)?"SU60":"ST60");
+	wiphy_info(hw->wiphy, "Radio Type %s%s (0x%x)\n", (priv->radio_caps.capability & LRD_CAP_SU60)?"SU60":"ST60",
+	                                                  (priv->radio_caps.capability & LRD_CAP_440)?"_440":"",
+	                                                   priv->radio_caps.capability);
 
 	rc = mwl_fwcmd_set_hw_specs(priv->hw);
 	if (rc) {

@@ -3839,7 +3839,7 @@ int mwl_fwcmd_dump_otp_data(struct ieee80211_hw *hw)
 		wiphy_info(hw->wiphy, "OTP data len = %d\n", otp_data_len);
 		priv->otp_data.len = otp_data_len;
 		memcpy(priv->otp_data.buf, pcmd->pload, otp_data_len);
-//		mwl_hex_dump(priv->otp_data.buf, priv->otp_data.len);
+		mwl_hex_dump(priv->otp_data.buf, priv->otp_data.len);
 	} else {
 		wiphy_err(hw->wiphy, "Driver OTP buf size is less\n");
 	}
@@ -4174,7 +4174,7 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void *data, int len, void **rsp
 	return 0;
 }
 
-int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability)
+int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, struct lrd_radio_caps *r_caps)
 {
 	struct hostcmd_header *pcmd;
 	struct lrdcmd_cmd_cap *caps;
@@ -4201,8 +4201,9 @@ int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, u32* capability)
 		return -EIO;
 	}
 
-	/* Note these fields are reverse of structure's fields */
-	*capability = ((le16_to_cpu(caps->capability)<<16) | le16_to_cpu(caps->num_mac_addr));
+	r_caps->capability = le16_to_cpu(caps->capability);
+	r_caps->num_mac    = le16_to_cpu(caps->num_mac_addr);
+	r_caps->version    = le16_to_cpu(caps->version);
 
 	mutex_unlock(&priv->fwcmd_mutex);
 	return 0;

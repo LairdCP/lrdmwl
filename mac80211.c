@@ -327,7 +327,7 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 		goto out;
 
 	if ((changed & IEEE80211_CONF_CHANGE_MONITOR) &&
-	   (priv->radio_caps & LRD_CAP_SU60)) {
+	   (priv->radio_caps.capability & LRD_CAP_SU60)) {
 		if(conf->flags & IEEE80211_CONF_MONITOR)
 			rc = mwl_fwcmd_set_monitor_mode (hw, 1);
 		else
@@ -879,9 +879,9 @@ static int mwl_mac80211_ampdu_action(struct ieee80211_hw *hw,
 			ieee80211_stop_tx_ba_cb_irqsafe(vif, addr, tid);
 		} else {
 			/* In recovery scenarios mac80211 instructs us to IEEE80211_AMPDU_TX_STOP_FLUSH
-			 * and occasionally IEEE80211_AMPDU_TX_STOP_CONT.  We've already destroyed the 
-			 * stream, so there isn't anything we can do.  Don't return error here, as it 
-			 * does nothing but cause an ASSERT.  Simply call the callback indicating we are 
+			 * and occasionally IEEE80211_AMPDU_TX_STOP_CONT.  We've already destroyed the
+			 * stream, so there isn't anything we can do.  Don't return error here, as it
+			 * does nothing but cause an ASSERT.  Simply call the callback indicating we are
 			 * done, so mac is happy.
 			 */
 			if (action != IEEE80211_AMPDU_TX_STOP_FLUSH_CONT)
@@ -1217,7 +1217,7 @@ void mwl_mac80211_reconfig_complete(struct ieee80211_hw *hw,
 	if (reconfig_type == IEEE80211_RECONFIG_TYPE_RESTART)
 	{
 		// If hardware has been restarted, this is due to radio recovery
-		// Walk the interface list and indicate connection loss so 
+		// Walk the interface list and indicate connection loss so
 		// connections are restarted cleanly
 		list_for_each_entry(mwl_vif, &priv->vif_list, list)
 		{

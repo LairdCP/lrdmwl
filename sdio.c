@@ -408,7 +408,8 @@ static int mwl_sdio_init_post(struct mwl_priv *priv)
 		priv->ds_enable = DS_ENABLE_OFF;
 
 		//Assume ST 60 with one interface
-		priv->radio_caps = 1;
+		priv->radio_caps.capability = 0;
+		priv->radio_caps.num_mac = 1;
 	}
 
 	return 0;

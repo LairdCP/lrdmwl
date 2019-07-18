@@ -904,7 +904,8 @@ static int mwl_pcie_init_post(struct mwl_priv *priv)
 
 	if (priv->mfg_mode) {
 		//Assume ST 60 with one interface
-		priv->radio_caps = 1;
+		priv->radio_caps.capability = 0;
+		priv->radio_caps.num_mac = 1;
 	}
 
 	if (!IS_PFU_ENABLED(priv->chip_type)) {
