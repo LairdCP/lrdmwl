@@ -78,6 +78,22 @@ static struct pci_device_id mwl_pci_id_tbl[] = {
 	{ },
 };
 
+static const struct of_device_id mwl_pcie_of_match_table[] = {
+	{ .compatible = "pci1b4b,2b42" },
+	{ }
+};
+
+static int mwl_pcie_probe_of(struct device *dev)
+{
+	if (!of_match_node(mwl_pcie_of_match_table, dev->of_node)) {
+		dev_err(dev, "required compatible string missing\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+
 
 static void lrd_pci_fw_reset_workfn(struct work_struct *work)
 {
@@ -2278,7 +2294,14 @@ static int mwl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	memcpy(&pcie_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
 		sizeof(struct mwl_chip_info));
 
-	rc = mwl_add_card(card, &pcie_ops, NULL);
+	/* device tree node parsing and platform specific configuration*/
+	if (pdev->dev.of_node) {
+		rc = mwl_pcie_probe_of(&pdev->dev);
+		if (rc)
+			goto err_add_card;
+	}
+
+	rc = mwl_add_card(card, &pcie_ops, pdev->dev.of_node);
 	if (rc) {
 		pr_err("%s: add card failed", MWL_DRV_NAME);
 		goto err_add_card;

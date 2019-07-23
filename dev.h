@@ -724,6 +724,8 @@ struct mwl_priv {
 
 	/** Work around for startup failure */
 	atomic_t null_scan_count;
+
+	unsigned int ant_gain_adjust;
 };
 
 struct beacon_info {

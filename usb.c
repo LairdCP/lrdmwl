@@ -99,6 +99,7 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	int gpio, rc, i;
 	struct usb_card_rec *card;
 	u16 id_vendor, id_product, bcd_device;
+	struct device_node *of_node = NULL;
 	enum of_gpio_flags flags;
 
 	card = devm_kzalloc(&intf->dev, sizeof(*card), GFP_KERNEL);
@@ -201,10 +202,13 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	// Initialize reset gpio to value provided by mod parameter if it exists
 	card->reset_pwd_gpio = reset_pwd_gpio;
 
-	// Override with value provided in devicetree if it exists
+	/* device tree node parsing and platform specific configuration */
 	if (intf->dev.of_node) {
 		if (of_match_node(mwl_usb_of_match_table, intf->dev.of_node)) {
-			gpio = of_get_named_gpio_flags(intf->dev.of_node, "reset-gpios", 0, &flags);
+			of_node = intf->dev.of_node;
+
+			// Override gpio reset with value provided in devicetree if it exists
+			gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
 
 			if (gpio_is_valid(gpio))
 				card->reset_pwd_gpio = gpio;
@@ -224,7 +228,7 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	else
 		pr_info("Reset GPIO not configured\n");
 
-	rc = mwl_add_card(card, &usb_ops1, NULL);
+	rc = mwl_add_card(card, &usb_ops1, of_node);
 
 	if (rc) {
 		if (rc != -EINPROGRESS)

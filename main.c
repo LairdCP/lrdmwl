@@ -203,6 +203,7 @@ int SISO_mode = 0;
 int lrd_debug = 0;
 int null_scan_count = 0;
 int host_crypto = 0;
+unsigned int ant_gain_adjust = 0;
 
 static int lrd_send_fw_event(struct device *dev, bool on)
 {
@@ -957,6 +958,14 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
 			memset(&priv->radio_caps, 0, sizeof(priv->radio_caps));
 		}
+
+		if (priv->ant_gain_adjust) {
+			rc = lrd_fwcmd_lrd_set_ant_gain_adjust(hw, priv->ant_gain_adjust);
+			if (rc) {
+				wiphy_err(hw->wiphy, "Antenna gain adjustment 0x%x specified but failed to send!\n", priv->ant_gain_adjust);
+				goto err_wl_init;
+			}
+		}
 	}
 
 	if (priv->radio_caps.capability & LRD_CAP_SU60) {
@@ -1043,6 +1052,9 @@ static int mwl_wl_init(struct mwl_priv *priv)
 
 	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas. (%08x)/(%08x)\n",
 		   priv->ant_tx_num, priv->ant_rx_num, priv->ant_tx_bmp, priv->ant_rx_bmp);
+
+	if (priv->ant_gain_adjust)
+		wiphy_info(hw->wiphy, "Antenna gain adjustment in effect: 0x%x\n", priv->ant_gain_adjust);
 
 	lrd_send_fw_event(priv->dev, true);
 
@@ -1266,9 +1278,16 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	if (rc == -EPROBE_DEFER)
 		goto err_of;
 
+	priv->ant_gain_adjust = ant_gain_adjust;
 	if (of_node) {
 		priv->stop_shutdown =
 			of_property_read_bool(of_node, "remove-power-on-link-down");
+
+		/*
+		 * If antenna gain adjustment is specified as both module parameter and
+		 * in device tree, device tree wins
+		 */
+		of_property_read_u32(of_node, "ant-gain-adjust", &priv->ant_gain_adjust);
 	}
 
 	/* Setup timers */
@@ -1490,6 +1509,14 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 			wiphy_err(hw->wiphy, "Fail to retrieve radio capabilities %x\n", rc);
 			memset(&priv->radio_caps, 0, sizeof(priv->radio_caps));
 		}
+
+		if (priv->ant_gain_adjust) {
+			rc = lrd_fwcmd_lrd_set_ant_gain_adjust(hw, priv->ant_gain_adjust);
+			if (rc) {
+				wiphy_err(hw->wiphy, "Antenna gain adjustment 0x%x specified but failed to send!\n", priv->ant_gain_adjust);
+				goto err_init;
+			}
+		}
 	}
 
 	wiphy_info(hw->wiphy, "Radio Type %s%s (0x%x)\n", (priv->radio_caps.capability & LRD_CAP_SU60)?"SU60":"ST60",
@@ -1557,7 +1584,7 @@ int lrd_probe_of_wowlan(struct mwl_priv *priv, struct device_node *of_node)
 {
 	int ret;
 
-	if (!of_node) {
+	if ((priv->host_if != MWL_IF_SDIO) || !of_node) {
 		priv->wow.irq_wakeup = -ENODEV;
 		return 0;
 	}
@@ -1711,6 +1738,9 @@ MODULE_PARM_DESC(null_scan_count, "Null scan response recovery count");
 module_param(host_crypto, uint, 0444);
 MODULE_PARM_DESC(host_crypto, "Force host cryptography "
 	"0:FW Crypto 1:Host Crypto");
+
+module_param(ant_gain_adjust, uint, 0444);
+MODULE_PARM_DESC(ant_gain_adjust, "Antenna gain adjustment");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);

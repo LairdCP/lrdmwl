@@ -205,6 +205,8 @@
 #define WOWLAN_WAKEUP_SIGNAL_TYPE_HIGH          0x1
 #define WOWLAN_WAKEUP_SIGNAL_TYPE_LOW           0x0
 
+#define ANT_GAIN_VALID_MASK              0x000FFFFF
+
 enum {
 	WL_DISABLE = 0,
 	WL_ENABLE = 1,
@@ -1219,6 +1221,12 @@ struct lrdcmd_cmd_cap
 	__le16 capability;
 	__le16 num_mac_addr;
 	__le16 version;
+}__packed;
+
+struct lrdcmd_cmd_ant_gain_adjust
+{
+	struct lrdcmd_header hdr;
+	__le32 ant_gain_adjust;
 }__packed;
 
 struct hostcmd_cmd_deepsleep {

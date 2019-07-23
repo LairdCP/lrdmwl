@@ -4209,6 +4209,44 @@ int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, struct lrd_radio_caps *r_cap
 	return 0;
 }
 
+int lrd_fwcmd_lrd_set_ant_gain_adjust(struct ieee80211_hw *hw, u32 adjust)
+{
+	struct hostcmd_header *pcmd;
+	struct lrdcmd_cmd_ant_gain_adjust *adjust_cmd;
+	struct mwl_priv       *priv = hw->priv;
+
+	if (adjust & ~ANT_GAIN_VALID_MASK) {
+		wiphy_err(hw->wiphy, "Invalid antenna gain adjust value (0x%x)!!\n", adjust);
+		return -EINVAL;
+	}
+
+	pcmd = (struct hostcmd_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(*adjust_cmd));
+
+	pcmd->cmd = cpu_to_le16(HOSTCMD_LRD_CMD);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + sizeof(*adjust_cmd));
+
+	//Fill in pwr struct
+	adjust_cmd = (struct lrdcmd_cmd_ant_gain_adjust*) (((u8*)pcmd) + sizeof(struct hostcmd_header));
+	adjust_cmd->hdr.lrd_cmd = cpu_to_le16(LRD_CMD_ANT_GAIN_ADJUST);
+	adjust_cmd->ant_gain_adjust = cpu_to_le32(adjust);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD) ||
+		pcmd->result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_set_ant_gain_adjust failed execution %x\n", le16_to_cpu(pcmd->result));
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
+
+
 int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
 {
 	struct hostcmd_cmd_monitor_mode *pcmd;
