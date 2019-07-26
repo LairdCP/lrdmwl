@@ -1327,7 +1327,7 @@ static int mwl_pcie_program_firmware(struct mwl_priv *priv)
 		wiphy_err(hw->wiphy, "%s: FW already running - resetting\n", __func__);
 		INIT_WORK(&card->fw_reset_work, lrd_pci_fw_reset_workfn);
 		schedule_work(&card->fw_reset_work);
-		return -EAGAIN;
+		return -EINPROGRESS;
 	}
 
 	if (!priv->tx_amsdu_enable)

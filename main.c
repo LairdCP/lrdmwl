@@ -1297,10 +1297,22 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	timer_setup(&priv->stop_shutdown_timer, stop_shutdown_timer_routine, 0);
 
 	rc = mwl_fw_dnld_and_init(priv);
-	if (rc)
-		goto err_dnld_and_init;
 
-	return 0;
+	// mwl_fw_dnld_and_init returns -EINPROGRESS when target is reset
+	// as part of the initialization sequence.  This is normal behavior
+	// for USB at initial powerup, and for PCI in scenarios where firmware
+	// has already been loaded and a Function Level Reset is initiated to restart.
+	// In the case of PCI, the reset/restart handler is responsible for
+	// calling mwl_fw_dnld_and_init again, but remainder of this init sequence
+	// must complete successfully so driver remains loaded.
+	if (rc) {
+		if ((rc == -EINPROGRESS) && (priv->host_if == MWL_IF_PCIE))
+			rc = 0;
+		else
+			goto err_dnld_and_init;
+	}
+
+	return rc;
 
 err_dnld_and_init:
 	device_init_wakeup(priv->dev, false);
