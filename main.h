@@ -47,7 +47,7 @@ extern void lrd_report_wowlan_wakeup(struct mwl_priv *priv);
 
 static inline void lrd_enable_wowlan(struct mwl_priv *priv) {}
 static inline void lrd_disable_wowlan(struct mwl_priv *priv) {}
-static inline int lrd_probe_of(struct mwl_priv *priv,
+static inline int lrd_probe_of_wowlan(struct mwl_priv *priv,
 	struct device_node *of_node) { return 0; }
 
 #endif
