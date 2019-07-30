@@ -1053,7 +1053,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	wiphy_info(priv->hw->wiphy, "%d TX antennas, %d RX antennas. (%08x)/(%08x)\n",
 		   priv->ant_tx_num, priv->ant_rx_num, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
-	if (priv->ant_gain_adjust)
+	if (!priv->mfg_mode && priv->ant_gain_adjust)
 		wiphy_info(hw->wiphy, "Antenna gain adjustment in effect: 0x%x\n", priv->ant_gain_adjust);
 
 	lrd_send_fw_event(priv->dev, true);
