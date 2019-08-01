@@ -716,7 +716,7 @@ struct mwl_priv {
 	bool tx_amsdu_enable;
 	bool mac_started;
 
-
+	bool host_crypto;
 	bool stop_shutdown;
 	bool mac_init_complete;
 	struct timer_list stop_shutdown_timer;

@@ -540,12 +540,13 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 				struct ieee80211_sta *sta,
 				struct ieee80211_key_conf *key)
 {
+	struct mwl_priv *priv = hw->priv;
 	struct mwl_vif *mwl_vif;
 	int rc = 0;
 	u8 encr_type;
 	u8 *addr;
 
-	if (host_crypto)
+	if (priv->host_crypto)
 		return -EOPNOTSUPP;
 
 	mwl_vif = mwl_dev_get_vif(vif);

@@ -20,6 +20,7 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/suspend.h>
+#include <linux/fips.h>
 
 #include "sysadpt.h"
 #include "dev.h"
@@ -202,7 +203,6 @@ int mfg_mode = 0;
 int SISO_mode = 0;
 int lrd_debug = 0;
 int null_scan_count = 0;
-int host_crypto = 0;
 unsigned int ant_gain_adjust = 0;
 
 static int lrd_send_fw_event(struct device *dev, bool on)
@@ -1268,6 +1268,13 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	priv->init_complete = false;
 
 	priv->tx_amsdu_enable = tx_amsdu_enable;
+	
+#ifdef CONFIG_LRDMWL_FIPS	
+	priv->host_crypto = fips_enabled && fips_wifi_enabled;
+#endif
+
+	if (priv->host_crypto)
+		wiphy_info(priv->hw->wiphy, "Using host crypto.\n");
 
 	/* Save interface specific operations in adapter */
 	memmove(&priv->if_ops, if_ops, sizeof(struct mwl_if_ops));
@@ -1750,10 +1757,6 @@ MODULE_PARM_DESC(mfg_mode, "MFG mode 0:disable 1:enable");
 
 module_param(null_scan_count, int, 0);
 MODULE_PARM_DESC(null_scan_count, "Null scan response recovery count");
-
-module_param(host_crypto, uint, 0444);
-MODULE_PARM_DESC(host_crypto, "Force host cryptography "
-	"0:FW Crypto 1:Host Crypto");
 
 module_param(ant_gain_adjust, uint, 0444);
 MODULE_PARM_DESC(ant_gain_adjust, "Antenna gain adjustment");
