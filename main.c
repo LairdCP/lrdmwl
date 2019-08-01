@@ -350,11 +350,13 @@ static void mwl_set_ht_caps(struct mwl_priv *priv,
 	band->ht_cap.ht_supported = 1;
 
 	band->ht_cap.cap |= IEEE80211_HT_CAP_LDPC_CODING;
-	band->ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40;
 	band->ht_cap.cap |= IEEE80211_HT_CAP_SM_PS;
 	band->ht_cap.cap |= IEEE80211_HT_CAP_SGI_20;
-	band->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40;
-	band->ht_cap.cap |= IEEE80211_HT_CAP_DSSSCCK40;
+	if (band->band == NL80211_BAND_5GHZ) {
+		band->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40;
+		band->ht_cap.cap |= IEEE80211_HT_CAP_DSSSCCK40;
+		band->ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40;
+	}
 
 	if ((priv->chip_type == MWL8997) &&
 		(priv->ant_tx_num > 1)){
