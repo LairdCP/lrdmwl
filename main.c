@@ -599,9 +599,6 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	SET_IEEE80211_DEV(hw, priv->dev);
 	SET_IEEE80211_PERM_ADDR(hw, priv->hw_data.mac_addr);
 
-	/* hook regulatory domain change notification */
-	hw->wiphy->reg_notifier = mwl_reg_notifier;
-
 	hw->extra_tx_headroom   = SYSADPT_TX_MIN_BYTES_HEADROOM;
 	hw->queues              = SYSADPT_TX_WMM_QUEUES;
 
@@ -619,6 +616,13 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	if (priv->chip_type == MWL8997) {
 		ieee80211_hw_set(hw, SUPPORTS_PS);
 	}
+
+	/* Ask mac80211 to use standard NULL data packets
+	 * instead of QOS NULL data packets.
+	 * This works around issues in both mac80211 and the driver
+	 * that prevent QOS NULL data packets from being transmitted correctly
+	 */
+	ieee80211_hw_set(hw, DOESNT_SUPPORT_QOS_NDP);
 
 	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
 	hw->wiphy->flags |= WIPHY_FLAG_HAS_CHANNEL_SWITCH;
