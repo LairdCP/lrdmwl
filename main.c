@@ -16,6 +16,7 @@
 /* Description:  This file implements main functions of this module. */
 
 #include <linux/module.h>
+#include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
