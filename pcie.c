@@ -605,6 +605,11 @@ void mwl_pcie_rx_recv(unsigned long data)
 					     prx_skb->data;
 					memset((void *)&tr->data, 0, 4);
 					pkt_len += 4;
+					/* IV is stripped in this case
+					* Indicate that, so mac80211 doesn't attempt to decrypt the
+					* packet and fail prior to handling the MMIC error indication
+					*/
+					status.flag |= RX_FLAG_IV_STRIPPED;
 				}
 
 				if (!ieee80211_is_auth(wh->frame_control))

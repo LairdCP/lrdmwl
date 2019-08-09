@@ -362,14 +362,12 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 	struct mwl_rx_desc *pdesc;
 	struct mwl_dma_data *dma;
 	struct sk_buff *prx_skb = skb;
-	int pkt_len;
 	struct ieee80211_rx_status status;
 	struct mwl_vif *mwl_vif = NULL;
 	struct ieee80211_hdr *wh;
 	struct mwl_rx_event_data *rx_evnt;
 
 	pdesc = (struct mwl_rx_desc *)prx_skb->data;
-	pkt_len = le16_to_cpu(pdesc->pkt_len);
 
 	/* => todo:
 	// Save the rate info back to card
@@ -426,7 +424,12 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 			 */
 			if (status.flag & RX_FLAG_MMIC_ERROR) {
 				memset((void *)&dma->data, 0, 4);
-				pkt_len += 4;
+				skb_put(prx_skb, 4);
+				/* IV is stripped in this case
+				 * Indicate that, so mac80211 doesn't attempt to decrypt the
+				 * packet and fail prior to handling the MMIC error indication
+				 */
+				status.flag |= RX_FLAG_IV_STRIPPED;
 			}
 
 			if (!ieee80211_is_auth(wh->frame_control))
@@ -436,7 +439,6 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 				 */
 				status.flag |= RX_FLAG_DECRYPTED |
 					       RX_FLAG_MMIC_STRIPPED;
-
 		}
 	}
 
