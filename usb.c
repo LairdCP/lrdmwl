@@ -27,6 +27,7 @@
 #include <linux/module.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+#include <linux/of.h>
 
 #define MWL_USBDRV_VERSION  "1.0-20171201"
 #define LRD_USB_VERSION     LRD_BLD_VERSION "-" MWL_USBDRV_VERSION

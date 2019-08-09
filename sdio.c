@@ -2936,6 +2936,11 @@ static void mwl_sdio_complete(struct device *dev)
 	mwl_sdio_pm_worker(dev, MWL_PM_COMPLETE);
 }
 
+static int mwl_sdio_resume(struct device *dev)
+{
+	return mwl_sdio_pm_worker(dev, MWL_PM_RESUME);
+}
+
 static int mwl_sdio_suspend(struct device *dev)
 {
 	return mwl_sdio_pm_worker(dev, MWL_PM_SUSPEND);
@@ -2944,11 +2949,6 @@ static int mwl_sdio_suspend(struct device *dev)
 static int mwl_sdio_suspend_late(struct device *dev)
 {
 	return mwl_sdio_pm_worker(dev, MWL_PM_SUSPEND_LATE);
-}
-
-static int mwl_sdio_resume(struct device *dev)
-{
-	return mwl_sdio_pm_worker(dev, MWL_PM_RESUME);
 }
 
 static int mwl_sdio_resume_early(struct device *dev)
@@ -2970,9 +2970,9 @@ static const struct dev_pm_ops mwl_sdio_pm_ops = {
 	.prepare        = mwl_sdio_prepare,
 	.complete       = mwl_sdio_complete,
 	.resume         = mwl_sdio_resume,
+	.suspend        = mwl_sdio_suspend,
 	.resume_early   = mwl_sdio_resume_early,
 	.restore_early  = mwl_sdio_restore_early,
-	.suspend        = mwl_sdio_suspend,
 	.suspend_late   = mwl_sdio_suspend_late,
 	.poweroff_late  = mwl_sdio_poweroff,
 };

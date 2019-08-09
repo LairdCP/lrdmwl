@@ -1,7 +1,5 @@
 #include <linux/module.h>
-#ifdef CONFIG_OF
 #include <linux/of.h>
-#endif
 #include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/etherdevice.h>
