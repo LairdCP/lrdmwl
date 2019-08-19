@@ -1050,7 +1050,17 @@ int mwl_mac80211_set_ant(struct ieee80211_hw *hw,
 	priv->ant_rx_bmp = rx_ant;
 	priv->ant_rx_num = MWL_RXANT_BMP_TO_NUM(rx_ant);
 
-	mwl_set_ieee_hw_caps(priv);
+	/* Update up band/rate information for 2.4G */
+	if (!priv->disable_2g) {
+		mwl_set_ht_caps(priv,  &priv->band_24);
+		mwl_set_vht_caps(priv, &priv->band_24);
+	}
+
+	/* Update band/rate information for 5G */
+	if (!priv->disable_5g) {
+		mwl_set_ht_caps(priv,  &priv->band_50);
+		mwl_set_vht_caps(priv, &priv->band_50);
+	}
 
 	return 0;
 }

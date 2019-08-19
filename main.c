@@ -340,7 +340,7 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 	priv->dfs_region = request->dfs_region;
 }
 
-static void mwl_set_ht_caps(struct mwl_priv *priv,
+void mwl_set_ht_caps(struct mwl_priv *priv,
 			    struct ieee80211_supported_band *band)
 {
 	struct ieee80211_hw *hw;
@@ -382,7 +382,7 @@ static void mwl_set_ht_caps(struct mwl_priv *priv,
 	band->ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 }
 
-static void mwl_set_vht_caps(struct mwl_priv *priv,
+void mwl_set_vht_caps(struct mwl_priv *priv,
 			     struct ieee80211_supported_band *band)
 {
 	band->vht_cap.vht_supported = 1;
@@ -1265,8 +1265,8 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	priv->init_complete = false;
 
 	priv->tx_amsdu_enable = tx_amsdu_enable;
-	
-#ifdef CONFIG_LRDMWL_FIPS	
+
+#ifdef CONFIG_LRDMWL_FIPS
 	priv->host_crypto = fips_enabled && fips_wifi_enabled;
 #endif
 

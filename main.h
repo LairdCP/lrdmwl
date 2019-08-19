@@ -16,7 +16,8 @@ extern int tx_amsdu_enable;
 
 int mwl_add_card(void *, struct mwl_if_ops *, struct device_node *of_node);
 void mwl_wl_deinit(struct mwl_priv *);
-void mwl_set_ieee_hw_caps(struct mwl_priv *priv);
+void mwl_set_ht_caps (struct mwl_priv *priv, struct ieee80211_supported_band *band);
+void mwl_set_vht_caps(struct mwl_priv *priv, struct ieee80211_supported_band *band);
 void mwl_ieee80211_free_hw(struct mwl_priv *);
 extern void timer_routine(struct timer_list *t);
 extern void mwl_restart_ds_timer(struct mwl_priv *priv, bool force);
