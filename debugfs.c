@@ -111,7 +111,7 @@ static ssize_t mwl_debugfs_info_read(struct file *file, char __user *ubuf,
 			 "power table loaded from dts: %s\n",
 			 priv->forbidden_setting ? "no" : "yes");
 	len += scnprintf(p + len, size - len, "firmware region code: 0x%x\n",
-			 priv->fw_region_code);
+			 priv->reg.otp.region);
 	len += scnprintf(p + len, size - len,
 			 "mac address: %pM\n", priv->hw_data.mac_addr);
 	len += scnprintf(p + len, size - len,
@@ -429,7 +429,7 @@ static ssize_t mwl_debugfs_device_pwrtbl_read(struct file *file,
 			 "power table loaded from dts: %s\n",
 			 priv->forbidden_setting ? "no" : "yes");
 	len += scnprintf(p + len, size - len, "firmware region code: 0x%x\n",
-			 priv->fw_region_code);
+			 priv->reg.otp.region);
 	len += scnprintf(p + len, size - len, "number of channel: %d\n",
 			 priv->number_of_channels);
 	for (i = 0; i < priv->number_of_channels; i++) {
@@ -642,7 +642,7 @@ static ssize_t mwl_debugfs_dfs_radar_read(struct file *file, char __user *ubuf,
 	len += scnprintf(p + len, size - len,
 			 "csa_active: %d\n", priv->csa_active);
 	len += scnprintf(p + len, size - len,
-			 "dfs_region: %d\n", priv->dfs_region);
+			 "dfs_region: %d\n", priv->reg.dfs_region);
 	len += scnprintf(p + len, size - len,
 			 "chirp_count_min: %d\n", priv->dfs_chirp_count_min);
 	len += scnprintf(p + len, size - len, "chirp_time_interval: %d\n",

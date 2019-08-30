@@ -22,6 +22,7 @@
 #include <linux/of_irq.h>
 #include <linux/suspend.h>
 #include <linux/fips.h>
+#include <linux/firmware.h>
 
 #include "sysadpt.h"
 #include "dev.h"
@@ -46,6 +47,8 @@
 
 #define NOT_LRD_HW  0x214C5244
 #define NUM_UNII3_CHANNELS  5
+#define NUM_WW_CHANNELS     3
+#define REG_PWR_DB_NAME     "regpwr.db"
 
 static const struct ieee80211_channel mwl_channels_24[] = {
 	{ .band = NL80211_BAND_2GHZ, .center_freq = 2412, .hw_value = 1, },
@@ -214,23 +217,33 @@ static int lrd_send_fw_event(struct device *dev, bool on)
 	return kobject_uevent_env(&dev->kobj, KOBJ_CHANGE, on ? env_on : env_off);
 }
 
-static bool mwl_is_world_mode(struct mwl_priv *priv)
+static bool mwl_is_world_region(struct cc_info *cc)
 {
-	if (priv->fw_alpha2[0] == '0' && priv->fw_alpha2[1] == '0') {
+	if (cc->region == REG_CODE_WW) {
 		return true;
 	}
 
 	return false;
 }
 
-static bool mwl_is_etsi_mode(struct mwl_priv *priv)
+static bool mwl_is_etsi_region(struct cc_info *cc)
 {
-	if (priv->fw_alpha2[0] == 'F' && priv->fw_alpha2[1] == 'R') {
+	if (cc->region == REG_CODE_ETSI) {
 		return true;
 	}
 
 	return false;
 }
+
+static bool mwl_is_unknown_country(struct cc_info *cc)
+{
+	if (cc->alpha2[0] == '9' && cc->alpha2[1] == '9') {
+		return true;
+	}
+
+	return false;
+}
+
 
 static int mwl_init_firmware(struct mwl_priv *priv)
 {
@@ -327,17 +340,237 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 	hw = (struct ieee80211_hw *)wiphy_priv(wiphy);
 	priv = hw->priv;
 
-	if (!priv->regulatory_set) {
-		priv->regulatory_set = true;
-		regulatory_hint(wiphy, priv->fw_alpha2);
+	wiphy_debug(hw->wiphy, "mwl_reg_notifier set=%d %s %c%c==>\n", priv->reg.regulatory_set, reg_initiator_name(request->initiator), request->alpha2[0], request->alpha2[1]);
+
+	if (!priv->reg.regulatory_set) {
+		priv->reg.regulatory_set = true;
+		regulatory_hint(wiphy, priv->reg.cc.alpha2);
 	} else {
-		if ( memcmp(priv->fw_alpha2, request->alpha2, 2) &&
+		if ( memcmp(priv->reg.cc.alpha2, request->alpha2, 2) &&
 			(request->initiator == NL80211_REGDOM_SET_BY_USER)) {
-			regulatory_hint(wiphy, priv->fw_alpha2);
+			regulatory_hint(wiphy, priv->reg.cc.alpha2);
 		}
 	}
 
-	priv->dfs_region = request->dfs_region;
+	priv->reg.dfs_region = request->dfs_region;
+}
+
+#pragma pack(push,1)
+typedef struct module_signature {
+	u8     sig[8];
+	__le32 len;
+} module_signature_t;
+
+typedef struct ww_pwr_entry
+{
+	u8     cc[2];
+	__le16 rc;
+	__le32 len;
+	u8     data[0];
+} ww_pwr_entry_t;
+
+#pragma pack(pop)
+
+#define MODULE_SIG_STRING    "~Module signature appended~\n"
+
+static int lrd_validate_db(const struct firmware *fw, struct mwl_priv *priv)
+{
+	u8   *buf = (uint8_t*)fw->data;
+	int bSize = fw->size;
+	int markerlen = sizeof(MODULE_SIG_STRING)-1;
+	int x = 0;
+	struct ww_pwr_entry *entry;
+	struct module_signature *info;
+	struct ieee80211_hw *hw = priv->hw;
+
+	wiphy_debug(hw->wiphy,"Validating %s\n", REG_PWR_DB_NAME);
+
+	/* Verify signature marker is present */
+	if (bSize < markerlen) {
+		wiphy_err(hw->wiphy, "%s too small to contain signature\n", REG_PWR_DB_NAME);
+		return -1;
+	}
+
+	bSize -= markerlen;
+
+	if (memcmp(buf+ bSize, MODULE_SIG_STRING, markerlen) != 0 ) {
+		wiphy_err(hw->wiphy, "Module signature marker not found %d\n", bSize);
+		return -1;
+	}
+
+	/* Verify module signature info is present */
+	if (bSize < sizeof(module_signature_t)) {
+		wiphy_err(hw->wiphy, "Module signature not found %d\n", bSize);
+		return -1;
+	}
+
+	bSize -= sizeof(module_signature_t);
+	info = (module_signature_t*)(buf + bSize);
+
+	/*Verify actual signature is present */
+	if (bSize <  le32_to_cpu(info->len)) {
+		wiphy_err(hw->wiphy, "Complete signature not present %d(%d)\n", bSize, le32_to_cpu(info->len));
+		return -1;
+	}
+
+	bSize -= le32_to_cpu(info->len);
+
+	for (x=0; x < bSize;) {
+		entry = (ww_pwr_entry_t*)(buf + x);
+
+		//Check header present
+		if ( (bSize - x) < sizeof(ww_pwr_entry_t)) {
+			wiphy_err(hw->wiphy, "Incomplete Tx Pw Entry header\n");
+			return -1;
+		}
+
+		//Move past header
+		x += sizeof(ww_pwr_entry_t);
+
+		//Check data size
+		if ( (bSize - x) <  le32_to_cpu(entry->len)) {
+			wiphy_err(hw->wiphy, "Incomplete Tx Pw Entry \n");
+			return -1;
+		}
+
+		//Move to next entry
+		x += le32_to_cpu(entry->len);
+	}
+
+	if (x == bSize) {
+		wiphy_debug(hw->wiphy, "Successfully validated %s %d\n", REG_PWR_DB_NAME, bSize);
+		return 0;
+	}
+
+	wiphy_err(hw->wiphy, "Validation of %s failed.\n", REG_PWR_DB_NAME);
+
+	return -1;
+}
+
+
+static int find_pwr_entry(struct mwl_priv *priv, u8 *cc, u32 rc, ww_pwr_entry_t**entry)
+{
+	struct ww_pwr_entry *tmp  = NULL;
+	int x   = 0;
+	int y   = 0;
+	int idx = -1;
+
+	//See if RC/CC is found in DB
+	for (x=0, y = 0; x < priv->reg.db_size; y++) {
+		tmp = (ww_pwr_entry_t*)(priv->reg.db + x);
+
+		if (rc == le16_to_cpu(tmp->rc)) {
+			if (cc == NULL || 0 == memcmp(tmp->cc, cc, sizeof(tmp->cc))) {
+				if (entry) {
+					*entry = tmp;
+				}
+				idx = y;
+				break;
+			}
+		}
+
+		//Move to next entry
+		x += sizeof(ww_pwr_entry_t) + le32_to_cpu(tmp->len);
+	}
+
+	return idx;
+}
+
+static void lrd_send_hint_no_lock(struct mwl_priv *priv, struct cc_info *cc)
+{
+	if (0 == memcmp(&priv->reg.cc.alpha2, cc->alpha2, sizeof(priv->reg.cc.alpha2))) {
+		//Aleady using, don't send again.
+		return;
+	}
+
+	wiphy_debug(priv->hw->wiphy,"Sending regulatory hint for %c%c\n", cc->alpha2[0], cc->alpha2[1]);
+
+	memcpy(&priv->reg.cc, cc, sizeof(priv->reg.cc));
+
+	//Send driver hint
+	priv->reg.regulatory_set = true;
+	regulatory_hint(priv->hw->wiphy, priv->reg.cc.alpha2);
+}
+
+static void lrd_send_hint(struct mwl_priv *priv, struct cc_info *cc)
+{
+	mutex_lock(&priv->reg.mutex);
+	lrd_send_hint_no_lock(priv, cc);
+	mutex_unlock(&priv->reg.mutex);
+}
+
+int check_regdb(const char *alpha2);
+
+static void lrd_cc_cb(const struct firmware *fw, void *context)
+{
+	struct mwl_priv *priv = (struct mwl_priv*)context;
+	struct ww_pwr_entry *entry = NULL;
+	int   idx = -1;
+	int rc = 0;
+
+	if (fw) {
+		if (priv->reg.db) {
+			kfree(priv->reg.db);
+			priv->reg.db      = 0;
+			priv->reg.db_size = 0;
+		}
+
+		if ( !lrd_validate_db(fw, priv)) {
+			priv->reg.db = kmemdup(fw->data, fw->size, GFP_KERNEL);
+
+			if (priv->reg.db) {
+				priv->reg.db_size = fw->size;
+			}
+		}
+
+		release_firmware(fw);
+
+		//Find entry
+		wiphy_debug(priv->hw->wiphy,"checking %s for region:%x country:%c%c\n", REG_PWR_DB_NAME, priv->reg.otp.region, priv->reg.otp.alpha2[0], priv->reg.otp.alpha2[1]);
+
+		if (!mwl_is_unknown_country(&priv->reg.otp)) {
+			idx = find_pwr_entry(priv, priv->reg.otp.alpha2, priv->reg.otp.region, &entry);
+
+			if (NULL != entry && le32_to_cpu(entry->len) <= 24) {
+				//Entry is limited to mapping , do not send
+				entry = NULL;
+			}
+		}
+		else {
+			idx = find_pwr_entry(priv, NULL, priv->reg.otp.region, &entry);
+		}
+
+		if (NULL != entry && le32_to_cpu(entry->len > 0)) {
+			rtnl_lock();
+			if (check_regdb(priv->reg.otp.alpha2) >= 0) {
+				//Send to firmware
+				rc = lrd_fwcmd_lrd_set_power_table(priv->hw, idx, entry->data, le32_to_cpu(entry->len));
+
+				if (!rc) {
+					//Queue event work
+					queue_work(priv->lrd_workq, &priv->reg.event);
+				}
+			}
+			else {
+				wiphy_debug(priv->hw->wiphy,"Country Code %c%c not present in CRDA database.\n", priv->reg.otp.alpha2[0], priv->reg.otp.alpha2[1]);
+			}
+			rtnl_unlock();
+		}
+		else if (idx < 0) {
+			wiphy_warn(priv->hw->wiphy,"Region code %x not found in %s.\n", priv->reg.otp.region, REG_PWR_DB_NAME);
+		}
+	}
+	else {
+		wiphy_info(priv->hw->wiphy,"/lib/firmware/%s not found.\n", REG_PWR_DB_NAME);
+	}
+
+	if (!mwl_is_unknown_country(&priv->reg.otp)) {
+		//Send driver hint
+		lrd_send_hint(priv, &priv->reg.otp);
+	}
+	else {
+		wiphy_err(priv->hw->wiphy, "Failed to resolve region mapping, will not enable transmitter.\n");
+	}
 }
 
 void mwl_set_ht_caps(struct mwl_priv *priv,
@@ -586,7 +819,7 @@ void mwl_ieee80211_free_hw(struct mwl_priv *priv)
 }
 EXPORT_SYMBOL(mwl_ieee80211_free_hw);
 
-void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
+static void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 	int    x = 0;
@@ -661,13 +894,6 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 		hw->wiphy->bands[NL80211_BAND_5GHZ] = &priv->band_50;
 	}
 
-	/* hook regulatory domain change notification */
-	hw->wiphy->reg_notifier = mwl_reg_notifier;
-
-	if (mwl_is_world_mode(priv)) {
-		hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
-	}
-
 	if (priv->radio_caps.capability & LRD_CAP_SU60) {
 		lrd_set_su_caps(priv);
 	}
@@ -689,19 +915,57 @@ void mwl_set_ieee_hw_caps(struct mwl_priv *priv)
 	lrd_set_vendor_commands(hw->wiphy);
 }
 
-static void mwl_regd_init(struct mwl_priv *priv)
+static int lrd_regd_init(struct mwl_priv *priv)
 {
-	struct mwl_region_mapping map;
+	struct ieee80211_hw *hw = priv->hw;
+	int  rc = 0;
 
-	if (mwl_fwcmd_get_region_mapping(priv->hw, &map)) {
-		/* If we fail to retrieve mapping, default to WW */
-		wiphy_err(priv->hw->wiphy,
-			"failed to retrieve region mapping, using world mode\n");
-		memset(map.cc,'0', sizeof(map));
+	/* hook regulatory domain change notification */
+	hw->wiphy->reg_notifier      = mwl_reg_notifier;
+	hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
+
+	if (mwl_fwcmd_get_fw_region_code(hw, &priv->reg.otp.region)) {
+		/* If we fail to retrieve region, default to WW */
+		wiphy_err(priv->hw->wiphy, "Failed to retrieve regulatory region.\n");
+
+		priv->reg.otp.region = REG_CODE_WW;
+		memset(priv->reg.otp.alpha2,'9', sizeof(priv->reg.otp.alpha2));
+
+		if (!priv->mfg_mode) {
+			rc = -1;
+		}
+
+		goto done;
 	}
 
-	memcpy(priv->fw_alpha2, map.cc, sizeof(priv->fw_alpha2));
+	if (mwl_fwcmd_get_region_mapping(priv->hw, (struct mwl_region_mapping*)&priv->reg.otp.alpha2)) {
+		/* If we fail to retrieve mapping, default to 99 */
+		wiphy_err(priv->hw->wiphy, "Failed to retrieve region mapping\n");
+		memset(priv->reg.otp.alpha2,'9', sizeof(priv->reg.otp.alpha2));
+	}
+
+	if (mwl_is_world_region(&priv->reg.otp)) {
+		/* when configured for WW, firmware does not allow
+		 * channels 12-14 to be configured, remove them here
+		 * to keep mac80211 in synce with FW.
+		 */
+		priv->band_24.n_channels -= NUM_WW_CHANNELS;
+	}
+	else if (mwl_is_etsi_region(&priv->reg.otp) ) {
+		if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
+			//If 440 isn't set in caps fw does not allow
+			//channels 149-165 to be configured.  Remove
+			//them here to keep mac80211 in sync with FW.
+			priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
+		}
+	}
+
+	request_firmware_nowait( THIS_MODULE, true, REG_PWR_DB_NAME, priv->dev, GFP_KERNEL, priv, lrd_cc_cb);
+
+done:
+	return rc;
 }
+
 
 static void remain_on_channel_expire(struct timer_list *t)
 {
@@ -765,6 +1029,133 @@ void ds_routine(struct timer_list *t)
 	}
 }
 
+void lrd_cc_event(struct work_struct *work)
+{
+	struct mwl_priv     *priv = container_of(work,struct mwl_priv, reg.event);
+	struct ieee80211_hw *hw   = priv->hw;
+	struct cc_info info;
+
+	int x      = 2;
+	u32 pn     = 0;
+	u32 result = 0;
+	u8 valid   = 0;
+
+	wiphy_debug(hw->wiphy,"Regulatory Event running...\n");
+
+	mutex_lock(&priv->reg.mutex);
+
+	//Check that validation passed
+	do {
+		if (!lrd_fwcmd_lrd_get_power_table_result(hw, &result, &pn)) {
+			if (!result && pn >= priv->reg.pn) {
+				valid = 1;
+			}
+		}
+
+		if (!valid) {
+			msleep(100);
+			x--;
+		}
+
+	} while (!valid && (pn < priv->reg.pn) && x); 
+
+	if (valid) {
+		//Get current country code and region
+		if (!mwl_fwcmd_get_region_mapping(hw, (struct mwl_region_mapping *)info.alpha2)) {
+			//Validate CC exists in CRDA
+			rtnl_lock();
+
+			wiphy_debug(hw->wiphy,"Checking CRDA for Country Code %c%c.\n", info.alpha2[0], info.alpha2[1]);
+
+			if (check_regdb(info.alpha2) < 0) {
+				wiphy_err(hw->wiphy,"Country Code %x%x does not exist in CRDA database.\n", info.alpha2[0], info.alpha2[1]);
+				valid = 0;
+			}
+			//Get region code
+			else if (mwl_fwcmd_get_fw_region_code(hw, &info.region)) {
+				/* If we fail to retrieve region, default to WW */
+				wiphy_err(hw->wiphy, "failed to retrieve regulatory region.\n");
+				valid = 0;
+			}
+			rtnl_unlock();
+		}
+		else {
+			/* If we fail to retrieve mapping, default to WW */
+			wiphy_err(hw->wiphy,"failed to retrieve region mapping.\n");
+			valid = 0;
+		}
+	}
+	else {
+		wiphy_err(hw->wiphy,"power table entry failed firmware validation%s.\n", priv->reg.regulatory_set?" reverting to OTP":"");
+	}
+
+	if (valid) {
+		wiphy_debug(hw->wiphy,"AWM Country Code %c%c is valid.\n", info.alpha2[0], info.alpha2[1]);
+		if (mwl_is_world_region(&info)) {
+			/* when configured for WW, firmware does not allow
+			 * channels 12-14 to be configured, remove them here
+			 * to keep mac80211 in sync with FW.
+			 */
+			if (priv->band_24.n_channels == ARRAY_SIZE(mwl_channels_24)){
+				priv->band_24.n_channels -= NUM_WW_CHANNELS;
+			}
+		}
+		else {
+			priv->band_24.n_channels = ARRAY_SIZE(mwl_channels_24);;
+			priv->band_50.n_channels = ARRAY_SIZE(mwl_rates_50);
+
+			if (mwl_is_etsi_region(&info) ) {
+				if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
+					//If 440 isn't set in caps fw does not allow
+					//channels 149-165 to be configured.  Remove
+					//them here to keep mac80211 in sync with FW.
+					priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
+				}
+			}
+		}
+
+		//Update driver hint
+		lrd_send_hint_no_lock(priv, &info);
+	}
+	else if (priv->reg.regulatory_set) {
+		/* Reset power table */
+		lrd_fwcmd_lrd_reset_power_table(priv->hw);
+
+		memcpy(&info, &priv->reg.otp, sizeof(info));
+
+		//Update driver hint
+		lrd_send_hint_no_lock(priv, &info);
+	}
+
+	mutex_unlock(&priv->reg.mutex);
+}
+
+void lrd_awm_routine(struct timer_list *t)
+{
+	struct mwl_priv *priv = from_timer(priv, t, reg.timer_awm);
+
+	queue_work(priv->lrd_workq, &priv->reg.awm);
+}
+
+static void lrd_awm_expire(struct work_struct *work)
+{
+	struct mwl_priv  *priv = container_of(work,
+                        struct mwl_priv, reg.awm);
+
+	wiphy_debug(priv->hw->wiphy,"AWM Event running %d...\n", priv->reg.regulatory_set);
+
+	mutex_lock(&priv->reg.mutex);
+
+	if (priv->reg.regulatory_set) {
+		/* Reset power table */
+		lrd_fwcmd_lrd_reset_power_table(priv->hw);
+
+		lrd_send_hint_no_lock(priv, &priv->reg.otp);
+	}
+
+	mutex_unlock(&priv->reg.mutex);
+}
+
 static void mwl_ds_work(struct work_struct *work)
 {
 	struct mwl_priv  *priv = container_of(work,
@@ -812,16 +1203,17 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
 	skb_queue_head_init(&priv->rx_defer_skb_q);
 
-	priv->lrd_workq = alloc_workqueue("lrdwifi_workq",
+	priv->lrd_workq = alloc_workqueue("lrdwifi-workq",
 	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->ds_work, mwl_ds_work);
 	INIT_WORK(&priv->stop_shutdown_work, lrd_stop_shutdown_workq);
+	INIT_WORK(&priv->reg.event, lrd_cc_event);
+	INIT_WORK(&priv->reg.awm, lrd_awm_expire);
 
-	priv->fw_device_pwrtbl  = false;
-	priv->forbidden_setting = false;
-	priv->regulatory_set    = false;
-	priv->disable_2g        = false;
-	priv->disable_5g        = false;
+	priv->forbidden_setting  = false;
+	priv->reg.regulatory_set = false;
+	priv->disable_2g         = false;
+	priv->disable_5g         = false;
 
 	if (!SISO_mode)
 		priv->ant_tx_bmp = if_ops->mwl_chip_tbl.antenna_tx;
@@ -839,7 +1231,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->ps_mode   = 0;
 
 	priv->ap_macids_supported    = 0x0000ffff;
-	priv->sta_macids_supported   = 0x00010000;
+	priv->sta_macids_supported   = ((1UL << SYSADPT_NUM_OF_STA) - 1) << 16;
 	priv->adhoc_macids_supported = 0x00000001;
 	priv->macids_used            = 0;
 
@@ -874,6 +1266,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->cmd_timeout          = false;
 
 	mutex_init(&priv->fwcmd_mutex);
+	mutex_init(&priv->reg.mutex);
 	spin_lock_init(&priv->tx_desc_lock);
 	spin_lock_init(&priv->vif_lock);
 	spin_lock_init(&priv->sta_lock);
@@ -985,27 +1378,10 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			MWL_DRV_NAME);
 	}
 
-	rc = mwl_fwcmd_get_fw_region_code(hw, &priv->fw_region_code);
-	if (!rc) {
-		priv->fw_device_pwrtbl = true;
-		mwl_regd_init(priv);
-
-		if (mwl_is_world_mode(priv)) {
-			/* when configured for WW, firmware does not allow
-			 * channels 12-14 to be configured, remove them here
-			 * to keep mac80211 in synce with FW.
-			 * TODO:  Revisit for Summit Radio */
-			priv->band_24.n_channels -= 3;
-		}
-		else if (mwl_is_etsi_mode(priv) ) {
-			if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
-				//If 440 isn't set in caps fw does not allow
-				//channels 149-165 to be configured.  Remove
-				//them here to keep mac80211 in sync with FW.
-				//TODO:  Revisit for Summit Radio */
-				priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
-			}
-		}
+	/* Initialize regulatory info */
+	if (lrd_regd_init(priv)) {
+		wiphy_err(hw->wiphy, "%s: fail to register regulatory\n", MWL_DRV_NAME);
+		goto err_wl_init;
 	}
 
 	rc = mwl_fwcmd_dump_otp_data(hw);
@@ -1037,7 +1413,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	                                                   priv->radio_caps.capability);
 	wiphy_info(hw->wiphy, "Num mac %d : OTP Version (%d)\n", priv->radio_caps.num_mac, priv->radio_caps.version);
 	wiphy_info(hw->wiphy, "Firmware version: 0x%x\n", priv->hw_data.fw_release_num);
-	wiphy_info(hw->wiphy, "Firmware region code: %x\n", priv->fw_region_code);
+	wiphy_info(hw->wiphy, "Firmware region code: %x\n", priv->reg.otp.region);
 	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
 		   priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
 
@@ -1079,6 +1455,7 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	del_timer_sync(&priv->period_timer);
 	del_timer_sync(&priv->ds_timer);
 	del_timer_sync(&priv->roc.roc_timer);
+	del_timer_sync(&priv->reg.timer_awm);
 
 	ieee80211_unregister_hw(hw);
 
@@ -1100,8 +1477,15 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 
 	mwl_fwcmd_reset(hw);
 
+	//cancel everything running on lrd work queue and destroy it
 	cancel_work_sync(&priv->ds_work);
+	cancel_work_sync(&priv->reg.event);
+	cancel_work_sync(&priv->reg.awm);
 	destroy_workqueue(priv->lrd_workq);
+
+	if (priv->reg.db) {
+		kfree(priv->reg.db);
+	}
 
 #ifdef CONFIG_SYSFS
 	lrd_sysfs_remove(hw);
@@ -1176,7 +1560,7 @@ void mwl_pause_ds(struct mwl_priv* priv)
 }
 EXPORT_SYMBOL_GPL(mwl_pause_ds);
 
-void mwl_disable_ds(struct mwl_priv * priv)
+	void mwl_disable_ds(struct mwl_priv * priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 
@@ -1308,6 +1692,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	timer_setup(&priv->period_timer,  timer_routine, 0);
 	timer_setup(&priv->ds_timer, ds_routine, 0);
 	timer_setup(&priv->stop_shutdown_timer, stop_shutdown_timer_routine, 0);
+	timer_setup(&priv->reg.timer_awm, lrd_awm_routine, 0);
 
 	rc = mwl_fw_dnld_and_init(priv);
 
@@ -1424,10 +1809,14 @@ int mwl_shutdown_sw(struct mwl_priv *priv, bool suspend)
 
 	del_timer_sync(&priv->roc.roc_timer);
 	del_timer_sync(&priv->period_timer);
+	del_timer_sync(&priv->reg.timer_awm);
 	mwl_disable_ds(priv);
+
 	cancel_work_sync(&priv->watchdog_ba_handle);
 	cancel_work_sync(&priv->chnl_switch_handle);
 	cancel_work_sync(&priv->rx_defer_work);
+	cancel_work_sync(&priv->reg.event);
+	cancel_work_sync(&priv->reg.awm);
 	skb_queue_purge(&priv->rx_defer_skb_q);
 
 	/*
@@ -1475,8 +1864,7 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 		priv->if_ops.up_dev(priv);
 
 	// Re-initialize priv members that may have changed since initialization
-	priv->regulatory_set = false;
-	priv->ps_mode  = 0;
+	priv->ps_mode = 0;
 	priv->radio_on = false;
 	priv->radio_short_preamble = false;
 	priv->wmm_enabled = false;
@@ -1548,6 +1936,17 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 	if (rc) {
 		wiphy_err(priv->hw->wiphy, "%s: fail to set HW specifications\n",
 			  MWL_DRV_NAME);
+		goto err_init;
+	}
+
+	/* Initialize regulatory info */
+
+	/*Reset alpha so we send driver hint */
+	memset(priv->reg.cc.alpha2, 0, sizeof(priv->reg.cc.alpha2));
+	priv->reg.regulatory_set = false;
+
+	if (lrd_regd_init(priv)) {
+		wiphy_err(hw->wiphy, "%s: fail to register regulatory\n", MWL_DRV_NAME);
 		goto err_init;
 	}
 

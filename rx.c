@@ -149,6 +149,12 @@ void mwl_handle_rx_event(struct ieee80211_hw *hw,
 	else if (rx_evnt->event_id == MWL_RX_EVENT_LINKLOSS_DETECT) {
 		wiphy_info(hw->wiphy, "link loss detected by firmware\n");
 	}
+	else if (rx_evnt->event_id == MWL_RX_EVENT_REG) {
+		wiphy_info(hw->wiphy, "regulatory event\n");
+
+		cancel_work_sync(&priv->reg.awm);
+		mod_timer(&priv->reg.timer_awm, jiffies + msecs_to_jiffies(1));
+	}
 #ifdef CONFIG_PM
 	else if (rx_evnt->event_id == MWL_RX_EVENT_WOW_LINKLOSS_DETECT ||
 	         rx_evnt->event_id == MWL_RX_EVENT_WOW_AP_DETECT ||

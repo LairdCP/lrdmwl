@@ -68,8 +68,13 @@ struct cmd_header {
 } __packed;
 
 enum lrd_fw_commands{
-	LRD_CMD_CAPS = 1,
+	LRD_CMD_CAPS            = 1,
 	LRD_CMD_ANT_GAIN_ADJUST = 2,
+	LRD_CMD_AWM_INIT,
+	LRD_CMD_PWR_TABLE,
+	LRD_CMD_PWR_TABLE_RESULT,
+	LRD_CMD_PWR_TABLE_RESET,
+	LRD_CMD_CC_INFO,
 };
 
 struct lrd_vndr_header
@@ -297,6 +302,12 @@ int lrd_fwcmd_lrd_write(struct ieee80211_hw *hw, void* data, int len, void** rsp
 
 int lrd_fwcmd_lrd_get_caps(struct ieee80211_hw *hw, struct lrd_radio_caps* caps);
 int lrd_fwcmd_lrd_set_ant_gain_adjust(struct ieee80211_hw *hw, u32 adjust);
+
+int lrd_fwcmd_lrd_set_power_table(struct ieee80211_hw *hw, u16 index, void *data, u32 len);
+int lrd_fwcmd_lrd_get_power_table_result(struct ieee80211_hw *hw, u32 *result, u32 *pn);
+
+int lrd_fwcmd_lrd_reset_power_table(struct ieee80211_hw *hw);
+
 
 #ifdef CONFIG_PM
 int mwl_fwcmd_hostsleep_control(struct ieee80211_hw *hw, bool hs_enable, bool ds_enable, int wakeupCond);

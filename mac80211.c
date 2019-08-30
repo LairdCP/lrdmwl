@@ -318,10 +318,17 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 		}
 	}
 
-	if (conf->flags & IEEE80211_CONF_IDLE)
+	if (conf->flags & IEEE80211_CONF_IDLE) {
 		rc = mwl_fwcmd_radio_disable(hw);
-	else
-		rc = mwl_fwcmd_radio_enable(hw);
+	}
+	else {
+		if (priv->reg.regulatory_set) {
+			rc = mwl_fwcmd_radio_enable(hw);
+		}
+		else {
+			goto out;
+		}
+	}
 
 	if (rc)
 		goto out;

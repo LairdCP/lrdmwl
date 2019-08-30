@@ -54,4 +54,5 @@ static inline int lrd_probe_of_wowlan(struct mwl_priv *priv,
 
 void lrd_radio_recovery(struct mwl_priv *priv);
 
+extern void lrd_cc_event(struct work_struct *work);
 #endif

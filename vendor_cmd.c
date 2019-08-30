@@ -21,6 +21,9 @@
 #include "dev.h"
 #include "fwcmd.h"
 #include "vendor_cmd.h"
+#include "hostcmd.h"
+
+#define PWR_TABLE_ID_OFFSET 36
 
 void mwl_hex_dump(const void *buf, size_t len);
 
@@ -67,7 +70,7 @@ lrd_vendor_cmd_mfg_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 	rc = lrd_fwcmd_mfg_write(hw, (void*)data, data_len);
 
 	//Respond
-	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t));
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(u32));
 
 	if (msg) {
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
@@ -93,7 +96,7 @@ lrd_vendor_cmd_mfg_stop(struct wiphy *wiphy, struct wireless_dev *wdev,
 	rc = lrd_fwcmd_mfg_end(hw);
 
 	//Respond
-	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t));
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(u32));
 
 	if (msg) {
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
@@ -117,7 +120,7 @@ lrd_vendor_cmd_lru_start(struct wiphy *wiphy, struct wireless_dev *wdev,
 	int rc = 0;
 
 	//Respond
-	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t));
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(u32));
 
 	if (msg) {
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
@@ -139,7 +142,7 @@ lrd_vendor_cmd_lru_end(struct wiphy *wiphy, struct wireless_dev *wdev,
 	int rc = 0;
 
 	//Respond
-	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t));
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(u32));
 
 	if (msg) {
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rc);
@@ -170,7 +173,7 @@ lrd_vendor_cmd_lru_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	//Respond
-	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(uint32_t) + (rsp ? rsp->len:0));
+	msg = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, sizeof(u32) + (rsp ? rsp->len:0));
 
 	if (msg) {
 		nla_put_u32(msg, LRD_ATTR_CMD_RSP, rsp ? rsp->result : 0);
@@ -199,12 +202,64 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const void *data, int data_len)
 {
 	struct ieee80211_hw     *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct mwl_priv       *priv = hw->priv;
 	struct sk_buff         *msg = NULL;
 	struct lrd_vndr_header *rsp = NULL;
+	struct lrdcmd_header   *hdr = (struct lrdcmd_header*)data;
 	int                      rc = -ENOSYS;
 
 	//Send
-	rc = lrd_fwcmd_lrd_write(hw, (void*)data, data_len, (void*)&rsp);
+	if (NULL == hdr || data_len < sizeof(struct lrdcmd_header)) {
+		rc = -EINVAL;
+		goto fail;
+	}
+
+	if (hdr->lrd_cmd == cpu_to_le16(LRD_CMD_PWR_TABLE)) {
+		//Restart timers
+		mod_timer(&priv->reg.timer_awm, jiffies + msecs_to_jiffies(CC_AWM_TIMER));
+		cancel_work_sync(&priv->reg.awm);
+		cancel_work_sync(&priv->reg.event);
+
+		//Send
+		rc = lrd_fwcmd_lrd_write(hw, (void*)data, data_len, (void*)&rsp);
+
+		//Queue event work
+		if (!rc && !rsp->result) {
+
+			mutex_lock(&priv->reg.mutex);
+			priv->reg.pn =  le32_to_cpu(*(u32*)(((u8*)data) + sizeof(*hdr) + PWR_TABLE_ID_OFFSET));
+			mutex_unlock(&priv->reg.mutex);
+
+			queue_work(priv->lrd_workq, &priv->reg.event);
+		}
+	}
+	else if (hdr->lrd_cmd == cpu_to_le16(LRD_CMD_CC_INFO)) {
+		rsp = kzalloc(sizeof(struct lrdcmd_cmd_cc_info) + sizeof(struct lrd_vndr_header), GFP_KERNEL);
+
+		if (rsp) {
+			struct lrdcmd_cmd_cc_info *cc;
+			rsp->command = HOSTCMD_LRD_CMD;
+			rsp->result  = 0;
+			rsp->len     = sizeof(struct lrdcmd_cmd_cc_info) + sizeof(struct lrd_vndr_header);
+
+			cc = (struct lrdcmd_cmd_cc_info*)(((u8*)rsp) + sizeof(struct lrd_vndr_header));
+			cc->hdr.lrd_cmd = LRD_CMD_CC_INFO;
+			cc->hdr.result  = 0;
+
+			cc->region = priv->reg.otp.region;
+			memcpy(cc->alpha2, priv->reg.otp.alpha2, sizeof(cc->alpha2));
+
+			rc = 0;
+		}
+		else {
+			wiphy_err(hw->wiphy, "lrd_cmd_cc_info failed allocation response %d\n", sizeof(struct cc_info));
+			rc = -ENOMEM;
+		}
+	}
+	else {
+		//Send
+		rc = lrd_fwcmd_lrd_write(hw, (void*)data, data_len, (void*)&rsp);
+	}
 
 	if (rc < 0 ) {
 		goto fail;

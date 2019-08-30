@@ -1229,6 +1229,28 @@ struct lrdcmd_cmd_ant_gain_adjust
 	__le32 ant_gain_adjust;
 }__packed;
 
+struct lrdcmd_cmd_pwr_table
+{
+	struct lrdcmd_header hdr;
+	__le16               len;
+	struct ieee80211_hdr frm;
+	u8 data[0];
+}__packed;
+
+struct lrdcmd_cmd_pwr_table_result
+{
+	struct lrdcmd_header hdr;
+	__le32 result;
+	__le32 pn;
+}__packed;
+
+struct lrdcmd_cmd_cc_info
+{
+	struct lrdcmd_header hdr;
+	u32    region;
+	u8     alpha2[2];
+} __packed;
+
 struct hostcmd_cmd_deepsleep {
 	struct hostcmd_header cmd_hdr;
 	u8 enableFlag;

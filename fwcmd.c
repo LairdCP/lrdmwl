@@ -175,7 +175,6 @@ EXPORT_SYMBOL_GPL(mwl_hex_dump);
 /*Note:  When calling this function, it is expected that the fwcmd_mutex is already held */
 static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 {
-	bool busy = false;
 	int rc = -EIO;
 	struct hostcmd_header *presp;
 	struct hostcmd_header *pcmd;
@@ -2176,14 +2175,14 @@ int mwl_fwcmd_set_radar_detect(struct ieee80211_hw *hw, u16 action)
 	pcmd = (struct hostcmd_cmd_802_11h_detect_radar *)&priv->pcmd_buf[
 			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
-	if (priv->dfs_region == NL80211_DFS_JP) {
+	if (priv->reg.dfs_region == NL80211_DFS_JP) {
 		if (channel >= 52 && channel <= 64)
 			radar_type = RADAR_TYPE_CODE_53;
 		else if (channel >= 100 && channel <= 140)
 			radar_type = RADAR_TYPE_CODE_56;
 		else
 			radar_type = RADAR_TYPE_CODE_0;
-	} else if (priv->dfs_region == NL80211_DFS_ETSI) {
+	} else if (priv->reg.dfs_region == NL80211_DFS_ETSI) {
 		radar_type = RADAR_TYPE_CODE_ETSI;
 	}
 
@@ -3624,7 +3623,7 @@ int mwl_fwcmd_get_fw_region_code(struct ieee80211_hw *hw,
 
 	mutex_unlock(&priv->fwcmd_mutex);
 
-	return 0;
+	return status;
 }
 
 int mwl_fwcmd_get_device_pwr_tbl(struct ieee80211_hw *hw,
@@ -4244,6 +4243,122 @@ int lrd_fwcmd_lrd_set_ant_gain_adjust(struct ieee80211_hw *hw, u32 adjust)
 	return 0;
 }
 
+int lrd_fwcmd_lrd_reset_power_table(struct ieee80211_hw *hw)
+{
+	struct hostcmd_header *pcmd;
+	struct mwl_priv       *priv = hw->priv;
+	struct lrdcmd_header  *pwr_cmd;
+
+
+	pcmd = (struct hostcmd_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(*pwr_cmd));
+
+	pcmd->cmd = cpu_to_le16(HOSTCMD_LRD_CMD);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + sizeof(*pwr_cmd));
+
+	//Fill in pwr struct
+	pwr_cmd = (struct lrdcmd_header*) (((u8*)pcmd) + sizeof(struct hostcmd_header));
+	pwr_cmd->lrd_cmd = cpu_to_le16(LRD_CMD_PWR_TABLE_RESET);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD) ||
+		pcmd->result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_reset_pwr_table failed execution %x\n", le16_to_cpu(pcmd->result));
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
+
+int lrd_fwcmd_lrd_set_power_table(struct ieee80211_hw *hw, u16 index, void *data, u32 data_len)
+{
+	struct hostcmd_header *pcmd;
+	struct lrdcmd_cmd_pwr_table *pwr_cmd;
+	struct mwl_priv       *priv = hw->priv;
+	u8 a1[] = {0xC0,0xEE,0x40,0x40,0x02,0x30};
+	u8 a2[] = {0xC0,0xEE,0x40,0x42,0x7F,0x6C};
+
+	if (NULL == data || data_len < 24 ||
+	    data_len >= (CMD_BUF_SIZE - INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)) ) {
+		wiphy_err(hw->wiphy, "Invalid power table (0x%x)!!\n", data_len);
+		return -EINVAL;
+	}
+
+	pcmd = (struct hostcmd_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(*pwr_cmd) + data_len);
+
+	pcmd->cmd = cpu_to_le16(HOSTCMD_LRD_CMD);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + sizeof(*pwr_cmd) + data_len);
+
+	//Fill in pwr struct
+	pwr_cmd = (struct lrdcmd_cmd_pwr_table*) (((u8*)pcmd) + sizeof(struct hostcmd_header));
+	pwr_cmd->hdr.lrd_cmd = cpu_to_le16(LRD_CMD_PWR_TABLE);
+	pwr_cmd->len = cpu_to_le16(data_len + sizeof(struct lrdcmd_cmd_pwr_table) - offsetof(struct lrdcmd_cmd_pwr_table, len));
+
+	//Add header
+	pwr_cmd->frm.frame_control = cpu_to_le16(0x4208);
+	pwr_cmd->frm.duration_id   = cpu_to_le16(44);
+	pwr_cmd->frm.seq_ctrl      = cpu_to_le16(index << 4);
+	memcpy(pwr_cmd->frm.addr1, a1, sizeof(pwr_cmd->frm.addr1));
+	memcpy(pwr_cmd->frm.addr2, a2, sizeof(pwr_cmd->frm.addr2));
+	memcpy(pwr_cmd->frm.addr3, a2, sizeof(pwr_cmd->frm.addr3));
+
+	// It is expected caller has dealt with any endian issues in data.
+	memcpy(pwr_cmd->data, data, data_len);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD) ||
+		pcmd->result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_set_pwr_table failed execution %x\n", le16_to_cpu(pcmd->result));
+		return -EIO;
+	}
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
+
+int lrd_fwcmd_lrd_get_power_table_result(struct ieee80211_hw *hw, u32 *result, u32 *pn)
+{
+	struct hostcmd_header *pcmd;
+	struct lrdcmd_cmd_pwr_table_result *pwr_result;
+	struct mwl_priv       *priv = hw->priv;
+
+	pcmd = (struct hostcmd_header*)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	mutex_lock(&priv->fwcmd_mutex);
+
+	memset(pcmd, 0x00, sizeof(*pcmd) + sizeof(*pwr_result));
+
+	pcmd->cmd = cpu_to_le16(HOSTCMD_LRD_CMD);
+	pcmd->len = cpu_to_le16(sizeof(*pcmd) + sizeof(*pwr_result));
+
+	//Fill in pwr struct
+	pwr_result = (struct lrdcmd_cmd_pwr_table_result*) (((u8*)pcmd) + sizeof(struct hostcmd_header));
+	pwr_result->hdr.lrd_cmd = cpu_to_le16(LRD_CMD_PWR_TABLE_RESULT);
+
+	if (mwl_fwcmd_exec_cmd(priv, HOSTCMD_LRD_CMD) ||
+		pcmd->result != cpu_to_le16(HOSTCMD_RESULT_OK)) {
+		mutex_unlock(&priv->fwcmd_mutex);
+		wiphy_err(hw->wiphy, "lrd_fwcmd_lrd_set_pwr_table failed execution %x\n", le16_to_cpu(pcmd->result));
+		return -EIO;
+	}
+
+	*result = le32_to_cpu(pwr_result->result);
+	*pn     = le32_to_cpu(pwr_result->pn);
+
+	mutex_unlock(&priv->fwcmd_mutex);
+	return 0;
+}
 
 int mwl_fwcmd_set_monitor_mode(struct ieee80211_hw *hw, bool enable)
 {
