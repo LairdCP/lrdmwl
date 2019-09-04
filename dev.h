@@ -585,10 +585,7 @@ struct mwl_priv {
 	bool shutdown;
 
 	struct timer_list ds_timer;
-	bool ds_state;
 	u8   ds_enable;
-	bool ps_state;
-	struct mutex ps_mutex;
 	u16 ps_mode;
 
 #ifdef CONFIG_PM
@@ -696,7 +693,7 @@ struct mwl_priv {
 
 	struct workqueue_struct *rx_defer_workq;
 	struct work_struct rx_defer_work;
-	struct workqueue_struct *ds_workq;
+	struct workqueue_struct *lrd_workq;
 	struct work_struct ds_work;
 	struct sk_buff_head rx_defer_skb_q;
 	bool is_rx_defer_schedule;

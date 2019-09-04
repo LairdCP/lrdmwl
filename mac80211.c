@@ -1111,6 +1111,7 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 					struct cfg80211_wowlan *wowlan)
 {
 	struct mwl_priv *priv = hw->priv;
+	struct ieee80211_conf *conf = &hw->conf;
 	int i  = 0;
 	int rc = 0;
 
@@ -1151,10 +1152,9 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 		}
 
 		if (priv->wow.state & WOWLAN_STATE_ENABLED) {
-			bool ds_status = priv->ds_state != 0;
 
 			wiphy_info(hw->wiphy, "Enabling WOW for conditions 0x%x, 0x%x ch=0x%d\n",
-				priv->wow.wowlanCond, ds_status, hw->conf.chandef.chan->hw_value);
+				priv->wow.wowlanCond, conf->flags & IEEE80211_CONF_IDLE, hw->conf.chandef.chan->hw_value);
 
 			/* Configure AP detect settings */
 			if (priv->wow.wowlanCond & MWL_WOW_CND_AP_INRANGE) {
@@ -1167,16 +1167,15 @@ int mwl_mac80211_suspend(struct ieee80211_hw *hw,
 			/* Enable the Host Sleep */
 			priv->wow.state &= ~(WOWLAN_STATE_HS_SENT);
 
-			rc = mwl_fwcmd_hostsleep_control(priv->hw, true, ds_status, priv->wow.wowlanCond);
+			//Disable DS timer
+			mwl_delete_ds_timer(priv);
+
+			rc = mwl_fwcmd_hostsleep_control(priv->hw, true, conf->flags & IEEE80211_CONF_IDLE, priv->wow.wowlanCond);
 			if (!rc) {
 				priv->wow.state |= WOWLAN_STATE_HS_SENT;
-
-				if (ds_status == DS_SLEEP) {
-					mwl_delete_ds_timer(priv);
-					priv->if_ops.enter_deepsleep(priv);
-				}
-
-				priv->ds_state = ds_status;
+			}
+			else {
+				mwl_restart_ds_timer(priv, false);
 			}
 		}
 	}

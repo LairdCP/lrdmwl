@@ -1087,13 +1087,12 @@ static char *mwl_sdio_event_strn(u16 event_id)
 	return "unknown";
 }
 
+/*Note:  When calling this function, it is expected that the fwcmd_mutex is already held */
 int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 {
 	int status;
 	struct mwl_sdio_card *card = priv->intf;
 	u8 cr;
-
-	mutex_lock(&priv->ps_mutex);
 
 	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
 		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
@@ -1101,7 +1100,6 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 	wiphy_dbg(priv->hw->wiphy,"Initiate Card wakeup\n");
 
 	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x2))) {
-		mutex_unlock(&priv->ps_mutex);
 		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
 		return -EIO;
 	}
@@ -1110,22 +1108,19 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 		wiphy_err(priv->hw->wiphy, "read CFG reg failed\n");
 
 	status = wait_event_timeout(card->wait_deepsleep,(
-					card->is_deepsleep == 0) && (priv->ps_state == PS_AWAKE), 12 * HZ);
+					card->is_deepsleep == 0), 12 * HZ);
 	if(status <= 0) {
 		wiphy_err(priv->hw->wiphy, "info: Card Wakeup failed\n");
-		mutex_unlock(&priv->ps_mutex);
 		return -EIO;
 	}
-
-	priv->ds_state = DS_AWAKE;
 
 	mwl_restart_ds_timer(priv, false);
 
 	wiphy_dbg(priv->hw->wiphy, "info: Card Wakeup complete\n");
-	mutex_unlock(&priv->ps_mutex);
 	return 0;
 }
 
+/*Note: The thread that triggered the wakeup request is holding the fwcmd_mutex */
 void mwl_sdio_wakeup_complete(struct work_struct *work)
 {
 	struct mwl_sdio_card *card = container_of(work,
@@ -1136,7 +1131,6 @@ void mwl_sdio_wakeup_complete(struct work_struct *work)
 		wiphy_err(priv->hw->wiphy, "write CFG reg failed\n");
 
 	card->is_deepsleep = 0;
-	priv->ps_state = PS_AWAKE;
 	wake_up(&card->wait_deepsleep);
 }
 
@@ -1147,9 +1141,11 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	struct mwl_priv *priv = card->priv;
 	int num,ret;
 
-	if (priv->recovery_in_progress)
+	if (priv->recovery_in_progress) {
 		return;
+	}
 
+	// Grab fwcmd mutex here so we can be sure nobody else changes the devices sleep state
 	if(!mutex_trylock(&priv->fwcmd_mutex))
 	{
 		return;
@@ -1157,16 +1153,12 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 
 	wiphy_dbg(priv->hw->wiphy,"In ps sleep enter:\n");
 
-	mutex_lock(&priv->ps_mutex);
-
 	//check if tx empty,if not do not enter PS
 	for (num = SYSADPT_TX_WMM_QUEUES - 1; num >= 0; num--) {
 		if (skb_queue_len(&priv->txq[num]) > 0)
 		{
 			wiphy_dbg(priv->hw->wiphy, "Sleep fail due to tx not empty %d\n",skb_queue_len(&priv->txq[num]));
-			mutex_unlock(&priv->ps_mutex);
-			mutex_unlock(&priv->fwcmd_mutex);
-			return;
+			goto done;
 		}
 	}
 
@@ -1174,25 +1166,20 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	if (skb_queue_len(&card->rx_data_q) > 0)
 	{
 		wiphy_dbg(priv->hw->wiphy, "Sleep fail due to rx not empty\n");
-		mutex_unlock(&priv->ps_mutex);
-		mutex_unlock(&priv->fwcmd_mutex);
-		return;
+		goto done;
 	}
 
 	//check if cmd is sent
 	if (priv->in_send_cmd == true)
 	{
 		wiphy_dbg(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
-		mutex_unlock(&priv->ps_mutex);
-		mutex_unlock(&priv->fwcmd_mutex);
-		return;
+		goto done;
 	}
 
 	ret = mwl_fwcmd_confirm_ps(priv->hw);
-	if(ret ==0)
-		priv->ps_state=PS_SLEEP;
 
-	mutex_unlock(&priv->ps_mutex);
+done:
+	mutex_unlock(&priv->fwcmd_mutex);
 }
 
 static int mwl_sdio_event(struct mwl_priv *priv)
@@ -2253,8 +2240,12 @@ static void mwl_sdio_tx_workq(struct work_struct *work)
 
 	/* We wakeup here instead of mwl_mac80211_tx since this call runs in atomic context
 		and tx needs sdio write call which is blocking call */
-	if(priv->ds_state == DS_SLEEP || priv->ps_state == PS_SLEEP )
+	mutex_lock(&priv->fwcmd_mutex);
+	if (priv->if_ops.is_deepsleep(priv)) {
 		priv->if_ops.wakeup_card(priv);
+	}
+	mutex_unlock(&priv->fwcmd_mutex);
+
 
 	mwl_tx_skbs((unsigned long)hw);
 	mwl_sdio_flush_amsdu_no_lock((unsigned long)hw);
@@ -2632,9 +2623,9 @@ mwl_sdio_unregister_dev(struct mwl_priv *priv)
 	kfree(priv->pcmd_event_buf); priv->pcmd_event_buf = NULL;
 }
 
+/*Note:  When calling this function, it is expected that the fwcmd_mutex is already held */
 static void mwl_sdio_enter_deepsleep(struct mwl_priv * priv)
 {
-
 	struct mwl_sdio_card *card = priv->intf;
 	card->is_deepsleep = 1;
 }
@@ -2643,7 +2634,7 @@ static int mwl_sdio_is_deepsleep(struct mwl_priv * priv)
 {
 
 	struct mwl_sdio_card *card = priv->intf;
-	return card->is_deepsleep ;
+	return card->is_deepsleep;
 }
 
 static void mwl_sdio_up_dev(struct mwl_priv *priv)

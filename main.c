@@ -761,12 +761,11 @@ void ds_routine(struct timer_list *t)
 	}
 
 	if (conf->flags & IEEE80211_CONF_IDLE) {
-		priv->ds_state = DS_SLEEP;
-		queue_work(priv->ds_workq, &priv->ds_work);
+		queue_work(priv->lrd_workq, &priv->ds_work);
 	}
 }
 
-static void mwl_ds_workq(struct work_struct *work)
+static void mwl_ds_work(struct work_struct *work)
 {
 	struct mwl_priv  *priv = container_of(work,
                         struct mwl_priv, ds_work);
@@ -776,14 +775,13 @@ static void mwl_ds_workq(struct work_struct *work)
 	}
 
 	mwl_fwcmd_enter_deepsleep(priv->hw);
-	priv->if_ops.enter_deepsleep(priv);
 }
 
 void stop_shutdown_timer_routine(struct timer_list *t)
 {
 	struct mwl_priv *priv = from_timer(priv, t, stop_shutdown_timer);
 
-	queue_work(priv->ds_workq, &priv->stop_shutdown_work);
+	queue_work(priv->lrd_workq, &priv->stop_shutdown_work);
 }
 
 static void cancel_stop_shutdown_timer(struct mwl_priv  *priv)
@@ -814,9 +812,9 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	INIT_WORK(&priv->rx_defer_work, mwl_rx_defered_handler);
 	skb_queue_head_init(&priv->rx_defer_skb_q);
 
-	priv->ds_workq = alloc_workqueue("lrdwifi-ds_workq",
+	priv->lrd_workq = alloc_workqueue("lrdwifi_workq",
 	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
-	INIT_WORK(&priv->ds_work, mwl_ds_workq);
+	INIT_WORK(&priv->ds_work, mwl_ds_work);
 	INIT_WORK(&priv->stop_shutdown_work, lrd_stop_shutdown_workq);
 
 	priv->fw_device_pwrtbl  = false;
@@ -837,10 +835,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 		priv->ant_rx_bmp = SISO_mode & MWL_8997_DEF_RX_ANT_BMP;
 	priv->ant_rx_num = MWL_RXANT_BMP_TO_NUM(priv->ant_rx_bmp);
 
-	priv->ps_state  = PS_AWAKE;
-	priv->ds_state  = DS_AWAKE;
-	priv->ds_enable = priv->host_if == MWL_IF_SDIO ?
-		ds_enable : DS_ENABLE_OFF;
+	priv->ds_enable = priv->host_if == MWL_IF_SDIO ? ds_enable : DS_ENABLE_OFF;
 	priv->ps_mode   = 0;
 
 	priv->ap_macids_supported    = 0x0000ffff;
@@ -879,7 +874,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->cmd_timeout          = false;
 
 	mutex_init(&priv->fwcmd_mutex);
-	mutex_init(&priv->ps_mutex);
 	spin_lock_init(&priv->tx_desc_lock);
 	spin_lock_init(&priv->vif_lock);
 	spin_lock_init(&priv->sta_lock);
@@ -1062,7 +1056,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	return rc;
 
 err_wl_init:
-	destroy_workqueue(priv->ds_workq);
+	destroy_workqueue(priv->lrd_workq);
 	destroy_workqueue(priv->rx_defer_workq);
 
 	return rc;
@@ -1107,7 +1101,7 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 	mwl_fwcmd_reset(hw);
 
 	cancel_work_sync(&priv->ds_work);
-	destroy_workqueue(priv->ds_workq);
+	destroy_workqueue(priv->lrd_workq);
 
 #ifdef CONFIG_SYSFS
 	lrd_sysfs_remove(hw);
@@ -1133,6 +1127,9 @@ EXPORT_SYMBOL_GPL(mwl_restart_ds_timer);
 void mwl_delete_ds_timer(struct mwl_priv *priv)
 {
 	del_timer_sync(&priv->ds_timer);
+
+	//Make sure no work item outstanding
+	cancel_work_sync(&priv->ds_work);
 }
 EXPORT_SYMBOL_GPL(mwl_delete_ds_timer);
 
@@ -1162,34 +1159,42 @@ EXPORT_SYMBOL_GPL(mwl_resume_ds);
 
 void mwl_pause_ds(struct mwl_priv* priv)
 {
+	struct ieee80211_hw *hw = priv->hw;
+
 	if(priv->ds_enable != DS_ENABLE_ON) {
 		return;
 	}
 
+	priv->ds_enable = DS_ENABLE_PAUSE;
+
 	mwl_delete_ds_timer(priv);
 
-	if(priv->ds_state == DS_SLEEP) {
-		priv->if_ops.wakeup_card(priv);
-	}
+	//Make sure card is awake when this function returns
+	mwl_fwcmd_exit_deepsleep(hw);
 
-	priv->ds_enable =  DS_ENABLE_PAUSE;
 	wiphy_info(priv->hw->wiphy, "Paused DS\n");
 }
 EXPORT_SYMBOL_GPL(mwl_pause_ds);
 
 void mwl_disable_ds(struct mwl_priv * priv)
 {
+	struct ieee80211_hw *hw = priv->hw;
+
 	if(priv->ds_enable == DS_ENABLE_OFF) {
 		return;
 	}
 
+	priv->ds_enable = DS_ENABLE_OFF;
+
+	//Kill timer
 	mwl_delete_ds_timer(priv);
 
-	// Don't try to access the radio while asleep or non-responsive
-	if((priv->ds_state == DS_SLEEP) && (!priv->recovery_in_progress))
-		priv->if_ops.wakeup_card(priv);
+	// Don't try to access the radio while non-responsive
+	if (!priv->recovery_in_progress) {
+		//Make sure card is awake when this function returns
+		mwl_fwcmd_exit_deepsleep(hw);
+	}
 
-	priv->ds_enable = DS_ENABLE_OFF;
 	wiphy_info(priv->hw->wiphy, "Disabled DS\n");
 }
 
@@ -1424,7 +1429,6 @@ int mwl_shutdown_sw(struct mwl_priv *priv, bool suspend)
 	cancel_work_sync(&priv->chnl_switch_handle);
 	cancel_work_sync(&priv->rx_defer_work);
 	skb_queue_purge(&priv->rx_defer_skb_q);
-	cancel_work_sync(&priv->ds_work);
 
 	/*
 	 * Existing interfaces and stations are re-added by ieee80211_reconfig
@@ -1472,15 +1476,12 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 
 	// Re-initialize priv members that may have changed since initialization
 	priv->regulatory_set = false;
-	priv->ps_state=PS_AWAKE;
-	priv->ps_mode = 0;
-	priv->ds_state = DS_AWAKE;
+	priv->ps_mode  = 0;
 	priv->radio_on = false;
 	priv->radio_short_preamble = false;
 	priv->wmm_enabled = false;
 	priv->csa_active = false;
-	priv->ds_enable = priv->host_if == MWL_IF_SDIO ?
-		ds_enable : DS_ENABLE_OFF;
+	priv->ds_enable = priv->host_if == MWL_IF_SDIO ? ds_enable : DS_ENABLE_OFF;
 	priv->is_tx_done_schedule = false;
 	priv->qe_trigger_num = 0;
 	priv->qe_trigger_time = jiffies;
