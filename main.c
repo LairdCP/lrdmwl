@@ -360,7 +360,6 @@ static void mwl_set_ht_caps(struct mwl_priv *priv,
 
 	if ((priv->chip_type == MWL8997) &&
 		(priv->ant_tx_num > 1)){
-		band->ht_cap.cap |= IEEE80211_HT_CAP_TX_STBC;
 		band->ht_cap.cap |= (1 << IEEE80211_HT_CAP_RX_STBC_SHIFT);
 	}
 
@@ -400,11 +399,6 @@ static void mwl_set_vht_caps(struct mwl_priv *priv,
 	band->vht_cap.cap |= IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_MASK;
 	band->vht_cap.cap |= IEEE80211_VHT_CAP_RX_ANTENNA_PATTERN;
 	band->vht_cap.cap |= IEEE80211_VHT_CAP_TX_ANTENNA_PATTERN;
-
-	if (priv->chip_type == MWL8997) {
-		if (priv->ant_tx_num > 1)
-			band->vht_cap.cap |= IEEE80211_VHT_CAP_TXSTBC;
-	}
 
 	if (priv->chip_type == MWL8964) {
 		band->vht_cap.cap |= IEEE80211_VHT_CAP_SHORT_GI_160;
