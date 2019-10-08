@@ -83,7 +83,7 @@ static const struct of_device_id mwl_pcie_of_match_table[] = {
 
 static int mwl_pcie_probe_of(struct device *dev)
 {
-	if (!of_match_node(mwl_pcie_of_match_table, dev->of_node)) {
+	if (!of_match_node(mwl_pcie_of_match_table, dev_of_node(dev))) {
 		dev_err(dev, "required compatible string missing\n");
 		return -EINVAL;
 	}
@@ -2298,13 +2298,13 @@ static int mwl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		sizeof(struct mwl_chip_info));
 
 	/* device tree node parsing and platform specific configuration*/
-	if (pdev->dev.of_node) {
+	if (dev_of_node(&pdev->dev)) {
 		rc = mwl_pcie_probe_of(&pdev->dev);
 		if (rc)
 			goto err_add_card;
 	}
 
-	rc = mwl_add_card(card, &pcie_ops, pdev->dev.of_node);
+	rc = mwl_add_card(card, &pcie_ops, dev_of_node(&pdev->dev));
 	if (rc) {
 		pr_err("%s: add card failed", MWL_DRV_NAME);
 		goto err_add_card;

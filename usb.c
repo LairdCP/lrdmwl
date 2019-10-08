@@ -204,9 +204,9 @@ static int mwl_usb_probe(struct usb_interface *intf,
 	card->reset_pwd_gpio = reset_pwd_gpio;
 
 	/* device tree node parsing and platform specific configuration */
-	if (intf->dev.of_node) {
-		if (of_match_node(mwl_usb_of_match_table, intf->dev.of_node)) {
-			of_node = intf->dev.of_node;
+	if (dev_of_node(&intf->dev)) {
+		if (of_match_node(mwl_usb_of_match_table, dev_of_node(&intf->dev))) {
+			of_node = dev_of_node(&intf->dev);
 
 			// Override gpio reset with value provided in devicetree if it exists
 			gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
