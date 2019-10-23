@@ -555,7 +555,6 @@ struct mwl_priv {
 	unsigned short *pcmd_buf;          /* pointer to CmdBuf (virtual)  */
 	dma_addr_t pphys_cmd_buf;          /* pointer to CmdBuf (physical) */
 	unsigned short *pcmd_event_buf;    /* pointer to EvtBuf (virtual)  */
-	bool in_send_cmd;
 	u8 cmd_seq_num;                    /* CMD Seq Number */
 	bool cmd_timeout;
 	int irq;

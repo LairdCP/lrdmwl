@@ -596,6 +596,8 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	// Re-initialization needed in case of restart
 	card->is_deepsleep = 0;
 
+	card->dnld_cmd_failure = 0;
+
 	return 0;
 }
 
@@ -650,7 +652,6 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 			(12 * HZ));
 		if (status <= 0) {
 			wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
-			priv->in_send_cmd = false;
 			priv->cmd_timeout = true;
 			return -1;
 		} else {
@@ -675,6 +676,20 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 
 	rc = mwl_write_data_to_card(priv, (u8 *)&priv->pcmd_buf[0],
 		pkt_len, (card->ioport + port));
+
+	if (rc < 0) {
+		//If command fails to write, reset the int status so next command can be processed.
+		card->int_status |= DN_LD_CMD_PORT_HOST_INT_STATUS;
+
+		card->dnld_cmd_failure++;
+		if (card->dnld_cmd_failure > MAX_DNLD_CMD_FAILURES) {
+			wiphy_err(priv->hw->wiphy, "CMD_DNLD threshold failure\n");
+			priv->cmd_timeout = true;
+		}
+	}
+	else  {
+		card->dnld_cmd_failure = 0;
+	}
 
 	return rc;
 }
@@ -733,14 +748,10 @@ mwl_write_data_sync(struct mwl_priv *priv,
 {
 	struct mwl_sdio_card *card = priv->intf;
 	int ret;
-	u8 blk_mode =
-		(port & MWL_SDIO_BYTE_MODE_MASK) ? BYTE_MODE : BLOCK_MODE;
+	u8 blk_mode  = (port & MWL_SDIO_BYTE_MODE_MASK) ? BYTE_MODE : BLOCK_MODE;
 	u32 blk_size = (blk_mode == BLOCK_MODE) ? MWL_SDIO_BLOCK_SIZE : 1;
-	u32 blk_cnt =
-		(blk_mode ==
-		 BLOCK_MODE) ? (pkt_len /
-				MWL_SDIO_BLOCK_SIZE) : pkt_len;
-	u32 ioport = (port & MWL_SDIO_IO_PORT_MASK);
+	u32 blk_cnt  = (blk_mode == BLOCK_MODE) ? (pkt_len / MWL_SDIO_BLOCK_SIZE) : pkt_len;
+	u32 ioport   = (port & MWL_SDIO_IO_PORT_MASK);
 
 	if (card->is_suspended && !priv->recovery_in_progress) {
 		wiphy_err(priv->hw->wiphy,
@@ -1166,13 +1177,6 @@ void mwl_sdio_enter_ps_sleep(struct work_struct *work)
 	if (skb_queue_len(&card->rx_data_q) > 0)
 	{
 		wiphy_dbg(priv->hw->wiphy, "Sleep fail due to rx not empty\n");
-		goto done;
-	}
-
-	//check if cmd is sent
-	if (priv->in_send_cmd == true)
-	{
-		wiphy_dbg(priv->hw->wiphy,"Sleep fail due to cmd not empty\n");
 		goto done;
 	}
 
@@ -2895,7 +2899,6 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 
 			card->expect_recovery = false;
 		}
-
 		card->is_suspended = false;
 		break;
 

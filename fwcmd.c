@@ -193,7 +193,6 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 
 	if (!mwl_fwcmd_chk_adapter(priv)) {
 		wiphy_err(priv->hw->wiphy, "adapter does not exist\n");
-		priv->in_send_cmd = false;
 		return -EIO;
 	}
 
@@ -206,73 +205,60 @@ static int mwl_fwcmd_exec_cmd(struct mwl_priv *priv, unsigned short cmd)
 		return -EIO;
 	}
 
-	if (!priv->in_send_cmd) {
-		pcmd = (struct hostcmd_header *)&priv->pcmd_buf[
-			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+	pcmd = (struct hostcmd_header *)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
 
-		priv->cmd_seq_num++;
-		pcmd->seq_num = priv->cmd_seq_num;
+	priv->cmd_seq_num++;
+	pcmd->seq_num = priv->cmd_seq_num;
 
-		priv->in_send_cmd = true;
-
-		if (lrd_debug) {
-			wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
-				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
-			mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
-		}
-
-		rc = mwl_fwcmd_send_cmd(priv);
-		if (rc != 0) {
-
-			if(priv->cmd_timeout) {
-				wiphy_err(priv->hw->wiphy, "DNLD_CMD (# %02x)=> (%04xh, %s) timeout\n",
-					pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
-
-				mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
-				// Fatal error, initiate firmware recovery
-				lrd_radio_recovery(priv);
-			}
-
-			return rc;
-		}
-
-		if (priv->if_ops.cmd_resp_wait_completed) {
-			rc = priv->if_ops.cmd_resp_wait_completed(priv,
-				HOSTCMD_RESP_BIT | cmd);
-		}
-
-		if (rc != 0) {
-			wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
-				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
-
-			mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
-
-			priv->in_send_cmd = false;
-			if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
-				priv->cmd_timeout = true;
-
-				// Fatal error, initiate firmware recovery
-				lrd_radio_recovery(priv);
-			}
-			return -EIO;
-		}
-		presp = (struct hostcmd_header *)&priv->pcmd_buf[
-			INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
-
-		if (lrd_debug) {
-			wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
-				presp->seq_num, le16_to_cpu(presp->cmd));
-				mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
-		}
-
-	} else {
-		wiphy_warn(priv->hw->wiphy,
-			   "previous command is still running\n");
-		busy = true;
+	if (lrd_debug) {
+		wiphy_debug(priv->hw->wiphy, "DNLD_CMD(# %02x)=> (%04xh, %s)\n",
+			pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+		mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
 	}
 
-	if (!busy)
-		priv->in_send_cmd = false;
+	rc = mwl_fwcmd_send_cmd(priv);
+	if (rc != 0) {
+
+		if(priv->cmd_timeout) {
+			wiphy_err(priv->hw->wiphy, "DNLD_CMD (# %02x)=> (%04xh, %s) timeout\n",
+				pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+
+			mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
+			// Fatal error, initiate firmware recovery
+			lrd_radio_recovery(priv);
+		}
+
+		return rc;
+	}
+
+	if (priv->if_ops.cmd_resp_wait_completed) {
+		rc = priv->if_ops.cmd_resp_wait_completed(priv,
+			HOSTCMD_RESP_BIT | cmd);
+	}
+
+	if (rc != 0) {
+		wiphy_err(priv->hw->wiphy, "CMD_RESP (# %02x)=> (%04xh, %s) timeout\n",
+			pcmd->seq_num, cmd, mwl_fwcmd_get_cmd_string(cmd));
+
+		mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
+
+		if (cmd != HOSTCMD_CMD_GET_HW_SPEC) {
+			priv->cmd_timeout = true;
+
+			// Fatal error, initiate firmware recovery
+			lrd_radio_recovery(priv);
+		}
+		return -EIO;
+	}
+	presp = (struct hostcmd_header *)&priv->pcmd_buf[
+		INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)];
+
+	if (lrd_debug) {
+		wiphy_debug(priv->hw->wiphy, " CMD_RESP(# %02x)=> (%04xh)\n",
+			presp->seq_num, le16_to_cpu(presp->cmd));
+			mwl_hex_dump((char*)pcmd, le16_to_cpu(pcmd->len));
+	}
 
 	if(cmd != HOSTCMD_CMD_DEEPSLEEP) {
 		mwl_restart_ds_timer(priv, false);

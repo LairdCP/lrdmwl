@@ -116,6 +116,7 @@ enum sdio_pkt_type {
 #define SDIO_MPA_ADDR_BASE          0x1000
 #define BLOCK_NUMBER_OFFSET         15
 #define SDIO_HEADER_OFFSET          28
+#define MAX_DNLD_CMD_FAILURES       5
 
 
 /* SDIO Tx aggregation in progress ? */
@@ -482,6 +483,8 @@ struct mwl_sdio_card {
 	/* Host capabilities fixups */
 	u32 caps_fixups;
 	int reset_pwd_gpio;
+
+	int dnld_cmd_failure;
 };
 
 static inline bool
