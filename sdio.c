@@ -2899,11 +2899,15 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 
 			card->expect_recovery = false;
 		}
+		else {
+			mwl_restart_ds_timer(priv, false);
+		}
 		card->is_suspended = false;
 		break;
 
 	case MWL_PM_SUSPEND:
 		sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+		mwl_delete_ds_timer(priv);
 		card->is_suspended = true;
 		break;
 
