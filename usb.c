@@ -37,6 +37,7 @@ static struct mwl_if_ops usb_ops1;
 #define INTF_HEADER_LEN	4
 #define MWL_FW_ROOT     "lrdmwl"
 
+#define USB_DEFAULT_POWERDOWN_DELAY_MS		15
 
 
 static const struct usb_device_id mwl_usb_table[] = {
@@ -202,6 +203,7 @@ static int mwl_usb_probe(struct usb_interface *intf,
 
 	// Initialize reset gpio to value provided by mod parameter if it exists
 	card->reset_pwd_gpio = reset_pwd_gpio;
+	flags = 0;
 
 	/* device tree node parsing and platform specific configuration */
 	if (dev_of_node(&intf->dev)) {
@@ -209,7 +211,9 @@ static int mwl_usb_probe(struct usb_interface *intf,
 			of_node = dev_of_node(&intf->dev);
 
 			// Override gpio reset with value provided in devicetree if it exists
-			gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
+			gpio = of_get_named_gpio_flags(of_node, "pmu-en-gpios", 0, &flags);
+			if (!gpio_is_valid(gpio))
+				gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
 
 			if (gpio_is_valid(gpio))
 				card->reset_pwd_gpio = gpio;
@@ -218,16 +222,16 @@ static int mwl_usb_probe(struct usb_interface *intf,
 
 	if (gpio_is_valid(card->reset_pwd_gpio)) {
 		rc = devm_gpio_request_one(&intf->dev, card->reset_pwd_gpio,
-			GPIOF_OUT_INIT_HIGH, "wifi-reset");
+			flags | GPIOF_OUT_INIT_HIGH, "wifi_pmu_en");
 		if (!rc) {
-			pr_info("Reset GPIO %d configured\n", card->reset_pwd_gpio);
+			pr_info("PMU_EN GPIO %d configured\n", card->reset_pwd_gpio);
 			usb_ops1.hardware_restart = mwl_usb_restart_handler;
 		}
 		else
-			pr_err("Failed to configure Reset gpio %d!!\n", card->reset_pwd_gpio);
+			pr_err("Failed to configure PMU_EN gpio %d!!\n", card->reset_pwd_gpio);
 	}
 	else
-		pr_info("Reset GPIO not configured\n");
+		pr_info("PMU_EN GPIO not configured\n");
 
 	rc = mwl_add_card(card, &usb_ops1, of_node);
 
@@ -1426,8 +1430,7 @@ static int mwl_usb_is_deepsleep(struct mwl_priv * priv)
 	return 0;
 }
 
-
-static int mwl_usb_reset_gpio(struct mwl_priv *priv)
+static int mwl_usb_restart_handler(struct mwl_priv *priv)
 {
 	struct usb_card_rec *card = priv->intf;
 
@@ -1435,15 +1438,8 @@ static int mwl_usb_reset_gpio(struct mwl_priv *priv)
 		return -ENOSYS;
 
 	gpio_set_value(card->reset_pwd_gpio, 0);
-	msleep(1);
+	lrdmwl_delay(USB_DEFAULT_POWERDOWN_DELAY_MS*1000);
 	gpio_set_value(card->reset_pwd_gpio, 1);
-
-	return 0;
-}
-
-static int mwl_usb_restart_handler(struct mwl_priv *priv)
-{
-	mwl_usb_reset_gpio(priv);
 
 	return 0;
 }
@@ -1471,7 +1467,7 @@ module_usb_driver(mwl_usb_driver);
 
 #ifdef CONFIG_GPIOLIB
 module_param(reset_pwd_gpio, uint, 0644);
-MODULE_PARM_DESC(reset_pwd_gpio, "WIFI CHIP_PWD reset pin GPIO");
+MODULE_PARM_DESC(reset_pwd_gpio, "WIFI CHIP_PWD reset pin GPIO (deprecated)");
 #endif
 
 

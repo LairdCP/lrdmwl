@@ -85,9 +85,6 @@ static void mwl_sdio_tx_workq(struct work_struct *work);
 static void mwl_sdio_rx_recv(unsigned long data);
 static int mwl_sdio_read_fw_status(struct mwl_priv *priv, u16 *dat);
 
-static int mwl_sdio_init_gpio(void);
-static int mwl_sdio_release_gpio(void);
-static int mwl_sdio_reset_gpio(struct mwl_priv *priv);
 static int mwl_sdio_reset(struct mwl_priv *priv);
 static int mwl_sdio_set_gpio(struct mwl_sdio_card *card, int value);
 static int mwl_sdio_restart_handler(struct mwl_priv *priv);
@@ -95,6 +92,8 @@ static int mwl_sdio_restart_handler(struct mwl_priv *priv);
 /* Device ID for SD8897 */
 #define SDIO_DEVICE_ID_MARVELL_8897   (0x912d)
 #define SDIO_DEVICE_ID_MARVELL_8997   (0x9141)
+
+#define SDIO_DEFAULT_POWERDOWN_DELAY_MS		15
 
 static void
 mwl_sdio_interrupt(struct sdio_func *func);
@@ -2664,13 +2663,24 @@ static void mwl_sdio_down_dev(struct mwl_priv *priv)
 
 static int mwl_sdio_restart_handler(struct mwl_priv *priv)
 {
+	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
 	int ret;
 
 	wiphy_debug(priv->hw->wiphy, "%s: Restarting adapter...\n", MWL_DRV_NAME);
 
 	mwl_shutdown_sw(priv, false);
 
-	mdelay(1);
+	// If GPIO is configured, then GPIO handler is called from down/up
+	// routines, and includes mmc_hw_reset call.
+	// If GPIO is not configured, we need to call it here
+	if (gpio_is_valid(card->reset_pwd_gpio)) {
+		lrdmwl_delay(SDIO_DEFAULT_POWERDOWN_DELAY_MS*1000);
+	}
+	else {
+		sdio_claim_host(card->func);
+		mmc_hw_reset(card->func->card->host);
+		sdio_release_host(card->func);
+	}
 
 	ret = mwl_reinit_sw(priv, false);
 	if (ret)
@@ -2780,11 +2790,14 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	card->reset_pwd_gpio = reset_pwd_gpio;
 
 	if (of_node) {
-		gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
+		gpio = of_get_named_gpio_flags(of_node, "pmu-en-gpios", 0, &flags);
+
+		if (!gpio_is_valid(gpio))
+			gpio = of_get_named_gpio_flags(of_node, "reset-gpios", 0, &flags);
 
 		if (gpio_is_valid(gpio)) {
 			rc = devm_gpio_request_one(&func->dev, gpio,
-				flags | GPIOF_OUT_INIT_HIGH, "wifi-reset");
+				flags | GPIOF_OUT_INIT_HIGH, "wifi_pmu_en");
 
 			if (!rc)
 				card->reset_pwd_gpio = gpio;
@@ -2792,9 +2805,9 @@ static int mwl_sdio_probe(struct sdio_func *func,
 	}
 
 	if (gpio_is_valid(card->reset_pwd_gpio))
-		dev_info(&func->dev, "Reset GPIO %d configured\n", reset_pwd_gpio);
+		dev_info(&func->dev, "PMU_EN GPIO %d configured\n", card->reset_pwd_gpio);
 	else
-		dev_info(&func->dev, "Reset GPIO not configured\n");
+		dev_info(&func->dev, "PMU_EN GPIO not configured\n");
 
 	rc = mwl_add_card(card, &sdio_ops, of_node);
 	if (rc != 0) {
@@ -2994,10 +3007,10 @@ static struct sdio_driver mwl_sdio_driver = {
 
 #ifdef CONFIG_GPIOLIB
 module_param(reset_pwd_gpio, uint, 0644);
-MODULE_PARM_DESC(reset_pwd_gpio, "WIFI CHIP_PWD reset pin GPIO");
+MODULE_PARM_DESC(reset_pwd_gpio, "WIFI CHIP_PWD reset pin GPIO (deprecated)");
 #endif
 
-static int mwl_sdio_init_gpio(void)
+static int mwl_sdio_init_gpio_legacy(void)
 {
 	int ret;
 
@@ -3017,7 +3030,7 @@ static int mwl_sdio_init_gpio(void)
 	return ret;
 }
 
-static int mwl_sdio_reset_gpio(struct mwl_priv *priv)
+static int mwl_sdio_reset_gpio_legacy(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card *card = priv->intf;
 
@@ -3025,7 +3038,7 @@ static int mwl_sdio_reset_gpio(struct mwl_priv *priv)
 		return -ENOSYS;
 
 	gpio_set_value(card->reset_pwd_gpio, 0);
-	msleep(1);
+	lrdmwl_delay(SDIO_DEFAULT_POWERDOWN_DELAY_MS*1000);
 	gpio_set_value(card->reset_pwd_gpio, 1);
 
 	return 0;
@@ -3059,7 +3072,7 @@ static int mwl_sdio_reset(struct mwl_priv *priv)
 
 	sdio_claim_host(func);
 
-	mwl_sdio_reset_gpio(priv);
+	mwl_sdio_reset_gpio_legacy(priv);
 	rc = mmc_hw_reset(func->card->host);
 
 	sdio_release_host(func);
@@ -3067,7 +3080,7 @@ static int mwl_sdio_reset(struct mwl_priv *priv)
 	return rc;
 }
 
-static int mwl_sdio_release_gpio(void)
+static int mwl_sdio_release_gpio_legacy(void)
 {
 	if (gpio_is_valid(reset_pwd_gpio)) {
 		/* Be sure we release GPIO and leave the chip in reset
@@ -3084,7 +3097,7 @@ static int __init mwl_sdio_driver_init(void)
 {
 	int ret;
 
-	ret = mwl_sdio_init_gpio();
+	ret = mwl_sdio_init_gpio_legacy();
 	if (!ret)
 	{
 		// GPIO init has completed successfully, indicating either
@@ -3093,12 +3106,12 @@ static int __init mwl_sdio_driver_init(void)
 		if (reset_pwd_gpio != ARCH_NR_GPIOS)
 		{
 			// GPIO is configured via modprobe, use it directly (legacy restart mechanism)
-			sdio_ops.hardware_restart = mwl_sdio_reset_gpio;
+			sdio_ops.hardware_restart = mwl_sdio_reset_gpio_legacy;
 		}
 
 		ret = sdio_register_driver(&mwl_sdio_driver);
 		if (ret)
-			mwl_sdio_release_gpio();
+			mwl_sdio_release_gpio_legacy();
 	}
 
 	return ret;
@@ -3108,7 +3121,7 @@ static void __exit mwl_sdio_driver_exit(void)
 {
 	sdio_unregister_driver(&mwl_sdio_driver);
 
-	mwl_sdio_release_gpio();
+	mwl_sdio_release_gpio_legacy();
 }
 
 module_init(mwl_sdio_driver_init);
