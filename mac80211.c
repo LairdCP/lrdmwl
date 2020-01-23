@@ -954,7 +954,8 @@ static int mwl_mac80211_remain_on_channel(struct ieee80211_hw *hw,
 	return rc;
 }
 
-static int mwl_mac80211_cancel_remain_on_channel(struct ieee80211_hw *hw)
+static int mwl_mac80211_cancel_remain_on_channel(struct ieee80211_hw *hw,
+	struct ieee80211_vif *vif)
 {
 	int rc = 0;
 

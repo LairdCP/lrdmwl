@@ -52,7 +52,7 @@ static int mwl_fwcmd_send_cmd(struct mwl_priv *priv)
 
 char *mwl_fwcmd_get_cmd_string(unsigned short cmd)
 {
-	static char buf[sizeof(unsigned short) +3];
+	static char buf[2 * sizeof(unsigned short) + 3];
 	char *ptr = buf;
 
 	cmd &= ~HOSTCMD_RESP_BIT;
