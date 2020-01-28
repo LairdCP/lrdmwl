@@ -33,7 +33,7 @@
 #include "hostcmd.h"
 
 #if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
-#include <drivers/mmc/core/card.h>
+#include <../drivers/mmc/core/card.h>
 #endif
 
 #define MWL_SDIODRV_VERSION  "10.3.0.16-20160105"
