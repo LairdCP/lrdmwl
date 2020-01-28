@@ -2938,11 +2938,12 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 		break;
 
 	case MWL_PM_SUSPEND:
-		if (!(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
-			sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+		if (!(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER))
 			mwl_shutdown_sw(priv, true);
-		} else
+		else {
+			sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
 			mwl_delete_ds_timer(priv);
+		}
 		card->is_suspended = true;
 		break;
 
