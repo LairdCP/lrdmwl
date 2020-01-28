@@ -69,6 +69,12 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 	priv->mac_init_complete = true;
 
 	if (priv->stop_shutdown) {
+		if (priv->if_ops.up_pwr != NULL) {
+			rc = priv->if_ops.up_pwr(priv);
+			if (rc)
+				goto fwcmd_fail;
+		}
+
 		rc = mwl_reinit_sw(priv, true);
 		if (rc)
 			goto fwcmd_fail;
@@ -164,6 +170,9 @@ void mwl_mac80211_stop(struct ieee80211_hw *hw)
 
 	if (priv->stop_shutdown && !priv->recovery_in_progress) {
 		mwl_shutdown_sw(priv, true);
+
+		if (priv->if_ops.down_pwr != NULL)
+			priv->if_ops.down_pwr(priv);
 	}
 }
 

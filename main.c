@@ -1168,27 +1168,15 @@ static void mwl_ds_work(struct work_struct *work)
 	mwl_fwcmd_enter_deepsleep(priv->hw);
 }
 
-void stop_shutdown_timer_routine(struct timer_list *t)
-{
-	struct mwl_priv *priv = from_timer(priv, t, stop_shutdown_timer);
-
-	queue_work(priv->lrd_workq, &priv->stop_shutdown_work);
-}
-
-static void cancel_stop_shutdown_timer(struct mwl_priv  *priv)
-{
-	if (priv->stop_shutdown) {
-		del_timer_sync(&priv->stop_shutdown_timer);
-		cancel_work_sync(&priv->stop_shutdown_work);
-	}
-}
-
 static void lrd_stop_shutdown_workq(struct work_struct *work)
 {
 	struct mwl_priv  *priv = container_of(work, struct mwl_priv,
-		stop_shutdown_work);
+		stop_shutdown_work.work);
 
 	mwl_shutdown_sw(priv, true);
+
+	if (priv->if_ops.down_pwr != NULL)
+		priv->if_ops.down_pwr(priv);
 }
 
 static int mwl_wl_init(struct mwl_priv *priv)
@@ -1206,7 +1194,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	priv->lrd_workq = alloc_workqueue("lrdwifi-workq",
 	                 WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	INIT_WORK(&priv->ds_work, mwl_ds_work);
-	INIT_WORK(&priv->stop_shutdown_work, lrd_stop_shutdown_workq);
+	INIT_DELAYED_WORK(&priv->stop_shutdown_work, lrd_stop_shutdown_workq);
 	INIT_WORK(&priv->reg.event, lrd_cc_event);
 	INIT_WORK(&priv->reg.awm, lrd_awm_expire);
 
@@ -1393,7 +1381,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	mwl_fwcmd_rf_antenna(hw, priv->ant_tx_bmp, priv->ant_rx_bmp);
 
 	if (priv->stop_shutdown)
-		mod_timer(&priv->stop_shutdown_timer, jiffies +
+		queue_delayed_work(priv->lrd_workq, &priv->stop_shutdown_work,
 			msecs_to_jiffies(8000));
 
 	/* Set IEEE HW Capabilities */
@@ -1442,7 +1430,7 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 
-	cancel_stop_shutdown_timer(priv);
+	cancel_delayed_work_sync(&priv->stop_shutdown_work);
 
 	device_init_wakeup(priv->dev, false);
 	lrd_send_fw_event(priv->dev, false);
@@ -1691,7 +1679,6 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	timer_setup(&priv->roc.roc_timer, remain_on_channel_expire, 0);
 	timer_setup(&priv->period_timer,  timer_routine, 0);
 	timer_setup(&priv->ds_timer, ds_routine, 0);
-	timer_setup(&priv->stop_shutdown_timer, stop_shutdown_timer_routine, 0);
 	timer_setup(&priv->reg.timer_awm, lrd_awm_routine, 0);
 
 	rc = mwl_fw_dnld_and_init(priv);
@@ -1790,7 +1777,7 @@ int mwl_shutdown_sw(struct mwl_priv *priv, bool suspend)
 		priv->mac_init_complete = true;
 	}
 	else
-		cancel_stop_shutdown_timer(priv);
+		cancel_delayed_work_sync(&priv->stop_shutdown_work);
 
 	WARN_ON(!priv->recovery_in_progress);
 
@@ -1850,7 +1837,7 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 	int rc;
 
 	if (!priv->recovery_in_progress) {
-		cancel_stop_shutdown_timer(priv);
+		cancel_delayed_work_sync(&priv->stop_shutdown_work);
 		return 0;
 	}
 
@@ -1879,17 +1866,9 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 	atomic_set(&priv->null_scan_count, null_scan_count);
 
 	rc = mwl_init_firmware(priv);
-
 	if (rc) {
 		wiphy_err(hw->wiphy, "%s: fail to initialize firmware\n", MWL_DRV_NAME);
 		goto err_init;
-	}
-
-	/* card specific initialization after fw is loaded .. */
-	if (priv->if_ops.init_if_post) {
-		if (priv->if_ops.init_if_post(priv)) {
-			goto err_init;
-		}
 	}
 
 	rc = mwl_fwcmd_get_hw_specs(hw);
@@ -1908,6 +1887,13 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 		else {
 			wiphy_info(hw->wiphy,
 			     "firmware version: 0x%x\n", priv->hw_data.fw_release_num);
+		}
+	}
+
+	/* card specific initialization after fw is loaded .. */
+	if (priv->if_ops.init_if_post) {
+		if (priv->if_ops.init_if_post(priv)) {
+			goto err_init;
 		}
 	}
 
@@ -1970,8 +1956,8 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 	lrd_send_fw_event(priv->dev, true);
 
 	if (priv->stop_shutdown  && !priv->mac_init_complete)
-		mod_timer(&priv->stop_shutdown_timer,
-			jiffies + msecs_to_jiffies(2000));
+		queue_delayed_work(priv->lrd_workq, &priv->stop_shutdown_work,
+			msecs_to_jiffies(2000));
 
 err_init:
 

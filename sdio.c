@@ -32,6 +32,10 @@
 #include "sdio.h"
 #include "hostcmd.h"
 
+#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
+#include <drivers/mmc/core/card.h>
+#endif
+
 #define MWL_SDIODRV_VERSION  "10.3.0.16-20160105"
 #define LRD_SDIO_VERSION     LRD_BLD_VERSION "-" MWL_SDIODRV_VERSION
 #define LRD_SDIO_DESC        "Laird 60 Series Wireless SDIO Network Driver"
@@ -403,12 +407,26 @@ static int mwl_sdio_init_irq(struct mwl_priv *priv)
 
 static int mwl_sdio_init_post(struct mwl_priv *priv)
 {
+	struct mwl_sdio_card *card = priv->intf;
+	struct sdio_func     *func = card->func;
+
+	if (priv->stop_shutdown && (mmc_card_is_removable(func->card->host) ||
+		!gpio_is_valid(card->reset_pwd_gpio))) {
+		priv->stop_shutdown = false;
+
+		dev_err(&func->dev,
+			"Power down when network down mode supported only, "
+			"when card set to non-removable and driver has direct control "
+			"over PMU Enable GPIO\n");
+	}
+
 	if (priv->mfg_mode) {
 		priv->ds_enable = DS_ENABLE_OFF;
 
 		//Assume ST 60 with one interface
 		priv->radio_caps.capability = 0;
 		priv->radio_caps.num_mac = 1;
+		priv->stop_shutdown = false;
 	}
 
 	return 0;
@@ -440,12 +458,7 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	priv->dev = &func->dev;
 	sdio_set_drvdata(card->func, priv->hw);
 
-	// Initialize default restart handler if not already configured
-	if (!priv->if_ops.hardware_restart)
-	{
-		wiphy_info(priv->hw->wiphy, "Configuring default restart handler\n");
-		priv->if_ops.hardware_restart = mwl_sdio_restart_handler;
-	}
+	priv->if_ops.hardware_restart = mwl_sdio_restart_handler;
 
 	/*
 	 * Read the host_int_status_reg for ACK the first interrupt got
@@ -580,17 +593,6 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	priv->wow.capable =
 		(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) != 0;
 #endif
-
-	if (priv->stop_shutdown) {
-		if (mmc_card_is_removable(func->card->host) ||
-			!gpio_is_valid(card->reset_pwd_gpio)) {
-			priv->stop_shutdown = false;
-
-			dev_err(&func->dev,
-				"Power down when network down mode supported only,\n"
-				"when card set to non-removable and reset gpio defined\n");
-		}
-	}
 
 	// Re-initialization needed in case of restart
 	card->is_deepsleep = 0;
@@ -2068,17 +2070,19 @@ void mwl_handle_rx_packet(struct mwl_priv *priv, struct sk_buff *skb)
 				mwl_rx_enable_sta_amsdu(priv, mgmt->sa);
 		}
 	}
-#if 0 //def CONFIG_MAC80211_MESH
-		if (ieee80211_is_data_qos(wh->frame_control) &&
-		    ieee80211_has_a4(wh->frame_control)) {
-			u8 *qc = ieee80211_get_qos_ctl(wh);
 
-			if (*qc & IEEE80211_QOS_CTL_A_MSDU_PRESENT)
-				if (mwl_rx_process_mesh_amsdu(priv, prx_skb,
-							      &status))
-					return;
-		}
+#if 0 //def CONFIG_MAC80211_MESH
+	if (ieee80211_is_data_qos(wh->frame_control) &&
+	    ieee80211_has_a4(wh->frame_control)) {
+		u8 *qc = ieee80211_get_qos_ctl(wh);
+
+		if (*qc & IEEE80211_QOS_CTL_A_MSDU_PRESENT)
+			if (mwl_rx_process_mesh_amsdu(priv, prx_skb,
+						      &status))
+				return;
+	}
 #endif
+
 	memcpy(IEEE80211_SKB_RXCB(prx_skb), &status, sizeof(status));
 
 	/* Packet to indicate => Will indicate AMPDU/AMSDU packets */
@@ -2499,8 +2503,8 @@ static int mwl_sdio_host_to_card(struct mwl_priv *priv,
 	/* get port number. */
 	ret = mwl_get_wr_port_data(priv, &port);
 	if (ret) {
-//			wiphy_err(priv->hw->wiphy, "%s: no wr_port available\n", __func__);
-			return ret;
+//		wiphy_err(priv->hw->wiphy, "%s: no wr_port available\n", __func__);
+		return ret;
 	}
 
 
@@ -2642,45 +2646,56 @@ static int mwl_sdio_is_deepsleep(struct mwl_priv * priv)
 
 static void mwl_sdio_up_dev(struct mwl_priv *priv)
 {
-	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
-
 	wiphy_info(priv->hw->wiphy, "%s: Bringing up adapter...\n", MWL_DRV_NAME);
-
-	mwl_sdio_set_gpio(card, 1);
 
 	mwl_sdio_init(priv);
 }
 
 static void mwl_sdio_down_dev(struct mwl_priv *priv)
 {
-	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
-
 	wiphy_info(priv->hw->wiphy, "%s: Taking down adapter...\n", MWL_DRV_NAME);
+
 	mwl_sdio_cleanup(priv);
+}
+
+static int mwl_sdio_up_pwr(struct mwl_priv *priv)
+{
+	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
+	int rc;
+
+	rc = mwl_sdio_set_gpio(card, 1);
+	if (rc)
+		return rc;
+
+	sdio_claim_host(card->func);
+	rc = mmc_hw_reset(card->func->card->host);
+#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
+	if (rc == 0)
+		mmc_card_clr_suspended(card->func->card);
+#endif
+	sdio_release_host(card->func);
+
+	return rc;
+}
+
+static void mwl_sdio_down_pwr(struct mwl_priv *priv)
+{
+	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
 
 	mwl_sdio_set_gpio(card, 0);
 }
 
 static int mwl_sdio_restart_handler(struct mwl_priv *priv)
 {
-	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
 	int ret;
 
 	wiphy_debug(priv->hw->wiphy, "%s: Restarting adapter...\n", MWL_DRV_NAME);
 
 	mwl_shutdown_sw(priv, false);
 
-	// If GPIO is configured, then GPIO handler is called from down/up
-	// routines, and includes mmc_hw_reset call.
-	// If GPIO is not configured, we need to call it here
-	if (gpio_is_valid(card->reset_pwd_gpio)) {
-		lrdmwl_delay(SDIO_DEFAULT_POWERDOWN_DELAY_MS*1000);
-	}
-	else {
-		sdio_claim_host(card->func);
-		mmc_hw_reset(card->func->card->host);
-		sdio_release_host(card->func);
-	}
+	ret = mwl_sdio_reset(priv);
+	if (ret)
+		return ret;
 
 	ret = mwl_reinit_sw(priv, false);
 	if (ret)
@@ -2711,6 +2726,8 @@ static struct mwl_if_ops sdio_ops = {
 	.is_deepsleep            = mwl_sdio_is_deepsleep,
 	.up_dev                  = mwl_sdio_up_dev,
 	.down_dev                = mwl_sdio_down_dev,
+	.up_pwr                  = mwl_sdio_up_pwr,
+	.down_pwr                = mwl_sdio_down_pwr,
 };
 
 static int mwl_sdio_probe(struct sdio_func *func,
@@ -2844,6 +2861,8 @@ static void mwl_sdio_remove(struct sdio_func *func)
 	mwl_sdio_reset(priv);
 
 	mwl_ieee80211_free_hw(priv);
+	kfree(priv->intf);
+
 	dev_info(&func->dev, "Card removal complete!\n");
 }
 
@@ -2894,42 +2913,44 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 		break;
 
 	case MWL_PM_RESUME_EARLY:
-		if (priv->wow.state & WOWLAN_STATE_ENABLED)
+		if (!(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
+			mwl_sdio_set_gpio(card, 1);
+			card->expect_recovery = true;
+		} else if (priv->wow.state & WOWLAN_STATE_ENABLED)
 			lrd_disable_wowlan(priv);
-
-		card->expect_recovery =
-			(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) == 0;
 		break;
 
 	case MWL_PM_RESTORE_EARLY:
+		mwl_sdio_set_gpio(card, 1);
 		card->expect_recovery = true;
 		break;
 
 	case MWL_PM_RESUME:
-		if (card->expect_recovery || !gpio_is_valid(card->reset_pwd_gpio)) {
-			mwl_shutdown_sw(priv, true);
+		if (card->expect_recovery) {
 			mwl_reinit_sw(priv, true);
 
 			card->expect_recovery = false;
 		}
-		else {
+		else
 			mwl_restart_ds_timer(priv, false);
-		}
+
 		card->is_suspended = false;
 		break;
 
 	case MWL_PM_SUSPEND:
-		sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
-		mwl_delete_ds_timer(priv);
+		if (!(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
+			sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+			mwl_shutdown_sw(priv, true);
+		} else
+			mwl_delete_ds_timer(priv);
 		card->is_suspended = true;
 		break;
 
 	case MWL_PM_SUSPEND_LATE:
-		if (priv->wow.state & WOWLAN_STATE_ENABLED)
-			lrd_enable_wowlan(priv);
-
-		if ((sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) == 0)
+		if (!(sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER))
 			mwl_sdio_set_gpio(card, 0);
+		else if (priv->wow.state & WOWLAN_STATE_ENABLED)
+			lrd_enable_wowlan(priv);
 		break;
 
 	case MWL_PM_POWEROFF:
@@ -2986,8 +3007,10 @@ static const struct dev_pm_ops mwl_sdio_pm_ops = {
 	.resume         = mwl_sdio_resume,
 	.suspend        = mwl_sdio_suspend,
 	.resume_early   = mwl_sdio_resume_early,
+	.thaw_early     = mwl_sdio_resume_early,
 	.restore_early  = mwl_sdio_restore_early,
 	.suspend_late   = mwl_sdio_suspend_late,
+	.freeze_late    = mwl_sdio_suspend_late,
 	.poweroff_late  = mwl_sdio_poweroff,
 };
 #endif
@@ -3030,36 +3053,12 @@ static int mwl_sdio_init_gpio_legacy(void)
 	return ret;
 }
 
-static int mwl_sdio_reset_gpio_legacy(struct mwl_priv *priv)
-{
-	struct mwl_sdio_card *card = priv->intf;
-
-	if (!gpio_is_valid(card->reset_pwd_gpio))
-		return -ENOSYS;
-
-	gpio_set_value(card->reset_pwd_gpio, 0);
-	lrdmwl_delay(SDIO_DEFAULT_POWERDOWN_DELAY_MS*1000);
-	gpio_set_value(card->reset_pwd_gpio, 1);
-
-	return 0;
-}
-
 static int mwl_sdio_set_gpio(struct mwl_sdio_card *card, int value)
 {
-	bool changed;
-
 	if (!gpio_is_valid(card->reset_pwd_gpio))
 		return -ENOSYS;
 
-	changed = gpio_get_value(card->reset_pwd_gpio) != value;
-
 	gpio_set_value(card->reset_pwd_gpio, value);
-
-	if (changed && value) {
-		sdio_claim_host(card->func);
-		mmc_hw_reset(card->func->card->host);
-		sdio_release_host(card->func);
-	}
 
 	return 0;
 }
@@ -3072,8 +3071,16 @@ static int mwl_sdio_reset(struct mwl_priv *priv)
 
 	sdio_claim_host(func);
 
-	mwl_sdio_reset_gpio_legacy(priv);
-	rc = mmc_hw_reset(func->card->host);
+	if (!mwl_sdio_set_gpio(card, 0)) {
+		lrdmwl_delay(SDIO_DEFAULT_POWERDOWN_DELAY_MS*1000);
+		mwl_sdio_set_gpio(card, 1);
+	}
+
+	rc = mmc_hw_reset(card->func->card->host);
+#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
+	if (rc == 0)
+		mmc_card_clr_suspended(func->card);
+#endif
 
 	sdio_release_host(func);
 
@@ -3098,21 +3105,12 @@ static int __init mwl_sdio_driver_init(void)
 	int ret;
 
 	ret = mwl_sdio_init_gpio_legacy();
-	if (!ret)
-	{
-		// GPIO init has completed successfully, indicating either
-		//  1. No GPIO was configured via modprobe parameter
-		//  2. GPIO was configured via modprobe parameter and was successfully obtained
-		if (reset_pwd_gpio != ARCH_NR_GPIOS)
-		{
-			// GPIO is configured via modprobe, use it directly (legacy restart mechanism)
-			sdio_ops.hardware_restart = mwl_sdio_reset_gpio_legacy;
-		}
+	if (ret)
+		return ret;
 
-		ret = sdio_register_driver(&mwl_sdio_driver);
-		if (ret)
-			mwl_sdio_release_gpio_legacy();
-	}
+	ret = sdio_register_driver(&mwl_sdio_driver);
+	if (ret)
+		mwl_sdio_release_gpio_legacy();
 
 	return ret;
 }

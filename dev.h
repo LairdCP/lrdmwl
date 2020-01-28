@@ -486,6 +486,8 @@ struct mwl_if_ops {
 	int (*is_deepsleep)(struct mwl_priv *);
 	void (*down_dev)(struct mwl_priv *);
 	void (*up_dev)(struct mwl_priv *);
+	void (*down_pwr)(struct mwl_priv *);
+	int  (*up_pwr)(struct mwl_priv *);
 };
 
 #define MWL_OTP_BUF_SIZE	(256*8)		//258 lines * 8 bytes
@@ -741,8 +743,7 @@ struct mwl_priv {
 	bool host_crypto;
 	bool stop_shutdown;
 	bool mac_init_complete;
-	struct timer_list  stop_shutdown_timer;
-	struct work_struct stop_shutdown_work;
+	struct delayed_work stop_shutdown_work;
 
 	/** Work around for startup failure */
 	atomic_t null_scan_count;
