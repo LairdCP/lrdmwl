@@ -4283,7 +4283,7 @@ int lrd_fwcmd_lrd_set_power_table(struct ieee80211_hw *hw, u16 index, void *data
 	u8 a1[] = {0xC0,0xEE,0x40,0x40,0x02,0x30};
 	u8 a2[] = {0xC0,0xEE,0x40,0x42,0x7F,0x6C};
 
-	if (NULL == data || data_len < 24 ||
+	if (NULL == data || data_len < MIN_AWM_SIZE ||
 	    data_len >= (CMD_BUF_SIZE - INTF_CMDHEADER_LEN(priv->if_ops.inttf_head_len)) ) {
 		wiphy_err(hw->wiphy, "Invalid power table (0x%x)!!\n", data_len);
 		return -EINVAL;

@@ -531,7 +531,7 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 		if (!mwl_is_unknown_country(&priv->reg.otp)) {
 			idx = find_pwr_entry(priv, priv->reg.otp.alpha2, priv->reg.otp.region, &entry);
 
-			if (NULL != entry && le32_to_cpu(entry->len) <= 24) {
+			if (NULL != entry && le32_to_cpu(entry->len) <= MIN_AWM_SIZE) {
 				//Entry is limited to mapping , do not send
 				entry = NULL;
 			}

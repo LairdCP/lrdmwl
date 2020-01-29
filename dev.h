@@ -517,6 +517,8 @@ struct lrd_radio_caps {
 
 #define CC_AWM_TIMER  3600000 /* mS */
 
+#define MIN_AWM_SIZE      26
+
 #define REG_CODE_ETSI     0x30
 #define REG_CODE_WW       0xFF
 
