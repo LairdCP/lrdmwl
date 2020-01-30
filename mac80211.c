@@ -308,7 +308,7 @@ static int mwl_mac80211_config(struct ieee80211_hw *hw,
 	struct ieee80211_conf *conf = &hw->conf;
 	struct mwl_priv *priv = hw->priv;
 
-	int rc;
+	int rc = 0;
 
 	if (changed & IEEE80211_CONF_CHANGE_IDLE) {
 		if (conf->flags & IEEE80211_CONF_IDLE) {
