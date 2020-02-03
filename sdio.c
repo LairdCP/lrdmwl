@@ -2927,7 +2927,7 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 		break;
 
 	case MWL_PM_RESTORE_EARLY:
-		if ((sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
+		if (sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)
 			mwl_shutdown_sw(priv, true);
 
 		mwl_sdio_set_gpio(card, 1);
@@ -2936,7 +2936,7 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 
 	case MWL_PM_RESUME:
 		if (card->expect_recovery) {
-			if ((sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
+			if (sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER) {
 				sdio_claim_host(func);
 				mwl_sdio_mmc_hw_reset(card->func);
 				sdio_release_host(func);
