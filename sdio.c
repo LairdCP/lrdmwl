@@ -52,7 +52,7 @@ enum mwl_pm_action {
 	MWL_PM_RESTORE_EARLY,
 	MWL_PM_SUSPEND,
 	MWL_PM_SUSPEND_LATE,
-	MWL_PM_FREEZE,
+	MWL_PM_FREEZE_LATE,
 	MWL_PM_POWEROFF
 };
 
@@ -2658,6 +2658,16 @@ static void mwl_sdio_down_dev(struct mwl_priv *priv)
 	mwl_sdio_cleanup(priv);
 }
 
+static int mwl_sdio_mmc_hw_reset(struct sdio_func *func)
+{
+	int rc = mmc_hw_reset(func->card->host);
+#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
+	if (rc == 0)
+		mmc_card_clr_suspended(func->card);
+#endif
+	return rc;
+}
+
 static int mwl_sdio_up_pwr(struct mwl_priv *priv)
 {
 	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
@@ -2668,11 +2678,7 @@ static int mwl_sdio_up_pwr(struct mwl_priv *priv)
 		return rc;
 
 	sdio_claim_host(card->func);
-	rc = mmc_hw_reset(card->func->card->host);
-#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
-	if (rc == 0)
-		mmc_card_clr_suspended(card->func->card);
-#endif
+	rc = mwl_sdio_mmc_hw_reset(card->func);
 	sdio_release_host(card->func);
 
 	return rc;
@@ -2921,12 +2927,21 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 		break;
 
 	case MWL_PM_RESTORE_EARLY:
+		if ((sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
+			mwl_shutdown_sw(priv, true);
+
 		mwl_sdio_set_gpio(card, 1);
 		card->expect_recovery = true;
 		break;
 
 	case MWL_PM_RESUME:
 		if (card->expect_recovery) {
+			if ((sdio_get_host_pm_caps(func) & MMC_PM_KEEP_POWER)) {
+				sdio_claim_host(func);
+				mwl_sdio_mmc_hw_reset(card->func);
+				sdio_release_host(func);
+			}
+
 			mwl_reinit_sw(priv, true);
 
 			card->expect_recovery = false;
@@ -3077,11 +3092,7 @@ static int mwl_sdio_reset(struct mwl_priv *priv)
 		mwl_sdio_set_gpio(card, 1);
 	}
 
-	rc = mmc_hw_reset(card->func->card->host);
-#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
-	if (rc == 0)
-		mmc_card_clr_suspended(func->card);
-#endif
+	rc = mwl_sdio_mmc_hw_reset(card->func);
 
 	sdio_release_host(func);
 
