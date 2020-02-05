@@ -252,7 +252,7 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 			rc = 0;
 		}
 		else {
-			wiphy_err(hw->wiphy, "lrd_cmd_cc_info failed allocation response %d\n", sizeof(struct cc_info));
+			wiphy_err(hw->wiphy, "lrd_cmd_cc_info failed allocation response %zu\n", sizeof(struct cc_info));
 			rc = -ENOMEM;
 		}
 	}

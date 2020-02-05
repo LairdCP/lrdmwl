@@ -150,7 +150,7 @@ void mwl_handle_rx_event(struct ieee80211_hw *hw,
 		wiphy_info(hw->wiphy, "link loss detected by firmware\n");
 	}
 	else if (rx_evnt->event_id == MWL_RX_EVENT_REG) {
-		wiphy_info(hw->wiphy, "regulatory event\n");
+		wiphy_info(hw->wiphy, "regulatory event %x\n", rx_evnt->event_info);
 
 		cancel_work_sync(&priv->reg.awm);
 		mod_timer(&priv->reg.timer_awm, jiffies + msecs_to_jiffies(1));

@@ -244,6 +244,34 @@ static bool mwl_is_unknown_country(struct cc_info *cc)
 	return false;
 }
 
+static int lrd_fixup_channels(struct mwl_priv *priv, struct cc_info *info)
+{
+	if (mwl_is_world_region(info)) {
+		/* when configured for WW, firmware does not allow
+		 * channels 12-14 to be configured, remove them here
+		 * to keep mac80211 in sync with FW.
+		 */
+		if (priv->band_24.n_channels == ARRAY_SIZE(mwl_channels_24)){
+			priv->band_24.n_channels -= NUM_WW_CHANNELS;
+		}
+	}
+	else {
+		priv->band_24.n_channels = ARRAY_SIZE(mwl_channels_24);;
+		priv->band_50.n_channels = ARRAY_SIZE(mwl_channels_50);
+
+		if (mwl_is_etsi_region(info) ) {
+			if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
+				//If 440 isn't set in caps fw does not allow
+				//channels 149-165 to be configured.  Remove
+				//them here to keep mac80211 in sync with FW.
+				priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
+			}
+		}
+	}
+
+	return 0;
+}
+
 
 static int mwl_init_firmware(struct mwl_priv *priv)
 {
@@ -340,12 +368,10 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 	hw = (struct ieee80211_hw *)wiphy_priv(wiphy);
 	priv = hw->priv;
 
-	wiphy_debug(hw->wiphy, "mwl_reg_notifier set=%d %s %c%c==>\n", priv->reg.regulatory_set, reg_initiator_name(request->initiator), request->alpha2[0], request->alpha2[1]);
+	wiphy_debug(hw->wiphy, "mwl_reg_notifier set=%d %s %c%c\n", priv->reg.regulatory_set, reg_initiator_name(request->initiator), request->alpha2[0], request->alpha2[1]);
 
-	if (!priv->reg.regulatory_set) {
-		priv->reg.regulatory_set = true;
-		regulatory_hint(wiphy, priv->reg.cc.alpha2);
-	} else {
+	if (priv->reg.regulatory_set) {
+		//This path should not occur, but if it does reset to expected value
 		if ( memcmp(priv->reg.cc.alpha2, request->alpha2, 2) &&
 			(request->initiator == NL80211_REGDOM_SET_BY_USER)) {
 			regulatory_hint(wiphy, priv->reg.cc.alpha2);
@@ -485,6 +511,9 @@ static void lrd_send_hint_no_lock(struct mwl_priv *priv, struct cc_info *cc)
 
 	wiphy_debug(priv->hw->wiphy,"Sending regulatory hint for %c%c\n", cc->alpha2[0], cc->alpha2[1]);
 
+	//Fixup the channel set based on country/region 
+	lrd_fixup_channels(priv, cc);
+
 	memcpy(&priv->reg.cc, cc, sizeof(priv->reg.cc));
 
 	//Send driver hint
@@ -532,7 +561,7 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 			idx = find_pwr_entry(priv, priv->reg.otp.alpha2, priv->reg.otp.region, &entry);
 
 			if (NULL != entry && le32_to_cpu(entry->len) <= MIN_AWM_SIZE) {
-				//Entry is limited to mapping , do not send
+				//Entry is limited to mapping, do not send
 				entry = NULL;
 			}
 		}
@@ -550,9 +579,13 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 					//Queue event work
 					queue_work(priv->lrd_workq, &priv->reg.event);
 				}
+				else {
+					idx = -100;
+				}
 			}
 			else {
 				wiphy_debug(priv->hw->wiphy,"Country Code %c%c not present in CRDA database.\n", priv->reg.otp.alpha2[0], priv->reg.otp.alpha2[1]);
+				idx = -101;
 			}
 			rtnl_unlock();
 		}
@@ -565,10 +598,11 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 	}
 
 	if (!mwl_is_unknown_country(&priv->reg.otp)) {
+
 		//Send driver hint
 		lrd_send_hint(priv, &priv->reg.otp);
 	}
-	else {
+	else if (idx < 0) {
 		wiphy_err(priv->hw->wiphy, "Failed to resolve region mapping, will not enable transmitter.\n");
 	}
 }
@@ -944,20 +978,10 @@ static int lrd_regd_init(struct mwl_priv *priv)
 		memset(priv->reg.otp.alpha2,'9', sizeof(priv->reg.otp.alpha2));
 	}
 
-	if (mwl_is_world_region(&priv->reg.otp)) {
-		/* when configured for WW, firmware does not allow
-		 * channels 12-14 to be configured, remove them here
-		 * to keep mac80211 in synce with FW.
-		 */
-		priv->band_24.n_channels -= NUM_WW_CHANNELS;
-	}
-	else if (mwl_is_etsi_region(&priv->reg.otp) ) {
-		if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
-			//If 440 isn't set in caps fw does not allow
-			//channels 149-165 to be configured.  Remove
-			//them here to keep mac80211 in sync with FW.
-			priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
-		}
+	if (!mwl_is_unknown_country(&priv->reg.otp)) {
+		//If we know the country, fixup channel set now and not
+		//wait for the callback.
+		lrd_fixup_channels(priv, &priv->reg.otp);
 	}
 
 	request_firmware_nowait( THIS_MODULE, true, REG_PWR_DB_NAME, priv->dev, GFP_KERNEL, priv, lrd_cc_cb);
@@ -1091,28 +1115,6 @@ void lrd_cc_event(struct work_struct *work)
 
 	if (valid) {
 		wiphy_debug(hw->wiphy,"AWM Country Code %c%c is valid.\n", info.alpha2[0], info.alpha2[1]);
-		if (mwl_is_world_region(&info)) {
-			/* when configured for WW, firmware does not allow
-			 * channels 12-14 to be configured, remove them here
-			 * to keep mac80211 in sync with FW.
-			 */
-			if (priv->band_24.n_channels == ARRAY_SIZE(mwl_channels_24)){
-				priv->band_24.n_channels -= NUM_WW_CHANNELS;
-			}
-		}
-		else {
-			priv->band_24.n_channels = ARRAY_SIZE(mwl_channels_24);;
-			priv->band_50.n_channels = ARRAY_SIZE(mwl_rates_50);
-
-			if (mwl_is_etsi_region(&info) ) {
-				if (0 == (priv->radio_caps.capability & LRD_CAP_440) ) {
-					//If 440 isn't set in caps fw does not allow
-					//channels 149-165 to be configured.  Remove
-					//them here to keep mac80211 in sync with FW.
-					priv->band_50.n_channels -= NUM_UNII3_CHANNELS;
-				}
-			}
-		}
 
 		//Update driver hint
 		lrd_send_hint_no_lock(priv, &info);
@@ -1121,10 +1123,8 @@ void lrd_cc_event(struct work_struct *work)
 		/* Reset power table */
 		lrd_fwcmd_lrd_reset_power_table(priv->hw);
 
-		memcpy(&info, &priv->reg.otp, sizeof(info));
-
 		//Update driver hint
-		lrd_send_hint_no_lock(priv, &info);
+		lrd_send_hint_no_lock(priv, &priv->reg.otp);
 	}
 
 	mutex_unlock(&priv->reg.mutex);
