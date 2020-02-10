@@ -32,7 +32,7 @@ extern int mwl_mac80211_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif
 #ifdef CONFIG_SCHED_HRTICK
 	#define	lrdmwl_delay(d) usleep_range(d, d + 10);
 #else
-	#define	lrdmwl_delay(d) udelay(d);
+	#define	lrdmwl_delay(d) (d < (MAX_UDELAY_MS * 1000) ? udelay(d) : mdelay(d / 1000))
 #endif
 
 #ifdef CONFIG_PM
