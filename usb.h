@@ -67,6 +67,7 @@ struct urb_context {
 	struct sk_buff *skb;
 	struct urb *urb;
 	u8 ep;
+	struct list_head list;
 };
 
 struct usb_tx_data_port {
@@ -90,7 +91,12 @@ struct usb_card_rec {
 	struct completion fw_done;
 	u8 rx_cmd_ep;
 	struct urb_context rx_cmd;
+
 	struct urb_context rx_data_list[MWIFIEX_RX_DATA_URB];
+	struct list_head rx_urb_pending_list;
+	spinlock_t rx_urb_lock;
+	struct usb_anchor rx_urb_anchor;
+
 	u8 usb_boot_state;
 	u8 rx_data_ep;
 	u8 tx_cmd_ep;
@@ -110,6 +116,8 @@ struct usb_card_rec {
 	struct tasklet_struct tx_task;
 
 	int reset_pwd_gpio;
+
+	bool dying;
 };
 
 struct fw_header {
