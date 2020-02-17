@@ -782,16 +782,20 @@ static ssize_t mwl_debugfs_regrdwr_read(struct file *file, char __user *ubuf,
 					size_t count, loff_t *ppos)
 {
 	struct mwl_priv *priv = (struct mwl_priv *)file->private_data;
-	unsigned long page = get_zeroed_page(GFP_KERNEL);
-	char *p = (char *)page;
+	unsigned long page;
+	char *p;
 	int len = 0, size = PAGE_SIZE;
 	ssize_t ret;
 
 	if (*ppos)
 		return len;
 
-	if (!p)
-		return -ENOMEM;
+	page = get_zeroed_page(GFP_KERNEL);
+	if (!page) {
+		ret = -ENOMEM;
+		goto none;
+	}
+	p = (char *)page;
 
 	if (!priv->reg_type) {
 		/* No command has been given */
@@ -1086,6 +1090,6 @@ void mwl_debugfs_remove(struct ieee80211_hw *hw)
 {
 	struct mwl_priv *priv = hw->priv;
 
-	debugfs_remove(priv->debugfs_phy);
+	debugfs_remove_recursive(priv->debugfs_phy);
 	priv->debugfs_phy = NULL;
 }

@@ -495,15 +495,26 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 
 	/* Allocate buffers for SDIO MP-A */
 	card->mp_regs = kzalloc(reg->max_mp_regs, GFP_KERNEL);
-	if (!card->mp_regs)
-		return -ENOMEM;
-
+	if (!card->mp_regs) {
+		rc = -ENOMEM;
+		goto err_return;
+	}
 
 	/* Allocate skb pointer buffers */
 	card->mpa_rx.skb_arr = kzalloc((sizeof(void *)) *
 				       card->mp_agg_pkt_limit, GFP_KERNEL);
+	if (!card->mpa_rx.skb_arr) {
+		rc = -ENOMEM;
+		goto err_return;
+	}
+
 	card->mpa_rx.len_arr = kzalloc(sizeof(*card->mpa_rx.len_arr) *
 				       card->mp_agg_pkt_limit, GFP_KERNEL);
+
+	if (!card->mpa_rx.len_arr) {
+		rc = -ENOMEM;
+		goto err_return;
+	}
 
 	rc = mwl_alloc_sdio_mpa_buffers(priv,
 					     card->mp_tx_agg_buf_size,
@@ -545,7 +556,7 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	if (rc) {
 		wiphy_err(priv->hw->wiphy,
 			"cannot set SDIO block size rc 0x%04x\n", rc);
-		return rc;
+		goto err_return;
 	}
 
 	priv->chip_type = card->chip_type;
@@ -559,7 +570,8 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 			wiphy_err(priv->hw->wiphy,
 				  "%s: cannot alloc memory for command buffer\n",
 				  MWL_DRV_NAME);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto err_return;
 		}
 	}
 	else
@@ -570,7 +582,8 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 		if (!priv->pcmd_event_buf) {
 			wiphy_err(priv->hw->wiphy,"%s: cannot alloc memory for command_event buffer\n",
 				  MWL_DRV_NAME);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto err_return;
 		}
 	}
 	else
@@ -601,6 +614,16 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	card->dnld_cmd_failure = 0;
 
 	return 0;
+
+err_return:
+	mwl_free_sdio_mpa_buffers(priv);
+	kfree(priv->pcmd_buf); priv->pcmd_buf = NULL;
+	kfree(priv->pcmd_event_buf); priv->pcmd_event_buf = NULL;
+	kfree(card->mpa_rx.skb_arr); card->mpa_rx.skb_arr = NULL;
+	kfree(card->mpa_rx.len_arr); card->mpa_rx.len_arr = NULL;
+	kfree(card->mp_regs); card->mp_regs = NULL;
+
+	return rc;
 }
 
 /*
@@ -904,15 +927,19 @@ static int mwl_sdio_program_firmware(struct mwl_priv *priv)
 			if (priv->if_ops.up_dev)
 				priv->if_ops.up_dev(priv);
 
-			if (ret)
+			if (ret) {
+				kfree(fwbuf);
 				return ret;
+			}
 		}
 		else
 			break;
 	}
 
-	if (i >= 2)
+	if (i >= 2) {
+		kfree(fwbuf);
 		return -1;
+	}
 
 	sdio_claim_host(card->func);
 
@@ -2755,6 +2782,22 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		printed_version = true;
 	}
 
+	/* device tree node parsing and platform specific configuration */
+	if (dev_of_node(&func->dev)) {
+		if (!of_match_node(mwl_sdio_of_match_table, dev_of_node(&func->dev))) {
+			return -ENODEV;
+		}
+
+		of_node = dev_of_node(&func->dev);
+	} else if (dev_of_node(&func->card->dev)) {
+		for_each_child_of_node(dev_of_node(&func->card->dev), np) {
+			if (of_match_node(mwl_sdio_of_match_table, np)) {
+				of_node = np;
+				break;
+			}
+		}
+	}
+
 	card = kzalloc(sizeof(struct mwl_sdio_card), GFP_KERNEL);
 	if (!card) {
 		dev_err(&func->dev,  ": allocate mwl_sdio_card structure failed");
@@ -2771,7 +2814,7 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		} else {
 			card->reg = &mwl_reg_sd8997;
 			card->chip_type = MWL8997;
-        }
+		}
 
 		card->max_ports = 32;
 		card->mp_agg_pkt_limit = 16;
@@ -2783,10 +2826,15 @@ static int mwl_sdio_probe(struct sdio_func *func,
 
 	card->tx_workq = alloc_workqueue("lrdwifi-tx_workq",
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
-	INIT_WORK(&card->tx_work, mwl_sdio_tx_workq);
-
 	card->cmd_workq = alloc_workqueue("lrdwifi-cmd_workq",
 		WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+
+	if (!card->tx_workq || !card->cmd_workq) {
+		rc = -ENOMEM;
+		goto err_return;
+	}
+
+	INIT_WORK(&card->tx_work, mwl_sdio_tx_workq);
 	INIT_WORK(&card->cmd_work, mwl_sdio_enter_ps_sleep);
 	INIT_WORK(&card->event_work, mwl_sdio_wakeup_complete);
 
@@ -2795,21 +2843,6 @@ static int mwl_sdio_probe(struct sdio_func *func,
 
 	memcpy(&sdio_ops.mwl_chip_tbl, &mwl_chip_tbl[card->chip_type],
 		sizeof(struct mwl_chip_info));
-
-	/* device tree node parsing and platform specific configuration */
-	if (dev_of_node(&func->dev)) {
-		if (!of_match_node(mwl_sdio_of_match_table, dev_of_node(&func->dev)))
-			return -ENODEV;
-
-		of_node = dev_of_node(&func->dev);
-	} else if (dev_of_node(&func->card->dev)) {
-		for_each_child_of_node(dev_of_node(&func->card->dev), np) {
-			if (of_match_node(mwl_sdio_of_match_table, np)) {
-				of_node = np;
-				break;
-			}
-		}
-	}
 
 	card->reset_pwd_gpio = reset_pwd_gpio;
 
@@ -2834,17 +2867,21 @@ static int mwl_sdio_probe(struct sdio_func *func,
 		dev_info(&func->dev, "PMU_EN GPIO not configured\n");
 
 	rc = mwl_add_card(card, &sdio_ops, of_node);
+
+err_return:
+
 	if (rc != 0) {
 		if (rc != -EPROBE_DEFER)
 			dev_err(&func->dev, "Failed to add_card %d\n", rc);
 
-		destroy_workqueue(card->cmd_workq);
-		destroy_workqueue(card->tx_workq);
+		if (card->cmd_workq)
+			destroy_workqueue(card->cmd_workq);
+		if (card->tx_workq)
+			destroy_workqueue(card->tx_workq);
 		kfree(card);
-
-		return rc;
 	}
-	return 0;
+
+	return rc;
 }
 
 static void mwl_sdio_remove(struct sdio_func *func)

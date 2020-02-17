@@ -2339,6 +2339,7 @@ static void mwl_remove(struct pci_dev *pdev)
 	mwl_pcie_unregister_dev(priv);
 
 	mwl_ieee80211_free_hw(priv);
+	kfree(card);
 
 #if 0
 	pci_disable_device(pdev);

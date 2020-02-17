@@ -1430,6 +1430,10 @@ void mwl_wl_deinit(struct mwl_priv *priv)
 {
 	struct ieee80211_hw *hw = priv->hw;
 
+#ifdef CONFIG_DEBUG_FS
+	mwl_debugfs_remove(hw);
+#endif
+
 	cancel_delayed_work_sync(&priv->stop_shutdown_work);
 
 	device_init_wakeup(priv->dev, false);
