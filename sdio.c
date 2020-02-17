@@ -97,7 +97,8 @@ static int mwl_sdio_restart_handler(struct mwl_priv *priv);
 #define SDIO_DEVICE_ID_MARVELL_8897   (0x912d)
 #define SDIO_DEVICE_ID_MARVELL_8997   (0x9141)
 
-#define SDIO_DEFAULT_POWERDOWN_DELAY_MS		15
+/* 88W8997 datasheet requires PMIC_EN/PMU_EN to remain de-asserted for a minimum of 100ms */
+#define SDIO_DEFAULT_POWERDOWN_DELAY_MS		100
 
 static void
 mwl_sdio_interrupt(struct sdio_func *func);
@@ -3088,7 +3089,7 @@ static int mwl_sdio_reset(struct mwl_priv *priv)
 	sdio_claim_host(func);
 
 	if (!mwl_sdio_set_gpio(card, 0)) {
-		lrdmwl_delay(SDIO_DEFAULT_POWERDOWN_DELAY_MS*1000);
+		msleep(SDIO_DEFAULT_POWERDOWN_DELAY_MS);
 		mwl_sdio_set_gpio(card, 1);
 	}
 

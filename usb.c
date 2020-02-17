@@ -37,7 +37,10 @@ static struct mwl_if_ops usb_ops1;
 #define INTF_HEADER_LEN	4
 #define MWL_FW_ROOT     "lrdmwl"
 
-#define USB_DEFAULT_POWERDOWN_DELAY_MS		15
+
+
+/* 88W8997 datasheet requires PMIC_EN/PMU_EN to remain de-asserted for a minimum of 100ms */
+#define USB_DEFAULT_POWERDOWN_DELAY_MS		100
 
 
 static const struct usb_device_id mwl_usb_table[] = {
@@ -1388,7 +1391,7 @@ static int mwl_usb_restart_handler(struct mwl_priv *priv)
 		return -ENOSYS;
 
 	gpio_set_value(card->reset_pwd_gpio, 0);
-	lrdmwl_delay(USB_DEFAULT_POWERDOWN_DELAY_MS*1000);
+	msleep(USB_DEFAULT_POWERDOWN_DELAY_MS);
 	gpio_set_value(card->reset_pwd_gpio, 1);
 
 	return 0;
