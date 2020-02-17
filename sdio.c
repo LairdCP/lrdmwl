@@ -2184,7 +2184,7 @@ static int mwl_write_data_complete(struct mwl_priv *priv,
 //			wiphy_err(hw->wiphy, "fr_data_skb=%p\n", skb);
 		}
 
-		ieee80211_tx_status(hw, skb);
+		ieee80211_tx_status_irqsafe(hw, skb);
 	}
 
 	return 0;
