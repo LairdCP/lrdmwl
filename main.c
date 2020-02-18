@@ -48,7 +48,7 @@
 #define NOT_LRD_HW  0x214C5244
 #define NUM_UNII3_CHANNELS  5
 #define NUM_WW_CHANNELS     3
-#define REG_PWR_DB_NAME     "regpwr.db"
+#define REG_PWR_DB_NAME     MWL_FW_ROOT"/regpwr.db"
 
 static const struct ieee80211_channel mwl_channels_24[] = {
 	{ .band = NL80211_BAND_2GHZ, .center_freq = 2412, .hw_value = 1, },

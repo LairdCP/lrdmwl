@@ -35,9 +35,6 @@
 
 static struct mwl_if_ops usb_ops1;
 #define INTF_HEADER_LEN	4
-#define MWL_FW_ROOT     "lrdmwl"
-
-
 
 /* 88W8997 datasheet requires PMIC_EN/PMU_EN to remain de-asserted for a minimum of 100ms */
 #define USB_DEFAULT_POWERDOWN_DELAY_MS		100

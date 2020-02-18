@@ -42,8 +42,6 @@
 
 #define INTF_HEADER_LEN         4
 
-#define MWL_FW_ROOT     "lrdmwl"
-
 enum mwl_pm_action {
 	MWL_PM_PREPARE,
 	MWL_PM_COMPLETE,

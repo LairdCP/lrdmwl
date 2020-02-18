@@ -32,6 +32,8 @@
 #define MWL_DRV_NAME     KBUILD_MODNAME
 #define MWL_DRV_VERSION	 "P39-20190123"
 
+#define MWL_FW_ROOT     "lrdmwl"
+
 #define LRD_DESC         "Laird 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Technologies"
 #define LRD_BLD_VERSION  "7.0.0.308"

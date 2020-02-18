@@ -23,7 +23,6 @@
 #define INTF_HEADER_LEN      0
 #define INTF_HEADER_LEN_MFG  4
 
-#define MWL_FW_ROOT     "lrdmwl"
 
 /* PCIe interrupt mode = MSI (default) */
 int pcie_intr_mode = 1;
