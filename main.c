@@ -958,6 +958,10 @@ static int lrd_regd_init(struct mwl_priv *priv)
 	hw->wiphy->reg_notifier      = mwl_reg_notifier;
 	hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
 
+	/*Reset alpha so we send driver hint if this is a reinit*/
+	memset(priv->reg.cc.alpha2, 0, sizeof(priv->reg.cc.alpha2));
+	priv->reg.regulatory_set = false;
+
 	if (mwl_fwcmd_get_fw_region_code(hw, &priv->reg.otp.region)) {
 		/* If we fail to retrieve region, default to WW */
 		wiphy_err(priv->hw->wiphy, "Failed to retrieve regulatory region.\n");
@@ -984,12 +988,18 @@ static int lrd_regd_init(struct mwl_priv *priv)
 		lrd_fixup_channels(priv, &priv->reg.otp);
 	}
 
-	request_firmware_nowait( THIS_MODULE, true, REG_PWR_DB_NAME, priv->dev, GFP_KERNEL, priv, lrd_cc_cb);
-
 done:
 	return rc;
 }
 
+static void lrd_request_cc_db(struct mwl_priv *priv)
+{
+	if (!mwl_is_unknown_country(&priv->reg.otp)) {
+		lrd_send_hint(priv, &priv->reg.otp);
+	}
+
+	request_firmware_nowait( THIS_MODULE, true, REG_PWR_DB_NAME, priv->dev, GFP_KERNEL, priv, lrd_cc_cb);
+}
 
 static void remain_on_channel_expire(struct timer_list *t)
 {
@@ -1394,6 +1404,9 @@ static int mwl_wl_init(struct mwl_priv *priv)
 			  MWL_DRV_NAME);
 		goto err_wl_init;
 	}
+
+	/* Request Regulatory DB */
+	lrd_request_cc_db(priv);
 
 	/* Success - dump relevant info to log */
 	wiphy_info(hw->wiphy, "Radio Type %s%s (0x%x)\n", (priv->radio_caps.capability & LRD_CAP_SU60)?"SU60":"ST60",
@@ -1930,11 +1943,6 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 	}
 
 	/* Initialize regulatory info */
-
-	/*Reset alpha so we send driver hint */
-	memset(priv->reg.cc.alpha2, 0, sizeof(priv->reg.cc.alpha2));
-	priv->reg.regulatory_set = false;
-
 	if (lrd_regd_init(priv)) {
 		wiphy_err(hw->wiphy, "%s: fail to register regulatory\n", MWL_DRV_NAME);
 		goto err_init;
@@ -1952,6 +1960,9 @@ int mwl_reinit_sw(struct mwl_priv *priv, bool suspend)
 
 		ieee80211_restart_hw(hw);
 	}
+
+	/* Request Regulatory DB */
+	lrd_request_cc_db(priv);
 
 	mod_timer(&priv->period_timer, jiffies +
 		  msecs_to_jiffies(SYSADPT_TIMER_WAKEUP_TIME));
