@@ -322,13 +322,13 @@ struct mwl_rx_hndl {
 #define MWL_RX_EVENT_WOW_LINKLOSS_DETECT 0x14
 #define MWL_RX_EVENT_WOW_AP_DETECT       0x15
 #define MWL_RX_EVENT_WOW_RX_DETECT       0x16
-
+#define MWL_RX_EVENT_REG                 0x17
 
 struct mwl_rx_event_data {
 	u16 event_id;
 	u16 length;
 	u32 event_info;
-};
+}__packed;
 
 struct mwl_desc_data {
 
@@ -486,6 +486,8 @@ struct mwl_if_ops {
 	int (*is_deepsleep)(struct mwl_priv *);
 	void (*down_dev)(struct mwl_priv *);
 	void (*up_dev)(struct mwl_priv *);
+	void (*down_pwr)(struct mwl_priv *);
+	int  (*up_pwr)(struct mwl_priv *);
 };
 
 #define MWL_OTP_BUF_SIZE	(256*8)		//258 lines * 8 bytes
@@ -515,14 +517,41 @@ struct lrd_radio_caps {
 	__le16 version;
 };
 
+#define CC_AWM_TIMER  3600000 /* mS */
+
+#define MIN_AWM_SIZE      26
+
+#define REG_CODE_ETSI     0x30
+#define REG_CODE_WW       0xFF
+
+struct cc_info
+{
+	u32 region;
+	u8  alpha2[2];
+};
+
+struct lrd_regulatory {
+	struct timer_list  timer_awm;
+	struct work_struct event;
+	struct work_struct awm;
+	struct mutex       mutex;
+
+	struct cc_info     otp;
+	struct cc_info     cc;
+	u32    pn;
+
+	bool   regulatory_set;
+	enum nl80211_dfs_regions dfs_region;
+
+	u8     *db;
+	int     db_size;
+};
+
 struct mwl_priv {
 	struct ieee80211_hw *hw;
 	struct firmware *fw_ucode;
-	bool fw_device_pwrtbl;
 	bool forbidden_setting;
-	bool regulatory_set;
-	u32 fw_region_code;
-	char fw_alpha2[2];
+	struct lrd_regulatory reg;
 	u8 number_of_channels;
 	struct mwl_device_pwr_tbl device_pwr_tbl[SYSADPT_MAX_NUM_CHANNELS];
 	int chip_type;
@@ -643,7 +672,6 @@ struct mwl_priv {
 
 	bool csa_active;
 	struct work_struct chnl_switch_handle;
-	enum nl80211_dfs_regions dfs_region;
 	u16 dfs_chirp_count_min;
 	u16 dfs_chirp_time_interval;
 	u16 dfs_pw_filter;
@@ -715,8 +743,7 @@ struct mwl_priv {
 	bool host_crypto;
 	bool stop_shutdown;
 	bool mac_init_complete;
-	struct timer_list stop_shutdown_timer;
-	struct work_struct stop_shutdown_work;
+	struct delayed_work stop_shutdown_work;
 
 	/** Work around for startup failure */
 	atomic_t null_scan_count;
