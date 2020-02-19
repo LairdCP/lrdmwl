@@ -81,7 +81,7 @@ static unsigned int reset_pwd_gpio = ARCH_NR_GPIOS;
 static int mwl_write_data_sync(struct mwl_priv *priv,
 			u8 *buffer, u32 pkt_len, u32 port);
 static int mwl_sdio_enable_int(struct mwl_priv *priv, bool enable);
-static int mwl_sdio_complete_cmd(struct mwl_priv *priv);
+
 static int mwl_sdio_event(struct mwl_priv *priv);
 static void mwl_sdio_tx_workq(struct work_struct *work);
 static void mwl_sdio_rx_recv(unsigned long data);
@@ -540,10 +540,9 @@ static int mwl_sdio_init(struct mwl_priv *priv)
 	skb_queue_head_init(&card->rx_data_q);
 
 	card->cmd_wait_q.status = 0;
-	card->cmd_sent = false;
-	card->cmd_cond = false;
+	card->cmd_resp_recvd = false;
 	card->cmd_id = 0;
-	card->data_sent = false;
+	card->int_status = 0;
 	init_waitqueue_head(&card->wait_deepsleep);
 
 	sdio_claim_host(card->func);
@@ -673,7 +672,7 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 		status = wait_event_timeout(card->cmd_wait_q.wait,
 			(card->int_status & DN_LD_CMD_PORT_HOST_INT_STATUS),
 			(12 * HZ));
-		if (status <= 0) {
+		if (status == 0) {
 			wiphy_err(priv->hw->wiphy, "CMD_DNLD failure\n");
 			priv->cmd_timeout = true;
 			return -1;
@@ -690,8 +689,7 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 	blk_size = MWL_SDIO_BLOCK_SIZE;
 	buf_block_len = (len + blk_size - 1) / blk_size;
 	pkt_len = buf_block_len * blk_size;
-	card->cmd_sent = true;
-	card->cmd_cond = false;
+	card->cmd_resp_recvd = false;
 	card->cmd_id = (u16)(le16_to_cpu(cmd_hdr->command) & ~HOSTCMD_RESP_BIT);
 
 	pbuf[0] = cpu_to_le16(pkt_len);
@@ -702,7 +700,9 @@ static int mwl_sdio_send_command(struct mwl_priv *priv)
 
 	if (rc < 0) {
 		//If command fails to write, reset the int status so next command can be processed.
+		spin_lock_irqsave(&card->int_lock, flags);
 		card->int_status |= DN_LD_CMD_PORT_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
 
 		card->dnld_cmd_failure++;
 		if (card->dnld_cmd_failure > MAX_DNLD_CMD_FAILURES) {
@@ -1147,7 +1147,7 @@ int mwl_sdio_wakeup_card(struct mwl_priv *priv)
 
 	status = wait_event_timeout(card->wait_deepsleep,(
 					card->is_deepsleep == 0), 12 * HZ);
-	if(status <= 0) {
+	if(status == 0) {
 		wiphy_err(priv->hw->wiphy, "info: Card Wakeup failed\n");
 		return -EIO;
 	}
@@ -1226,9 +1226,6 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 #endif
 	u16	event_id = le16_to_cpu(host_event->mac_event.event_id);
 
-	// Remove SDIO Header
-	host_event->length -= cpu_to_le16(INTF_HEADER_LEN);
-
 	wiphy_dbg(hw->wiphy,"=> sd_event: %s\n", mwl_sdio_event_strn(event_id));
 
 	switch (event_id) {
@@ -1258,53 +1255,6 @@ static int mwl_sdio_event(struct mwl_priv *priv)
 	}
 
 	return 0;
-}
-
-static int mwl_sdio_complete_cmd(struct mwl_priv *priv)
-{
-	struct mwl_sdio_card *card = priv->intf;
-	struct cmd_header *cmd_hdr;
-
-	cmd_hdr = (struct cmd_header *)&priv->pcmd_buf[
-			INTF_CMDHEADER_LEN(INTF_HEADER_LEN)];
-
-	card->cmd_wait_q.status = 0;
-	card->cmd_cond = true;
-	wake_up(&card->cmd_wait_q.wait);
-
-	return 0;
-}
-
-/*
- * This function reads the interrupt status from card.
- */
-static void mwl_sdio_interrupt_status(struct mwl_priv *priv)
-{
-	struct mwl_sdio_card *card = priv->intf;
-	u8 sdio_ireg;
-	unsigned long flags;
-
-	if (mwl_read_data_sync(priv, card->mp_regs,
-	               card->reg->max_mp_regs,
-	               REG_PORT, 0)) {
-		wiphy_err(priv->hw->wiphy, "read mp_regs failed\n");
-		return;
-	}
-
-	sdio_ireg = card->mp_regs[card->reg->host_int_status_reg];
-	if (sdio_ireg) {
-		/*
-		 * DN_LD_HOST_INT_STATUS and/or UP_LD_HOST_INT_STATUS
-		 * For SDIO new mode CMD port interrupts
-		 *	DN_LD_CMD_PORT_HOST_INT_STATUS and/or
-		 *	UP_LD_CMD_PORT_HOST_INT_STATUS
-		 * Clear the interrupt status register
-		 */
-		spin_lock_irqsave(&card->int_lock, flags);
-		card->int_status |= sdio_ireg;
-		spin_unlock_irqrestore(&card->int_lock, flags);
-	}
-	return;
 }
 
 /*
@@ -1661,198 +1611,6 @@ error:
 
 	return -1;
 }
-
-
-
-
-/*
- * This function checks the current interrupt status.
- *
- * The following interrupts are checked and handled by this function -
- *      - Data sent
- *      - Command sent
- *      - Packets received
- *
- * Since the firmware does not generate download ready interrupt if the
- * port updated is command port only, command sent interrupt checking
- * should be done manually, and for every SDIO interrupt.
- *
- * In case of Rx packets received, the packets are uploaded from card to
- * host and processed accordingly.
- */
-static int mwl_sdio_process_int_status(struct mwl_priv *priv)
-{
-	struct mwl_sdio_card *card = priv->intf;
-	const struct mwl_sdio_card_reg *reg = card->reg;
-	struct ieee80211_hw *hw = priv->hw;
-	int ret = 0;
-	u8 sdio_ireg;
-	u8 port = CTRL_PORT;
-	u32 len_reg_l, len_reg_u;
-	u32 rx_blocks;
-	u16 rx_len;
-	unsigned long flags;
-	u32 bitmap;
-	u8 cr;
-	__le16 *pBuf = (__le16 *)priv->pcmd_event_buf;
-
-	spin_lock_irqsave(&card->int_lock, flags);
-	sdio_ireg = card->int_status;
-	//card->int_status = 0;
-	spin_unlock_irqrestore(&card->int_lock, flags);
-
-	if (!sdio_ireg)
-		return ret;
-	/* Following interrupt is only for SDIO new mode */
-	if (sdio_ireg & DN_LD_CMD_PORT_HOST_INT_STATUS) {
-		//card->cmd_sent = false;
-        card->cmd_wait_q.status = 0;
-	    wake_up(&card->cmd_wait_q.wait);
-    }
-
-	/* Command Response / Event is back */
-	if (sdio_ireg & UP_LD_CMD_PORT_HOST_INT_STATUS) {
-		struct cmd_header *cmd_hdr = (struct cmd_header *)
-			&priv->pcmd_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)];
-
-		spin_lock_irqsave(&card->int_lock, flags);
-		card->int_status &= ~UP_LD_CMD_PORT_HOST_INT_STATUS;
-		spin_unlock_irqrestore(&card->int_lock, flags);
-
-		/* read the len of control packet */
-		rx_len = card->mp_regs[reg->cmd_rd_len_1] << 8;
-		rx_len |= (u16)card->mp_regs[reg->cmd_rd_len_0];
-		rx_blocks = DIV_ROUND_UP(rx_len, MWL_SDIO_BLOCK_SIZE);
-		if ((rx_blocks * MWL_SDIO_BLOCK_SIZE) > CMD_BUF_SIZE)
-			return -1;
-
-		rx_len = (u16) (rx_blocks * MWL_SDIO_BLOCK_SIZE);
-
-		ret = mwl_sdio_card_to_host(priv, NULL, (u8 *)priv->pcmd_event_buf,
-			rx_len, card->ioport | CMD_PORT_SLCT);
-
-		if (ret != 0) {
-			wiphy_err(hw->wiphy,
-			    "%s: failed to card_to_host, (%d)", __func__, ret);
-			goto term_cmd;
-		}
-
-		/*
-		* If command has been sent & cmd_code = 0x8xxx => It's cmd_resp
-		* Otherwise, it's event (new added)
-		*/
-		if ((card->cmd_cond == false) &&
-		    ((le16_to_cpu(cmd_hdr->command) & ~HOSTCMD_RESP_BIT) == card->cmd_id) &&
-		    (pBuf[1] ==  cpu_to_le16(MWL_TYPE_CMD))) {
-			card->cmd_id = 0;
-			memcpy(priv->pcmd_buf,priv->pcmd_event_buf,rx_len);
-			mwl_sdio_complete_cmd(priv);
-		} else if (pBuf[1] ==  cpu_to_le16(MWL_TYPE_EVENT))
-			mwl_sdio_event(priv);
-	}
-
-	/* Tx-Done interrupt */
-	if (sdio_ireg & DN_LD_HOST_INT_STATUS) {
-		bitmap = (u32) card->mp_regs[reg->wr_bitmap_l];
-		bitmap |= ((u32) card->mp_regs[reg->wr_bitmap_u]) << 8;
-		bitmap |= ((u32) card->mp_regs[reg->wr_bitmap_1l]) << 16;
-		bitmap |= ((u32) card->mp_regs[reg->wr_bitmap_1u]) << 24;
-
-		spin_lock_irqsave(&card->int_lock, flags);
-		card->int_status &= ~DN_LD_HOST_INT_STATUS;
-		spin_unlock_irqrestore(&card->int_lock, flags);
-
-		card->mp_wr_bitmap = bitmap;
-
-		if (card->data_sent &&
-		    (card->mp_wr_bitmap & card->mp_data_port_mask)) {
-#if 0
-			wiphy_err(hw->wiphy,
-				    "error:  <--- Tx DONE Interrupt bmp=0x%x --->\n", card->mp_wr_bitmap);
-#endif
-			card->data_sent = false;
-		}
-
-		queue_work(card->tx_workq, &card->tx_work);
-	}
-
-	/* Rx process */
-	if (sdio_ireg & UP_LD_HOST_INT_STATUS) {
-		bitmap = (u32) card->mp_regs[reg->rd_bitmap_l];
-		bitmap |= ((u32) card->mp_regs[reg->rd_bitmap_u]) << 8;
-		bitmap |= ((u32) card->mp_regs[reg->rd_bitmap_1l]) << 16;
-		bitmap |= ((u32) card->mp_regs[reg->rd_bitmap_1u]) << 24;
-		card->mp_rd_bitmap = bitmap;
-
-		spin_lock_irqsave(&card->int_lock, flags);
-		card->int_status &= ~UP_LD_HOST_INT_STATUS;
-		spin_unlock_irqrestore(&card->int_lock, flags);
-
-		while (true) {
-			ret = mwl_get_rd_port(priv, &port);
-			if (ret)
-				break;
-
-			len_reg_l = reg->rd_len_p0_l + (port << 1);
-			len_reg_u = reg->rd_len_p0_u + (port << 1);
-			rx_len = ((u16) card->mp_regs[len_reg_u]) << 8;
-			rx_len |= (u16) card->mp_regs[len_reg_l];
-
-			rx_blocks =
-				(rx_len + MWL_SDIO_BLOCK_SIZE -
-				 1) / MWL_SDIO_BLOCK_SIZE;
-
-			if (card->mpa_rx.enabled &&
-			     ((rx_blocks * MWL_SDIO_BLOCK_SIZE) >
-			      card->mpa_rx.buf_size)) {
-				wiphy_err(hw->wiphy,
-					    "invalid rx_len=%d\n",
-					    rx_len);
-				return -1;
-			}
-
-			rx_len = (u16) (rx_blocks * MWL_SDIO_BLOCK_SIZE);
-			if (mwl_sdio_card_to_host_mp_aggr(priv, rx_len,
-							      port)) {
-				wiphy_err(hw->wiphy,
-					    "card_to_host_mpa failed: int status=%#x\n",
-					    sdio_ireg);
-				goto term_cmd;
-			}
-		}
-
-		/* Indicate the received packets (card->rx_data_q)to MAC80211 */
-		if (!priv->shutdown) {
-			tasklet_schedule(&priv->rx_task);
-		}
-	}
-	return 0;
-
-term_cmd:
-	/* terminate cmd */
-	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
-		wiphy_err(hw->wiphy, "read CFG reg failed\n");
-	else
-		wiphy_err(hw->wiphy,
-			    "info: CFG reg val = %d\n", cr);
-
-	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x04)))
-		wiphy_err(hw->wiphy,
-			    "write CFG reg failed\n");
-	else
-		wiphy_err(hw->wiphy, "info: write success\n");
-
-	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
-		wiphy_err(hw->wiphy,
-			    "read CFG reg failed\n");
-	else
-		wiphy_err(hw->wiphy,
-			    "info: CFG reg val =%x\n", cr);
-
-
-	return -1;
-}
-
 
 /*
 static char *mwl_pktstrn(char* pkt)
@@ -2571,12 +2329,31 @@ static int mwl_sdio_host_to_card(struct mwl_priv *priv,
  *
  * This function reads the interrupt status from firmware and handles
  * the interrupt in current thread (ksdioirqd) right away.
+*
+ * The following interrupts are checked and handled by this function -
+ *      - Data sent
+ *      - Command sent
+ *      - Packets received
+ *
+ * Since the firmware does not generate download ready interrupt if the
+ * port updated is command port only, command sent interrupt checking
+ * should be done manually, and for every SDIO interrupt.
+ *
+ * In case of Rx packets received, the packets are uploaded from card to
+ * host and processed accordingly.
  */
 static void
 mwl_sdio_interrupt(struct sdio_func *func)
 {
 	struct mwl_priv      *priv;
 	struct ieee80211_hw  *hw;
+	struct mwl_sdio_card *card;
+	u8 sdio_ireg;
+	u32 rx_blocks;
+	u16 rx_len;
+	unsigned long flags;
+	u32 bitmap;
+	u8 cr;
 
 	hw = sdio_get_drvdata(func);
 
@@ -2584,9 +2361,187 @@ mwl_sdio_interrupt(struct sdio_func *func)
 		return;
 
 	priv = hw->priv;
+	card = priv->intf;
 
-	mwl_sdio_interrupt_status(priv);
-	mwl_sdio_process_int_status(priv);
+	if (mwl_read_data_sync(priv, card->mp_regs, card->reg->max_mp_regs, REG_PORT, 0)) {
+		wiphy_err(priv->hw->wiphy, "read mp_regs failed\n");
+		return;
+	}
+
+	/*
+	 * DN_LD_HOST_INT_STATUS and/or UP_LD_HOST_INT_STATUS
+	 * For SDIO new mode CMD port interrupts
+	 *	DN_LD_CMD_PORT_HOST_INT_STATUS and/or
+	 *	UP_LD_CMD_PORT_HOST_INT_STATUS
+	 * Clear the interrupt status register
+	 */
+	spin_lock_irqsave(&card->int_lock, flags);
+	card->int_status |= card->mp_regs[card->reg->host_int_status_reg];
+	sdio_ireg = card->int_status;
+	spin_unlock_irqrestore(&card->int_lock, flags);
+
+	if (!sdio_ireg)
+		return;
+
+	/* Following interrupt is only for SDIO new mode */
+	if (sdio_ireg & DN_LD_CMD_PORT_HOST_INT_STATUS) {
+		card->cmd_wait_q.status = 0;
+		wake_up(&card->cmd_wait_q.wait);
+	}
+
+	/* Command Response / Event is back */
+	if (sdio_ireg & UP_LD_CMD_PORT_HOST_INT_STATUS) {
+		struct cmd_header *cmd_hdr_resp = (struct cmd_header *)
+			&priv->pcmd_event_buf[INTF_CMDHEADER_LEN(INTF_HEADER_LEN)];
+		__le16 *pRspBuf = (__le16 *)priv->pcmd_event_buf;
+
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~UP_LD_CMD_PORT_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
+
+		/* read the len of control packet */
+		rx_len = card->mp_regs[card->reg->cmd_rd_len_1] << 8;
+		rx_len |= (u16)card->mp_regs[card->reg->cmd_rd_len_0];
+		rx_blocks = DIV_ROUND_UP(rx_len, MWL_SDIO_BLOCK_SIZE);
+		if ((rx_blocks * MWL_SDIO_BLOCK_SIZE) > CMD_BUF_SIZE)
+			return;
+
+		rx_len = (u16) (rx_blocks * MWL_SDIO_BLOCK_SIZE);
+
+		if (mwl_sdio_card_to_host(priv, NULL, (u8 *)priv->pcmd_event_buf,
+						rx_len, card->ioport | CMD_PORT_SLCT)) {
+			wiphy_err(hw->wiphy,
+			    "%s: failed to card_to_host", __func__);
+			goto term_cmd;
+		}
+
+		/*
+		* If command has been sent & cmd_code = 0x8xxx => It's cmd_resp
+		* Otherwise, it's event (new added)
+		*/
+		if ((!card->cmd_resp_recvd) &&
+		    (le16_to_cpu(cmd_hdr_resp->command) == (card->cmd_id | HOSTCMD_RESP_BIT)) &&
+		    (pRspBuf[1] ==  cpu_to_le16(MWL_TYPE_CMD))) {
+			spin_lock_irqsave(&card->int_lock, flags);
+			card->cmd_id = 0;
+			memcpy(priv->pcmd_buf,priv->pcmd_event_buf,rx_len);
+			card->cmd_wait_q.status = 0;
+			card->cmd_resp_recvd = true;
+			spin_unlock_irqrestore(&card->int_lock, flags);
+
+			wake_up(&card->cmd_wait_q.wait);
+
+		}
+		else if (pRspBuf[1] ==  cpu_to_le16(MWL_TYPE_EVENT)) {
+			mwl_sdio_event(priv);
+		}
+		else {
+			wiphy_err(hw->wiphy,
+			    "%s: Unexpected cmd/resp! Type 0x%x, cmd 0x%x\n",
+			    __func__, le16_to_cpu(pRspBuf[1]), le16_to_cpu(cmd_hdr_resp->command));
+		}
+	}
+
+	/* Tx-Done interrupt */
+	if (sdio_ireg & DN_LD_HOST_INT_STATUS) {
+		bitmap = (u32) card->mp_regs[card->reg->wr_bitmap_l];
+		bitmap |= ((u32) card->mp_regs[card->reg->wr_bitmap_u]) << 8;
+		bitmap |= ((u32) card->mp_regs[card->reg->wr_bitmap_1l]) << 16;
+		bitmap |= ((u32) card->mp_regs[card->reg->wr_bitmap_1u]) << 24;
+
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~DN_LD_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
+
+		card->mp_wr_bitmap = bitmap;
+
+		if (card->data_sent &&
+		    (card->mp_wr_bitmap & card->mp_data_port_mask)) {
+#if 0
+			wiphy_err(hw->wiphy,
+				    "error:  <--- Tx DONE Interrupt bmp=0x%x --->\n", card->mp_wr_bitmap);
+#endif
+			card->data_sent = false;
+		}
+
+		queue_work(card->tx_workq, &card->tx_work);
+	}
+
+	/* Rx process */
+	if (sdio_ireg & UP_LD_HOST_INT_STATUS) {
+		bitmap = (u32) card->mp_regs[card->reg->rd_bitmap_l];
+		bitmap |= ((u32) card->mp_regs[card->reg->rd_bitmap_u]) << 8;
+		bitmap |= ((u32) card->mp_regs[card->reg->rd_bitmap_1l]) << 16;
+		bitmap |= ((u32) card->mp_regs[card->reg->rd_bitmap_1u]) << 24;
+		card->mp_rd_bitmap = bitmap;
+
+		spin_lock_irqsave(&card->int_lock, flags);
+		card->int_status &= ~UP_LD_HOST_INT_STATUS;
+		spin_unlock_irqrestore(&card->int_lock, flags);
+
+		while (true) {
+			u8 port;
+			u32 len_reg_l, len_reg_u;
+
+			if (mwl_get_rd_port(priv, &port))
+				break;
+
+			len_reg_l = card->reg->rd_len_p0_l + (port << 1);
+			len_reg_u = card->reg->rd_len_p0_u + (port << 1);
+			rx_len = ((u16) card->mp_regs[len_reg_u]) << 8;
+			rx_len |= (u16) card->mp_regs[len_reg_l];
+
+			rx_blocks =
+				(rx_len + MWL_SDIO_BLOCK_SIZE -
+				 1) / MWL_SDIO_BLOCK_SIZE;
+
+			if (card->mpa_rx.enabled &&
+			     ((rx_blocks * MWL_SDIO_BLOCK_SIZE) >
+			      card->mpa_rx.buf_size)) {
+				wiphy_err(hw->wiphy,
+					    "invalid rx_len=%d\n",
+					    rx_len);
+				return;
+			}
+
+			rx_len = (u16) (rx_blocks * MWL_SDIO_BLOCK_SIZE);
+			if (mwl_sdio_card_to_host_mp_aggr(priv, rx_len,
+							      port)) {
+				wiphy_err(hw->wiphy,
+					    "card_to_host_mpa failed: int status=%#x\n",
+					    sdio_ireg);
+				goto term_cmd;
+			}
+		}
+
+		/* Indicate the received packets (card->rx_data_q)to MAC80211 */
+		if (!priv->shutdown) {
+			tasklet_schedule(&priv->rx_task);
+		}
+	}
+	return;
+
+term_cmd:
+	/* terminate cmd */
+	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
+		wiphy_err(hw->wiphy, "read CFG reg failed\n");
+	else
+		wiphy_err(hw->wiphy,
+			    "info: CFG reg val = %d\n", cr);
+
+	if (mwl_write_reg(priv, CONFIGURATION_REG, (cr | 0x04)))
+		wiphy_err(hw->wiphy,
+			    "write CFG reg failed\n");
+	else
+		wiphy_err(hw->wiphy, "info: write success\n");
+
+	if (mwl_read_reg(priv, CONFIGURATION_REG, &cr))
+		wiphy_err(hw->wiphy,
+			    "read CFG reg failed\n");
+	else
+		wiphy_err(hw->wiphy,
+			    "info: CFG reg val =%x\n", cr);
+
 	return;
 }
 
@@ -2599,11 +2554,10 @@ static int mwl_sdio_cmd_resp_wait_completed(struct mwl_priv *priv,
 
 	/* Wait for completion */
 	status = wait_event_timeout(card->cmd_wait_q.wait,
-						  (card->cmd_cond == true),
+						  (card->cmd_resp_recvd == true),
 						  (12 * HZ));
-	if (status <= 0) {
-		if (status == 0)
-			status = -ETIMEDOUT;
+	if (status == 0) {
+		status = -ETIMEDOUT;
 		wiphy_err(priv->hw->wiphy, "timeout, cmd_wait_q terminated: %d\n",
 			    status);
 		card->cmd_wait_q.status = status;

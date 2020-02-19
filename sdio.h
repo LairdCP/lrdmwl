@@ -468,12 +468,11 @@ struct mwl_sdio_card {
 
 	int chip_type;
 	u32 ioport;
-	u8 cmd_cond;
+	bool cmd_resp_recvd;
 
 	struct mwl_wait_queue cmd_wait_q;
 	u16	cmd_id;
 
-	u8 cmd_sent;
 	u32 rate_info;
 	/* needed for card reset */
 	const struct sdio_device_id *dev_id;
