@@ -1208,7 +1208,6 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	INIT_WORK(&priv->reg.event, lrd_cc_event);
 	INIT_WORK(&priv->reg.awm, lrd_awm_expire);
 
-	priv->forbidden_setting  = false;
 	priv->reg.regulatory_set = false;
 	priv->disable_2g         = false;
 	priv->disable_5g         = false;

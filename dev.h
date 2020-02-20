@@ -464,8 +464,11 @@ struct mwl_if_ops {
 	void (*wakeup_complete) (struct mwl_priv *);
 	void (*enter_deepsleep) (struct mwl_priv *);
 	void (*flush_amsdu)(unsigned long);
+
+#ifdef CONFIG_DEBUG_FS
 	int (*dbg_info)(struct mwl_priv *, char*, int, int);
 	int (*dbg_reg_access)(struct mwl_priv *, bool);
+#endif
 
 	/* Interface specific functions */
 	int (*send_cmd) (struct mwl_priv *);
@@ -552,10 +555,8 @@ struct lrd_regulatory {
 struct mwl_priv {
 	struct ieee80211_hw *hw;
 	struct firmware *fw_ucode;
-	bool forbidden_setting;
 	struct lrd_regulatory reg;
 	u8 number_of_channels;
-	struct mwl_device_pwr_tbl device_pwr_tbl[SYSADPT_MAX_NUM_CHANNELS];
 	int chip_type;
 
 	struct device_node *dt_node;
@@ -690,7 +691,6 @@ struct mwl_priv {
 	u32 reg_type;
 	u32 reg_offset;
 	u32 reg_value;
-	int tx_desc_num;
 
 	unsigned long valid_interrupt_cnt;
 

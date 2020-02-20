@@ -2692,6 +2692,25 @@ static int mwl_sdio_restart_handler(struct mwl_priv *priv)
 	return ret;
 }
 
+#ifdef CONFIG_DEBUG_FS
+static int mwl_sdio_dbg_info (struct mwl_priv *priv, char *p, int size, int len)
+{
+	struct mwl_sdio_card *card = priv->intf;
+
+#ifdef CONFIG_PM
+	len += scnprintf(p + len, size - len, "WOW Capable: %s\n", priv->wow.capable?"yes":"no");
+#endif
+
+	len += scnprintf(p + len, size - len, "Link down power off: %s\n", priv->stop_shutdown ? "enable":"disable");
+
+	if (gpio_is_valid(card->reset_pwd_gpio)) {
+		len += scnprintf(p + len, size - len, "PMU_EN gpio: %d\n", card->reset_pwd_gpio);
+	}
+
+	return len;
+}
+#endif
+
 MODULE_DEVICE_TABLE(sdio, mwl_sdio_id_tbl);
 static struct mwl_if_ops sdio_ops = {
 	.inttf_head_len          = INTF_HEADER_LEN,
@@ -2714,6 +2733,9 @@ static struct mwl_if_ops sdio_ops = {
 	.down_dev                = mwl_sdio_down_dev,
 	.up_pwr                  = mwl_sdio_up_pwr,
 	.down_pwr                = mwl_sdio_down_pwr,
+#ifdef CONFIG_DEBUG_FS
+	.dbg_info                = mwl_sdio_dbg_info,
+#endif
 };
 
 static int mwl_sdio_probe(struct sdio_func *func,

@@ -1957,7 +1957,9 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 		writel(~int_status,
 		       card->iobase1 + MACREG_REG_A2H_INTERRUPT_CAUSE);
 
+#ifdef CONFIG_DEBUG_FS
 		priv->valid_interrupt_cnt++;
+#endif
 
 		if (int_status & MACREG_A2HRIC_BIT_TX_DONE) {
 			if (!priv->is_tx_done_schedule) {
@@ -2125,9 +2127,11 @@ static void mwl_pcie_tx_flush_amsdu(unsigned long data)
 
 }
 
+#ifdef CONFIG_DEBUG_FS
 static int mwl_pcie_dbg_info(struct mwl_priv *priv, char *p, int size, int len)
 {
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
+
 	len += scnprintf(p + len, size - len, "irq number: %d\n", priv->irq);
 	len += scnprintf(p + len, size - len, "iobase0: %p\n", card->iobase0);
 	len += scnprintf(p + len, size - len, "iobase1: %p\n", card->iobase1);
@@ -2148,29 +2152,27 @@ static int mwl_pcie_debugfs_reg_access(struct mwl_priv *priv, bool write)
 	switch (priv->reg_type) {
 	case MWL_ACCESS_ADDR0:
 		if (set == WL_GET)
-			priv->reg_value =
-				readl(card->iobase0 + priv->reg_offset);
+			priv->reg_value = readl(card->iobase0 + priv->reg_offset);
 		else
-			writel(priv->reg_value,
-			       card->iobase0 + priv->reg_offset);
+			writel(priv->reg_value, card->iobase0 + priv->reg_offset);
 		break;
 	case MWL_ACCESS_ADDR1:
 		if (set == WL_GET)
-			priv->reg_value =
-				readl(card->iobase1 + priv->reg_offset);
+			priv->reg_value = readl(card->iobase1 + priv->reg_offset);
 		else
-			writel(priv->reg_value,
-			       card->iobase1 + priv->reg_offset);
+			writel(priv->reg_value, card->iobase1 + priv->reg_offset);
 		break;
 	case MWL_ACCESS_ADDR:
 		addr_val = kmalloc(64 * sizeof(u32), GFP_KERNEL);
 		if (addr_val) {
 			memset(addr_val, 0, 64 * sizeof(u32));
 			addr_val[0] = priv->reg_value;
-			ret = mwl_fwcmd_get_addr_value(hw, priv->reg_offset,
-						       4, addr_val, set);
-			if ((!ret) && (set == WL_GET))
+			ret = mwl_fwcmd_get_addr_value(hw, priv->reg_offset, 4, addr_val, set);
+
+			if ((!ret) && (set == WL_GET)) {
 				priv->reg_value = addr_val[0];
+			}
+
 			kfree(addr_val);
 		} else {
 			ret = -ENOMEM;
@@ -2183,6 +2185,7 @@ static int mwl_pcie_debugfs_reg_access(struct mwl_priv *priv, bool write)
 
 	return ret;
 }
+#endif
 
 static int mwl_pcie_wakeup_card(struct mwl_priv *priv)
 {
@@ -2258,8 +2261,10 @@ static struct mwl_if_ops pcie_ops = {
 	.read_reg          = mwl_pcie_read_register,
 	.write_reg         = mwl_pcie_write_register,
 	.tx_done           = mwl_pcie_tx_done,
+#ifdef CONFIG_DEBUG_FS
 	.dbg_info          = mwl_pcie_dbg_info,
 	.dbg_reg_access    = mwl_pcie_debugfs_reg_access,
+#endif
 	.enter_deepsleep   = mwl_pcie_enter_deepsleep,
 	.wakeup_card       = mwl_pcie_wakeup_card,
 	.is_deepsleep      = mwl_pcie_is_deepsleep,

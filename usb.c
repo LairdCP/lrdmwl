@@ -1394,6 +1394,19 @@ static int mwl_usb_restart_handler(struct mwl_priv *priv)
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
+static int mwl_usb_dbg_info (struct mwl_priv *priv, char *p, int size, int len)
+{
+	struct usb_card_rec *card = priv->intf;
+
+	if (gpio_is_valid(card->reset_pwd_gpio)) {
+		len += scnprintf(p + len, size - len, "PMU_EN gpio: %d\n", card->reset_pwd_gpio);
+	}
+	return len;
+}
+#endif
+
+
 static struct mwl_if_ops usb_ops1 = {
 	.inttf_head_len    = INTF_HEADER_LEN,
 	.register_dev      = mwl_usb_register_dev,
@@ -1411,6 +1424,9 @@ static struct mwl_if_ops usb_ops1 = {
 	.enter_deepsleep   = mwl_usb_enter_deepsleep,
 	.wakeup_card       = mwl_usb_wakeup_card,
 	.is_deepsleep      = mwl_usb_is_deepsleep,
+#ifdef CONFIG_DEBUG_FS
+	.dbg_info          = mwl_usb_dbg_info,
+#endif
 };
 
 module_usb_driver(mwl_usb_driver);

@@ -713,10 +713,12 @@ void mwl_tx_xmit(struct ieee80211_hw *hw,
 		mgmt = (struct ieee80211_mgmt *)skb->data;
 	}
 
+#ifdef CONFIG_DEBUG_FS
 	if (ieee80211_is_mgmt(wh->frame_control))
 		priv->tx_mgmt_cnt++;
 	else
 		priv->tx_data_cnt++;
+#endif
 
 	tx_info = IEEE80211_SKB_CB(skb);
 	mwl_vif = mwl_dev_get_vif(tx_info->control.vif);
