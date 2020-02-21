@@ -920,8 +920,11 @@ static int mwl_pcie_init_post(struct mwl_priv *priv)
 	struct mwl_pcie_card *card = priv->intf;
 	int i;
 
+	// Stop Shutdown mode not supported
+	priv->stop_shutdown = false;
+
 	if (priv->mfg_mode) {
-		//Assume ST 60 with one interface
+		// Assume ST 60 with one interface
 		priv->radio_caps.capability = 0;
 		priv->radio_caps.num_mac = 1;
 	}

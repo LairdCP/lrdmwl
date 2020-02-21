@@ -520,11 +520,13 @@ static void mwl_usb_rx_recv(unsigned long data)
 
 static int mwl_usb_init_post(struct mwl_priv *priv)
 {
+	// Stop Shutdown mode not supported
+	priv->stop_shutdown = false;
+
 	if (priv->mfg_mode) {
-		//Assume ST 60 with one interface
+		// Assume ST 60 with one interface
 		priv->radio_caps.capability = 0;
 		priv->radio_caps.num_mac = 1;
-
 	}
 
 	return 0;
