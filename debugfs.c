@@ -117,10 +117,19 @@ static ssize_t mwl_debugfs_info_read(struct file *file, char __user *ubuf,
 											((priv->hw_data.fw_release_num >> 8) & 0xff),
 											((priv->hw_data.fw_release_num >> 0) & 0xff));
 	len += scnprintf(p + len, size - len, "OTP version: %d\n", priv->radio_caps.version);
-	len += scnprintf(p + len, size - len, "OTP region : 0x%x\n", priv->reg.otp.region);
+	len += scnprintf(p + len, size - len, "OTP region: 0x%x\n", priv->reg.otp.region);
 	len += scnprintf(p + len, size - len, "OTP cap: 0x%x\n", priv->radio_caps.capability);
 	len += scnprintf(p + len, size - len, "OTP mac: %d\n", priv->radio_caps.num_mac);
+	len += scnprintf(p + len, size - len, "Radio Type: %s%s\n", 
+											(priv->radio_caps.capability & LRD_CAP_SU60) ? "SU":"ST",
+											(priv->radio_caps.capability & LRD_CAP_440)  ? "-440":"");
 	len += scnprintf(p + len, size - len, "MAC address: %pM\n", priv->hw_data.mac_addr);
+	len += scnprintf(p + len, size - len, "Region code: 0x%02x (0x%02x)\n", priv->reg.cc.region, priv->reg.otp.region);
+	len += scnprintf(p + len, size - len, "Country code: '%c%c' ('%c%c')\n", 
+												priv->reg.cc.alpha2[0],priv->reg.cc.alpha2[1],
+												priv->reg.otp.alpha2[0],priv->reg.otp.alpha2[1]);
+	len += scnprintf(p + len, size - len, "Radio: %s\n", priv->radio_on ? "enable" : "disable");
+
 	len += scnprintf(p + len, size - len, "2g: %s\n", priv->disable_2g ? "disable" : "enable");
 	len += scnprintf(p + len, size - len, "5g: %s\n", priv->disable_5g ? "disable" : "enable");
 	len += scnprintf(p + len, size - len, "TX antenna: %d\n", priv->ant_tx_num);
@@ -139,7 +148,6 @@ static ssize_t mwl_debugfs_info_read(struct file *file, char __user *ubuf,
 	len += scnprintf(p + len, size - len, "STA macid support: %08x\n", priv->sta_macids_supported);
 	len += scnprintf(p + len, size - len, "macid used: %08x\n", priv->macids_used);
 	len += scnprintf(p + len, size - len, "qe trigger number: %d\n", priv->qe_trigger_num);
-	len += scnprintf(p + len, size - len, "radio: %s\n", priv->radio_on ? "enable" : "disable");
 
 	len += scnprintf(p + len, size - len,"OS TxQ status = [ %d %d %d %d ]\n",
 			ieee80211_queue_stopped(priv->hw, 0),
