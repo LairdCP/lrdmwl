@@ -251,9 +251,11 @@ static int lrd_fixup_channels(struct mwl_priv *priv, struct cc_info *info)
 		 * channels 12-14 to be configured, remove them here
 		 * to keep mac80211 in sync with FW.
 		 */
-		if (priv->band_24.n_channels == ARRAY_SIZE(mwl_channels_24)){
+		if (priv->band_24.n_channels == ARRAY_SIZE(mwl_channels_24)) {
 			priv->band_24.n_channels -= NUM_WW_CHANNELS;
 		}
+
+		priv->band_50.n_channels = ARRAY_SIZE(mwl_channels_50);
 	}
 	else {
 		priv->band_24.n_channels = ARRAY_SIZE(mwl_channels_24);;
@@ -1412,8 +1414,11 @@ static int mwl_wl_init(struct mwl_priv *priv)
 	                                                  (priv->radio_caps.capability & LRD_CAP_440)?"_440":"",
 	                                                   priv->radio_caps.capability);
 	wiphy_info(hw->wiphy, "Num mac %d : OTP Version (%d)\n", priv->radio_caps.num_mac, priv->radio_caps.version);
-	wiphy_info(hw->wiphy, "Firmware version: 0x%x\n", priv->hw_data.fw_release_num);
-	wiphy_info(hw->wiphy, "Firmware region code: %x\n", priv->reg.otp.region);
+	wiphy_info(hw->wiphy, "Firmware version: %d.%d.%d.%d\n", ((priv->hw_data.fw_release_num >> 24) & 0xff),
+															 ((priv->hw_data.fw_release_num >> 16) & 0xff),
+															 ((priv->hw_data.fw_release_num >> 8) & 0xff),
+															 ((priv->hw_data.fw_release_num >> 0) & 0xff));
+	wiphy_info(hw->wiphy, "Firmware OTP region code: %x\n", priv->reg.otp.region);
 	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
 		   priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
 
