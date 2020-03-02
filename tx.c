@@ -603,7 +603,7 @@ inline void mwl_tx_ack_amsdu_pkts(struct ieee80211_hw *hw, u32 rate,
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 		info->flags |= IEEE80211_TX_STAT_ACK;
  //wiphy_err(hw->wiphy, "fr_data_skb(a)=%p\n", amsdu_pkt);
-		ieee80211_tx_status_irqsafe(hw, amsdu_pkt);
+		ieee80211_tx_status(hw, amsdu_pkt);
 	}
 
 	kfree(amsdu_pkts);

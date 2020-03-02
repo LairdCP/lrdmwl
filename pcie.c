@@ -1760,7 +1760,7 @@ void mwl_non_pfu_tx_done(unsigned long data)
 				skb_pull(done_skb, sizeof(*tr) - hdrlen);
 				info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 				info->flags |= IEEE80211_TX_STAT_ACK;
-				ieee80211_tx_status_irqsafe(hw, done_skb);
+				ieee80211_tx_status(hw, done_skb);
 			}
 
 			tx_hndl = tx_hndl->pnext;
@@ -1858,7 +1858,7 @@ wiphy_err(priv->hw->wiphy, "unmap: skb=%p vdata=%p pdata=%p len=%d!\n",
 		skb_pull(done_skb, sizeof(*tr) - hdrlen);
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 		info->flags |= IEEE80211_TX_STAT_ACK;
-		ieee80211_tx_status_irqsafe(hw, done_skb);
+		ieee80211_tx_status(hw, done_skb);
 	}
 }
 
