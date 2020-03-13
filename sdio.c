@@ -2758,12 +2758,11 @@ static int mwl_sdio_probe(struct sdio_func *func,
 
 	/* device tree node parsing and platform specific configuration */
 	if (dev_of_node(&func->dev)) {
-		if (!of_match_node(mwl_sdio_of_match_table, dev_of_node(&func->dev))) {
-			return -ENODEV;
-		}
+		if (of_match_node(mwl_sdio_of_match_table, dev_of_node(&func->dev)))
+			of_node = dev_of_node(&func->dev);
+	}
 
-		of_node = dev_of_node(&func->dev);
-	} else if (dev_of_node(&func->card->dev)) {
+	if (!of_node && dev_of_node(&func->card->dev)) {
 		for_each_child_of_node(dev_of_node(&func->card->dev), np) {
 			if (of_match_node(mwl_sdio_of_match_table, np)) {
 				of_node = np;
