@@ -53,7 +53,7 @@ struct ccmp_hdr {
 } __packed;
 
 
-static inline void mwl_tx_add_dma_header(struct mwl_priv *priv,
+static inline int mwl_tx_add_dma_header(struct mwl_priv *priv,
 					 struct sk_buff *skb,
 					 int head_pad,
 					 int tail_pad)
@@ -81,8 +81,16 @@ static inline void mwl_tx_add_dma_header(struct mwl_priv *priv,
 	reqd_hdrlen = dma_hdr_len + head_pad;
 	/* wiphy_err(priv->hw->wiphy, "reqd_hdrlen=%d\n", reqd_hdrlen); */
 
-	if (hdrlen != reqd_hdrlen)
-		skb_push(skb, reqd_hdrlen - hdrlen);
+	if (hdrlen != reqd_hdrlen) {
+		if (skb_headroom(skb) >= reqd_hdrlen - hdrlen)
+			skb_push(skb, reqd_hdrlen - hdrlen);
+		else {
+			wiphy_err(priv->hw->wiphy, "%s() Not enough headroom in skb!  Need %d, available %d", \
+					__FUNCTION__, reqd_hdrlen - hdrlen, skb_headroom(skb));
+			WARN_ON(skb_headroom(skb) < (reqd_hdrlen - hdrlen));
+			return -1;
+		}
+	}
 
 	if (ieee80211_is_data_qos(wh->frame_control)) {
 		hdrlen -= IEEE80211_QOS_CTL_LEN;
@@ -117,9 +125,10 @@ static inline void mwl_tx_add_dma_header(struct mwl_priv *priv,
 	 * This includes all crypto material including the MIC.
 	 */
 	*tr_fwlen_ptr = cpu_to_le16(skb->len - dma_hdr_len + tail_pad);
+	return 0;
 }
 
-static inline void mwl_tx_encapsulate_frame(struct mwl_priv *priv,
+static inline int mwl_tx_encapsulate_frame(struct mwl_priv *priv,
 					    struct sk_buff *skb,
 					    struct ieee80211_key_conf *k_conf,
 					    bool *ccmp)
@@ -154,7 +163,9 @@ static inline void mwl_tx_encapsulate_frame(struct mwl_priv *priv,
 		}
 	}
 
-	mwl_tx_add_dma_header(priv, skb, head_pad, data_pad);
+	return mwl_tx_add_dma_header(priv, skb, head_pad, data_pad);
+
+
 }
 
 static inline void mwl_tx_insert_ccmp_hdr(u8 *pccmp_hdr,
@@ -305,7 +316,11 @@ inline void mwl_tx_skb(struct mwl_priv *priv, int desc_num,
 	mwl_vif = mwl_dev_get_vif(vif);
 	k_conf = (struct ieee80211_key_conf *)tx_ctrl->k_conf;
 
-	mwl_tx_encapsulate_frame(priv, tx_skb, k_conf, &ccmp);
+	if (mwl_tx_encapsulate_frame(priv, tx_skb, k_conf, &ccmp)) {
+		wiphy_err(priv->hw->wiphy, "%s() Failed to encapsulate packet, dropping!!\n", __FUNCTION__);
+		dev_kfree_skb_any(tx_skb);
+		return;
+	}
 
 
 	if (((priv->host_if == MWL_IF_PCIE) &&
