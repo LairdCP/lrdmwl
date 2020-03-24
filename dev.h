@@ -543,6 +543,7 @@ struct lrd_regulatory {
 
 	struct cc_info     otp;
 	struct cc_info     cc;
+	struct cc_info     hint;
 	u32    pn;
 
 	bool   regulatory_set;

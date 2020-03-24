@@ -372,15 +372,15 @@ static void mwl_reg_notifier(struct wiphy *wiphy,
 
 	wiphy_debug(hw->wiphy, "mwl_reg_notifier set=%d %s %c%c\n", priv->reg.regulatory_set, reg_initiator_name(request->initiator), request->alpha2[0], request->alpha2[1]);
 
-	if (priv->reg.regulatory_set) {
-		//This path should not occur, but if it does reset to expected value
-		if ( memcmp(priv->reg.cc.alpha2, request->alpha2, 2) &&
-			(request->initiator == NL80211_REGDOM_SET_BY_USER)) {
-			regulatory_hint(wiphy, priv->reg.cc.alpha2);
+	if (request->initiator == NL80211_REGDOM_SET_BY_DRIVER) {
+
+		if ( 0 == memcmp(priv->reg.hint.alpha2, request->alpha2, sizeof(priv->reg.hint.alpha2)) ) {
+			memcpy(&priv->reg.cc, &priv->reg.hint, sizeof(priv->reg.cc));
+			memset(&priv->reg.hint.alpha2, 'x', sizeof(&priv->reg.hint));
+			priv->reg.hint.region =(u32)-1;
+			priv->reg.dfs_region = request->dfs_region;
 		}
 	}
-
-	priv->reg.dfs_region = request->dfs_region;
 }
 
 #pragma pack(push,1)
@@ -516,11 +516,11 @@ static void lrd_send_hint_no_lock(struct mwl_priv *priv, struct cc_info *cc)
 	//Fixup the channel set based on country/region 
 	lrd_fixup_channels(priv, cc);
 
-	memcpy(&priv->reg.cc, cc, sizeof(priv->reg.cc));
+	memcpy(&priv->reg.hint, cc, sizeof(priv->reg.hint));
 
 	//Send driver hint
 	priv->reg.regulatory_set = true;
-	regulatory_hint(priv->hw->wiphy, priv->reg.cc.alpha2);
+	regulatory_hint(priv->hw->wiphy, cc->alpha2);
 }
 
 static void lrd_send_hint(struct mwl_priv *priv, struct cc_info *cc)
