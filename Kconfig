@@ -1,10 +1,10 @@
 config LRDMWL
-	tristate "Laird wireless support based on Marvell chipsets (mac80211 compatible)"
+	tristate "Laird Connectivity wireless support based on Marvell chipsets (mac80211 compatible)"
 	depends on MAC80211
 	---help---
 		Select to build the driver supporting the:
 
-		Laird 60 Series Wi-Fi module
+		Laird Connectivity 60 Series Wi-Fi module
 
 		This driver uses the kernel's mac80211 subsystem.
 
@@ -20,7 +20,7 @@ config LRDMWL_PCIE
 	---help---
 		Select to build the driver supporting the:
 
-		Laird 60 Series Wi-Fi module for PCIE
+		Laird Connectivity 60 Series Wi-Fi module for PCIE
 
 		This driver uses the kernel's mac80211 subsystem.
 
@@ -36,7 +36,7 @@ config LRDMWL_SDIO
 	---help---
 		Select to build the driver supporting the:
 
-		Laird 60 Series Wi-Fi module for SDIO
+		Laird Connectivity 60 Series Wi-Fi module for SDIO
 
 		This driver uses the kernel's mac80211 subsystem.
 
@@ -52,7 +52,7 @@ config LRDMWL_USB
 	---help---
 		Select to build the driver supporting the:
 
-		Laird 60 Series Wi-Fi module for USB
+		Laird Connectivity 60 Series Wi-Fi module for USB
 
 		This driver uses the kernel's mac80211 subsystem.
 

@@ -1,3 +1,18 @@
+/*
+ * Copyright (C) 2018-2020 Laird Connectivity
+ *
+ * This software file (the "File") is distributed by Laird, PLC.
+ * under the terms of the GNU General Public License Version 2, June 1991
+ * (the "License").  You may use, redistribute and/or modify this File in
+ * accordance with the terms and conditions of the License, a copy of which
+ * is available by writing to the Free Software Foundation, Inc.
+ *
+ * THE FILE IS DISTRIBUTED AS-IS, WITHOUT WARRANTY OF ANY KIND, AND THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE
+ * ARE EXPRESSLY DISCLAIMED.  The License provides additional details about
+ * this warranty disclaimer.
+ */
+
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/pci.h>
@@ -18,7 +33,7 @@
  *     was no PCI version defined in reference driver */
 #define MWL_PCIEDRV_VERSION  "10.3.0.16-20160105"
 #define LRD_PCIE_VERSION     LRD_BLD_VERSION "-" MWL_PCIEDRV_VERSION
-#define LRD_PCIE_DESC        "Laird 60 Series Wireless PCIE Network Driver"
+#define LRD_PCIE_DESC        "Laird Connectivity 60 Series Wireless PCIE Network Driver"
 
 #define INTF_HEADER_LEN      0
 #define INTF_HEADER_LEN_MFG  4

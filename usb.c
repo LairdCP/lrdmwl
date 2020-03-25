@@ -2,6 +2,7 @@
  * Marvell Wireless LAN device driver: USB specific handling
  *
  * Copyright (C) 2012-2014, Marvell International Ltd.
+ * Copyright (C) 2018-2020 Laird Connectivity
  *
  * This software file (the "File") is distributed by Marvell International
  * Ltd. under the terms of the GNU General Public License Version 2, June 1991

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006-2017, Marvell International Ltd.
+ * Copyright (C) 2018-2020 Laird Connectivity
  *
  * This software file (the "File") is distributed by Marvell International
  * Ltd. under the terms of the GNU General Public License Version 2, June 1991
@@ -35,7 +36,7 @@
 #define MWL_FW_ROOT     "lrdmwl"
 
 #define LRD_DESC         "Laird 60 Series Wireless Network Driver"
-#define LRD_AUTHOR       "Laird Technologies"
+#define LRD_AUTHOR       "Laird Connectivity"
 #define LRD_BLD_VERSION  "7.0.0.343"
 #define LRD_DRV_VERSION   LRD_BLD_VERSION "-" MWL_DRV_VERSION
 
