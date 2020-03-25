@@ -67,7 +67,7 @@ static void mwl_pcie_up_dev(struct mwl_priv *priv);
 static void mwl_pcie_down_dev(struct mwl_priv *priv);
 static bool mwl_pcie_check_fw_status(struct mwl_priv *priv);
 
-#define MAX_WAIT_FW_COMPLETE_ITERATIONS         8000
+#define MAX_WAIT_CMD_RESPONSE_ITERATIONS         (10*4000)
 
 static irqreturn_t mwl_pcie_isr(int irq, void *dev_id);
 static struct pci_device_id mwl_pci_id_tbl[] = {
@@ -1544,7 +1544,7 @@ static int mwl_pcie_send_command(struct mwl_priv *priv)
 static int mwl_pcie_cmd_resp_wait_completed(struct mwl_priv *priv,
 		unsigned short cmd)
 {
-	unsigned int curr_iteration = MAX_WAIT_FW_COMPLETE_ITERATIONS;
+	unsigned int curr_iteration = MAX_WAIT_CMD_RESPONSE_ITERATIONS;
 	unsigned short int_code = 0;
 
 	if (priv->mfg_mode && cmd != HOSTCMD_CMD_MFG) {
