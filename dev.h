@@ -35,7 +35,7 @@
 
 #define MWL_FW_ROOT     "lrdmwl"
 
-#define LRD_DESC         "Laird 60 Series Wireless Network Driver"
+#define LRD_DESC         "Laird Connectivity 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Connectivity"
 #define LRD_BLD_VERSION  "7.0.0.343"
 #define LRD_DRV_VERSION   LRD_BLD_VERSION "-" MWL_DRV_VERSION
