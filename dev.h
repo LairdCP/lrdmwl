@@ -37,7 +37,7 @@
 
 #define LRD_DESC         "Laird Connectivity 60 Series Wireless Network Driver"
 #define LRD_AUTHOR       "Laird Connectivity"
-#define LRD_BLD_VERSION  "7.2.0.4"
+#define LRD_BLD_VERSION  "7.2.0.5"
 #define LRD_DRV_VERSION   LRD_BLD_VERSION "-" MWL_DRV_VERSION
 
 /* Map to 0x80000000 (Bus control) on BAR0 */
