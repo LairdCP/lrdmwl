@@ -101,7 +101,7 @@ struct usb_card_rec {
 	u8 usb_boot_state;
 	u8 rx_data_ep;
 	u8 tx_cmd_ep;
-	atomic_t tx_cmd_urb_pending;
+
 	int bulk_out_maxpktsize;
 	struct urb_context tx_cmd;
 	struct usb_tx_data_port port;
@@ -110,8 +110,11 @@ struct usb_card_rec {
 	int tx_cmd_ep_type;
 	u8 tx_cmd_interval;
 	int chip_type;
-	u8 cmd_cond;
+
+	bool cmd_resp_recvd;
 	struct mwl_wait_queue cmd_wait_q;
+	u16 cmd_id;
+
 	struct sk_buff_head rx_data_q;
 	atomic_t rx_pending;
 	struct tasklet_struct tx_task;

@@ -189,7 +189,6 @@ static int mwl_usb_probe(struct usb_interface *intf,
 			card->tx_cmd_interval     = epd->bInterval;
 			card->tx_cmd_ep           = usb_endpoint_num(epd);
 			card->bulk_out_maxpktsize = le16_to_cpu(epd->wMaxPacketSize);
-			atomic_set(&card->tx_cmd_urb_pending, 0);
 
 			pr_debug("info: bulk OUT: max pkt size: %d, addr: %d\n",
 				 le16_to_cpu(epd->wMaxPacketSize), epd->bEndpointAddress);
@@ -559,6 +558,8 @@ static int mwl_usb_init(struct mwl_priv *priv)
 	memset(priv->pcmd_buf, 0x00, CMD_BUF_SIZE);
 	init_waitqueue_head(&card->cmd_wait_q.wait);
 	card->cmd_wait_q.status = 0;
+	card->cmd_resp_recvd = false;
+	card->cmd_id = 0;
 
 	if (priv->mfg_mode) {
 		return 0;
@@ -598,6 +599,7 @@ static int mwl_usb_recv(struct mwl_priv *adapter,
 	u32 recv_type;
 	struct usb_card_rec *card = (struct usb_card_rec *)adapter->intf;
 	struct sk_buff *newskb;
+	struct cmd_header cmd_hdr_tmp;
 	__le32 tmp;
 
 	/*TODO if (adapter->hs_activated)
@@ -615,10 +617,16 @@ static int mwl_usb_recv(struct mwl_priv *adapter,
 
 		switch (recv_type) {
 		case MWIFIEX_USB_TYPE_CMD:
-			skb_copy_from_linear_data(skb, adapter->pcmd_buf, skb->len);
-			card->cmd_wait_q.status = 0;
-			card->cmd_cond = true;
-			wake_up(&card->cmd_wait_q.wait);
+			skb_copy_from_linear_data_offset(skb, INTF_HEADER_LEN, &cmd_hdr_tmp, sizeof(cmd_hdr_tmp));
+
+			if ((!card->cmd_resp_recvd) &&
+			    (le16_to_cpu(cmd_hdr_tmp.command) == (card->cmd_id | HOSTCMD_RESP_BIT))) {
+				skb_copy_from_linear_data(skb, adapter->pcmd_buf, skb->len);
+				card->cmd_wait_q.status = 0;
+				card->cmd_resp_recvd = true;
+				card->cmd_id = 0;
+				wake_up(&card->cmd_wait_q.wait);
+			}
 			break;
 
 		case MWIFIEX_USB_TYPE_EVENT:
@@ -729,10 +737,7 @@ static void mwl_usb_tx_complete(struct urb *urb)
 	struct usb_card_rec *card = (struct usb_card_rec *)priv->intf;
 	struct usb_tx_data_port *port;
 
-	if (context->ep == card->tx_cmd_ep) {
-		atomic_set(&card->tx_cmd_urb_pending, 0);
-	}
-	else {
+	if (context->ep != card->tx_cmd_ep) {
 		if (urb->status == -ENOENT) {
 			// urb was canceled, free the tx skb
 			ieee80211_free_txskb(priv->hw, context->skb);
@@ -1168,12 +1173,7 @@ static int mwl_usb_send_cmd(struct mwl_priv * priv)
 */
 
 	// Single context available for tx command urb
-	// Protected from multiple threads by fwcmd mutex, but need to ensure
-	// previous tx command urb has completed before continuing
-	while(atomic_read(&card->tx_cmd_urb_pending)) {
-		lrdmwl_delay(10);
-	}
-
+	// Commands are synchronous and protected by fwcmd mutex
 	context = &card->tx_cmd;
 	tx_urb = context->urb;
 	len = le16_to_cpu(cmd_hdr->len)  +
@@ -1196,13 +1196,11 @@ static int mwl_usb_send_cmd(struct mwl_priv * priv)
 		                  mwl_usb_tx_complete, (void *)context);
 
 	tx_urb->transfer_flags |= URB_ZERO_PACKET;
-	card->cmd_cond = false;
-
-	atomic_set(&card->tx_cmd_urb_pending, 1);
+	card->cmd_resp_recvd = false;
+	card->cmd_id = (u16)(le16_to_cpu(cmd_hdr->command) & ~HOSTCMD_RESP_BIT);
 
 	ret = usb_submit_urb(tx_urb, GFP_ATOMIC);
 	if (ret) {
-		atomic_set(&card->tx_cmd_urb_pending, 0);
 		wiphy_err(priv->hw->wiphy, "%s: usb_submit_urb failed\n", __func__);
 	}
 
@@ -1217,24 +1215,15 @@ static int mwl_usb_cmd_resp_wait_completed(struct mwl_priv *priv,
 
 	/* Wait for completion */
 	status = wait_event_timeout(card->cmd_wait_q.wait,
-											  (card->cmd_cond == true),
-											  (30 * HZ));
-	if (status <= 0) {
-		if (status == 0) {
-			status = -ETIMEDOUT;
-		}
-
+				  (card->cmd_resp_recvd == true),
+				  (12 * HZ));
+	if (status == 0) {
 		wiphy_err(priv->hw->wiphy, "timeout, cmd_wait_q terminated: %d\n", status);
 
-		card->cmd_wait_q.status = status;
-		return status;
+		card->cmd_wait_q.status = -ETIMEDOUT;
 	}
 
-	status = card->cmd_wait_q.status;
-	card->cmd_wait_q.status = 0;
-
-	/* status is command response value */
-	return status;
+	return card->cmd_wait_q.status;
 }
 
 
