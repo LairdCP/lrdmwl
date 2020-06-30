@@ -42,7 +42,7 @@
 
 #define SYSADPT_NUM_OF_SU_AP           3
 #define SYSADPT_NUM_OF_ST_AP           1
-#define SYSADPT_NUM_OF_STA             1
+#define SYSADPT_NUM_OF_STA             2
 #define SYSADPT_NUM_OF_AP              SYSADPT_NUM_OF_SU_AP
 
 #define SYSADPT_TOTAL_TX_QUEUES        (SYSADPT_TX_WMM_QUEUES + \
