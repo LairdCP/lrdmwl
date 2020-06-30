@@ -1013,9 +1013,7 @@ static void remain_on_channel_expire(struct timer_list *t)
 	if (!priv->roc.in_progress)
 		return;
 
-	if ((priv->roc.type == IEEE80211_ROC_TYPE_MGMT_TX) &&
-		(priv->roc.duration <= NL80211_MIN_REMAIN_ON_CHANNEL_TIME))
-		ieee80211_remain_on_channel_expired(hw);
+	ieee80211_remain_on_channel_expired(hw);
 }
 
 void timer_routine(struct timer_list *t)
