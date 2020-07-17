@@ -67,8 +67,6 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 	if (priv->if_ops.pqe_task != NULL)
 		tasklet_enable(priv->if_ops.pqe_task);
 
-	priv->mac_init_complete = true;
-
 	if (priv->stop_shutdown) {
 		if (priv->if_ops.up_pwr != NULL) {
 			rc = priv->if_ops.up_pwr(priv);
@@ -76,10 +74,14 @@ static int mwl_mac80211_start(struct ieee80211_hw *hw)
 				goto fwcmd_fail;
 		}
 
+		priv->mac_init_complete = true;
+
 		rc = mwl_reinit_sw(priv, true);
 		if (rc)
 			goto fwcmd_fail;
 	}
+
+	priv->mac_init_complete = true;
 
 	/* Enable interrupts */
 	mwl_fwcmd_int_enable(hw);

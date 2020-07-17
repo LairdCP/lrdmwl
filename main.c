@@ -209,6 +209,7 @@ int SISO_mode = 0;
 int lrd_debug = 0;
 int null_scan_count = 0;
 unsigned int ant_gain_adjust = 0;
+int stop_shutdown = 0;
 
 static int lrd_send_fw_event(struct device *dev, bool on)
 {
@@ -1685,7 +1686,7 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 
 	priv->ant_gain_adjust = ant_gain_adjust;
 	if (of_node) {
-		priv->stop_shutdown =
+		priv->stop_shutdown = stop_shutdown ||
 			of_property_read_bool(of_node, "remove-power-on-link-down");
 
 		/*
@@ -2161,6 +2162,9 @@ MODULE_PARM_DESC(null_scan_count, "Null scan response recovery count");
 
 module_param(ant_gain_adjust, uint, 0444);
 MODULE_PARM_DESC(ant_gain_adjust, "Antenna gain adjustment");
+
+module_param(stop_shutdown, uint, 0444);
+MODULE_PARM_DESC(stop_shutdown, "Power off when stopped 0:Disable 1:Enable");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);

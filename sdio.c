@@ -2654,6 +2654,9 @@ static int mwl_sdio_up_pwr(struct mwl_priv *priv)
 	struct mwl_sdio_card * card = (struct mwl_sdio_card *)priv->intf;
 	int rc;
 
+	if (!priv->mac_init_complete)
+		return 0;
+
 	rc = mwl_sdio_set_gpio(card, 1);
 	if (rc)
 		return rc;
@@ -2914,7 +2917,7 @@ static int mwl_sdio_pm_worker(struct device *dev, int action)
 
 	// When we are in stop shutdown mode ignore PM callbacks
 	// mac80211 start/stop will control power state
-	if (priv->stop_shutdown)
+	if (priv->stop_shutdown && !(priv->wow.state & WOWLAN_STATE_ENABLED))
 		return 0;
 
 	switch (action) {

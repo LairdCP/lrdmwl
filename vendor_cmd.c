@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2018-2020 Laird Connectivity
  *
- * This software file (the "File") is distributed by Laird, PLC.
+ * This software file (the "File") is distributed by Laird Connectivity
  * under the terms of the GNU General Public License Version 2, June 1991
  * (the "License").  You may use, redistribute and/or modify this File in
  * accordance with the terms and conditions of the License, a copy of which
@@ -215,6 +215,9 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	if (hdr->lrd_cmd == cpu_to_le16(LRD_CMD_PWR_TABLE)) {
+		if (priv->recovery_in_progress)
+			goto fail;
+
 		//Restart timers
 		mod_timer(&priv->reg.timer_awm, jiffies + msecs_to_jiffies(CC_AWM_TIMER));
 		cancel_work_sync(&priv->reg.awm);
@@ -257,6 +260,13 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 		}
 	}
 	else {
+		if (priv->recovery_in_progress) {
+			wiphy_err(hw->wiphy,
+				"Vendor command \"%d\" failed: Wi-Fi off\n",
+				hdr->lrd_cmd);
+			goto fail;
+		}
+
 		//Send
 		rc = lrd_fwcmd_lrd_write(hw, (void*)data, data_len, (void*)&rsp);
 	}
