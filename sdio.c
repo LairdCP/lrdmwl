@@ -33,9 +33,7 @@
 #include "sdio.h"
 #include "hostcmd.h"
 
-#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
 #include <../drivers/mmc/core/card.h>
-#endif
 
 #define MWL_SDIODRV_VERSION  "10.3.0.16-20160105"
 #define LRD_SDIO_VERSION     LRD_BLD_VERSION "-" MWL_SDIODRV_VERSION
@@ -2642,10 +2640,9 @@ static void mwl_sdio_down_dev(struct mwl_priv *priv)
 static int mwl_sdio_mmc_hw_reset(struct sdio_func *func)
 {
 	int rc = mmc_hw_reset(func->card->host);
-#if KERNEL_VERSION(4,14,0) <= LINUX_VERSION_CODE
 	if (rc == 0)
 		mmc_card_clr_suspended(func->card);
-#endif
+
 	return rc;
 }
 
