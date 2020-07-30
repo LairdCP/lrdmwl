@@ -403,7 +403,7 @@ typedef struct ww_pwr_entry
 
 #define MODULE_SIG_STRING    "~Module signature appended~\n"
 
-static int lrd_validate_db(const struct firmware *fw, struct mwl_priv *priv)
+static int lrd_validate_db(const struct firmware *fw, struct mwl_priv *priv, int * payload_size)
 {
 	u8   *buf = (uint8_t*)fw->data;
 	int bSize = fw->size;
@@ -469,6 +469,7 @@ static int lrd_validate_db(const struct firmware *fw, struct mwl_priv *priv)
 
 	if (x == bSize) {
 		wiphy_debug(hw->wiphy, "Successfully validated %s %d\n", REG_PWR_DB_NAME, bSize);
+		*payload_size = bSize;
 		return 0;
 	}
 
@@ -539,6 +540,7 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 	struct mwl_priv *priv = (struct mwl_priv*)context;
 	struct ww_pwr_entry *entry = NULL;
 	int   idx = -1;
+	int   payload_size;
 	int rc = 0;
 
 	if (fw) {
@@ -548,11 +550,11 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 			priv->reg.db_size = 0;
 		}
 
-		if ( !lrd_validate_db(fw, priv)) {
-			priv->reg.db = kmemdup(fw->data, fw->size, GFP_KERNEL);
+		if ( !lrd_validate_db(fw, priv, &payload_size)) {
+			priv->reg.db = kmemdup(fw->data, payload_size, GFP_KERNEL);
 
 			if (priv->reg.db) {
-				priv->reg.db_size = fw->size;
+				priv->reg.db_size = payload_size;
 			}
 		}
 
@@ -594,7 +596,7 @@ static void lrd_cc_cb(const struct firmware *fw, void *context)
 			rtnl_unlock();
 		}
 		else if (idx < 0) {
-			wiphy_warn(priv->hw->wiphy,"Region code %x not found in %s.\n", priv->reg.otp.region, REG_PWR_DB_NAME);
+			wiphy_warn(priv->hw->wiphy,"Region %x country %c%c not found in %s.\n", priv->reg.otp.region, priv->reg.otp.alpha2[0], priv->reg.otp.alpha2[1], REG_PWR_DB_NAME);
 		}
 	}
 	else {
