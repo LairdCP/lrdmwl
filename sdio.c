@@ -730,9 +730,9 @@ static void mwl_sdio_cleanup(struct mwl_priv *priv)
 
 	// mwl_sdio_cleanup is called both in driver shutdown and recovery scenarios
 	// Only kill tasklet (which just means remove from CPU queue if it exists there) in shutdown scenario
-	// Logic is synchronized with mwl_mac80211_stop() to ensure tasklet is not both
-	// disabled and queued to avoid CPU hang
+	// Ensure tasklet is not both disabled and queued to avoid CPU hang
 	if (priv->shutdown) {
+		tasklet_enable(&priv->rx_task);
 		tasklet_kill(&priv->rx_task);
 	}
 
