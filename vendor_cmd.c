@@ -215,8 +215,9 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	if (hdr->lrd_cmd == cpu_to_le16(LRD_CMD_PWR_TABLE)) {
-		if (priv->recovery_in_progress)
+		if (priv->recovery_in_progress || priv->shutdown) {
 			goto fail;
+		}
 
 		//Restart timers
 		mod_timer(&priv->reg.timer_awm, jiffies + msecs_to_jiffies(CC_AWM_TIMER));
@@ -228,7 +229,6 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 		//Queue event work
 		if (!rc && !rsp->result) {
-
 			mutex_lock(&priv->reg.mutex);
 			priv->reg.pn =  le32_to_cpu(*(u32*)(((u8*)data) + sizeof(*hdr) + PWR_TABLE_ID_OFFSET));
 			mutex_unlock(&priv->reg.mutex);
