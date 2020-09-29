@@ -1956,7 +1956,7 @@ irqreturn_t mwl_pcie_isr(int irq, void *dev_id)
 	struct mwl_pcie_card *card = (struct mwl_pcie_card *)priv->intf;
 	unsigned int int_status;
 
-	if (card->surprise_removed) {
+	if (card->surprise_removed || priv->recovery_in_progress) {
 		return IRQ_HANDLED;
 	}
 
