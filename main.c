@@ -1420,7 +1420,7 @@ static int mwl_wl_init(struct mwl_priv *priv)
 															 ((priv->hw_data.fw_release_num >> 16) & 0xff),
 															 ((priv->hw_data.fw_release_num >> 8) & 0xff),
 															 ((priv->hw_data.fw_release_num >> 0) & 0xff));
-	wiphy_info(hw->wiphy, "Firmware OTP region code: %x\n", priv->reg.otp.region);
+	wiphy_info(hw->wiphy, "Firmware OTP region: %x, country: %c%c\n", priv->reg.otp.region, priv->reg.otp.alpha2[0], priv->reg.otp.alpha2[1]);
 	wiphy_info(priv->hw->wiphy, "Deep Sleep is %s\n",
 		   priv->ds_enable == DS_ENABLE_ON ? "enabled": "disabled");
 
