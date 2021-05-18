@@ -580,11 +580,6 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 	}
 
 	if (cmd_param == SET_KEY) {
-		rc = mwl_fwcmd_encryption_set_key(hw, vif, addr, key);
-
-		if (rc)
-			goto out;
-
 		if ((key->cipher == WLAN_CIPHER_SUITE_WEP40) ||
 		    (key->cipher == WLAN_CIPHER_SUITE_WEP104)) {
 			encr_type = ENCR_TYPE_WEP;
@@ -597,8 +592,21 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 			}
 		} else if (key->cipher == WLAN_CIPHER_SUITE_TKIP) {
 			encr_type = ENCR_TYPE_TKIP;
+		} else if ((key->cipher == WLAN_CIPHER_SUITE_AES_CMAC) ||
+			   (key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_128) ||
+			   (key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256) ||
+			   (key->cipher == WLAN_CIPHER_SUITE_BIP_CMAC_256)) {
+			// always using host encryption for management frames
+			return -EOPNOTSUPP;
 		} else {
+			// use host/kernel cryptography
 			encr_type = ENCR_TYPE_DISABLE;
+		}
+
+		if (encr_type != ENCR_TYPE_DISABLE) {
+			rc = mwl_fwcmd_encryption_set_key(hw, vif, addr, key);
+			if (rc)
+				goto out;
 		}
 
 		rc = mwl_fwcmd_update_encryption_enable(hw, vif, addr,
@@ -606,7 +614,14 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 		if (rc)
 			goto out;
 
-		mwl_vif->is_hw_crypto_enabled = true;
+		if (encr_type != ENCR_TYPE_DISABLE) {
+			mwl_vif->is_hw_crypto_enabled = true;
+		} else {
+			// using host encryption for data packets
+			mwl_vif->is_hw_crypto_enabled = false;
+			return -EOPNOTSUPP;
+		}
+
 	} else {
 		rc = mwl_fwcmd_encryption_remove_key(hw, vif, addr, key);
 		if (rc)
