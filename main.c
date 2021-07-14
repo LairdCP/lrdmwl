@@ -210,6 +210,7 @@ int lrd_debug = 0;
 int null_scan_count = 0;
 unsigned int ant_gain_adjust = 0;
 int stop_shutdown = 0;
+unsigned int host_crypto_mode = 0;
 
 static int lrd_send_fw_event(struct device *dev, bool on)
 {
@@ -1670,6 +1671,11 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	priv->host_crypto = fips_enabled && fips_wifi_enabled;
 #endif
 
+	// BZ19005: mix of hw/host crypto fails (e.g. UC:GCMP-256/MC:CCMP-128)
+	// work-around: start module with host_crypto only
+	if (host_crypto_mode)
+		priv->host_crypto = 1;
+
 	if (priv->host_crypto)
 		wiphy_info(priv->hw->wiphy, "Using host crypto.\n");
 
@@ -2167,6 +2173,9 @@ MODULE_PARM_DESC(ant_gain_adjust, "Antenna gain adjustment");
 
 module_param(stop_shutdown, uint, 0444);
 MODULE_PARM_DESC(stop_shutdown, "Power off when stopped 0:Disable 1:Enable");
+
+module_param(host_crypto_mode, uint, 0444);
+MODULE_PARM_DESC(host_crypto_mode, "Use only host cryptography 0:hw/host 1:host");
 
 MODULE_DESCRIPTION(LRD_DESC);
 MODULE_VERSION(LRD_DRV_VERSION);
