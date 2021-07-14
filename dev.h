@@ -798,6 +798,10 @@ struct mwl_vif {
 	u8 sta_mac[ETH_ALEN];        /* Station mac address */
 	/* A flag to indicate is HW crypto is enabled for this bssid */
 	bool is_hw_crypto_enabled;
+
+	/* A flag to force host crypto for a mix of HW/host crypto */
+	bool force_host_crypto;
+
 	/* Indicate if this is station mode */
 	struct beacon_info beacon_info;
 	u16 iv16;

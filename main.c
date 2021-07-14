@@ -1671,8 +1671,10 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 	priv->host_crypto = fips_enabled && fips_wifi_enabled;
 #endif
 
-	// BZ19005: mix of hw/host crypto fails (e.g. UC:GCMP-256/MC:CCMP-128)
-	// work-around: start module with host_crypto only
+	// BZ19005: host_crypto_mode module parameter to force host crypto
+	// in most cases, driver will now automatically select hw/host crypto
+	// exception: station mode with invalid cipher combinations
+	// station mode with UC:HW/MC:Host (e.g. UC:CCMP-128, MC:GCMP-256)
 	if (host_crypto_mode)
 		priv->host_crypto = 1;
 

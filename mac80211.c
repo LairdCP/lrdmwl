@@ -541,6 +541,16 @@ static void mwl_mac80211_bss_info_changed(struct ieee80211_hw *hw,
 		else
 			mwl_fwcmd_bss_start(hw, vif, info->enable_beacon);
 	}
+
+	if (changed & BSS_CHANGED_ASSOC) {
+		if (vif->type == NL80211_IFTYPE_STATION || vif->type == NL80211_IFTYPE_P2P_CLIENT)
+		{
+			// clear force_host_crypto when assoc/disassoc
+			struct mwl_vif *mwl_vif;
+			mwl_vif = mwl_dev_get_vif(vif);
+			mwl_vif->force_host_crypto = false;
+		}
+	}
 }
 
 static void mwl_mac80211_configure_filter(struct ieee80211_hw *hw,
@@ -600,6 +610,33 @@ static int mwl_mac80211_set_key(struct ieee80211_hw *hw,
 			return -EOPNOTSUPP;
 		} else {
 			// use host/kernel cryptography
+			encr_type = ENCR_TYPE_DISABLE;
+		}
+
+		switch (vif->type) {
+		case NL80211_IFTYPE_AP:
+		case NL80211_IFTYPE_P2P_GO:
+			// force_host_crypto initialized when parsing the beacon rsnie
+			break;
+		case NL80211_IFTYPE_STATION:
+		case NL80211_IFTYPE_P2P_CLIENT:
+			// if pairwise uses host crypto, then group must also
+			if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
+				if (encr_type == ENCR_TYPE_DISABLE) {
+					mwl_vif->force_host_crypto = true;
+				} else {
+					mwl_vif->force_host_crypto = false;
+				}
+			}
+			break;
+		case NL80211_IFTYPE_ADHOC:
+		default:
+			mwl_vif->force_host_crypto = false;
+			break;
+		}
+
+		if (mwl_vif->force_host_crypto) {
+			// using host crypto for all keys (pairwise/group)
 			encr_type = ENCR_TYPE_DISABLE;
 		}
 

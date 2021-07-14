@@ -684,6 +684,64 @@ static u8 mwl_fwcmd_get_160m_pri_chnl(u8 channel)
 	return act_primary;
 }
 
+static int laird_is_host_cipher(u8 *buf)
+{
+	u32 cipher;
+	cipher = get_unaligned_be32(buf);
+	switch (cipher) {
+	case WLAN_CIPHER_SUITE_GCMP:
+	case WLAN_CIPHER_SUITE_GCMP_256:
+	case WLAN_CIPHER_SUITE_CCMP_256:
+		return 1;
+	default:
+		break;
+	}
+	return 0;
+}
+
+// returns true if the beacon rsnie is present and any ciphers use host crypto
+static int laird_ap_select_host_crypto(struct mwl_vif *mwl_vif)
+{
+	const u8 *rsn_ie;
+	size_t rsn_ie_len;
+	int cnt;
+
+	rsn_ie = mwl_vif->beacon_info.ie_rsn48_ptr;
+	rsn_ie_len = mwl_vif->beacon_info.ie_rsn48_len;
+	if (!rsn_ie)
+		return 0;
+
+	/* skip tag, len, version */
+	if (rsn_ie_len < 4)
+		return 0;
+	rsn_ie += 4;
+	rsn_ie_len -= 4;
+
+	/* group cipher suite */
+	if (rsn_ie_len < 4)
+		return 0;
+	if (laird_is_host_cipher(rsn_ie))
+		return 1;
+	rsn_ie += 4;
+	rsn_ie_len -= 4;
+
+	/* pairwise cipher suite(s) */
+	if (rsn_ie_len < 2)
+		return 0;
+	cnt = get_unaligned_le16(rsn_ie);
+	rsn_ie += 2;
+	rsn_ie_len -= 2;
+	if (rsn_ie_len < (cnt * 4))
+		return 0;
+	while (cnt--) {
+		if (laird_is_host_cipher(rsn_ie))
+			return 1;
+		rsn_ie += 4;
+		rsn_ie_len -= 4;
+	}
+	return 0;
+}
+
 static void mwl_fwcmd_parse_beacon(struct mwl_priv *priv,
 				   struct mwl_vif *vif, u8 *beacon, int len)
 {
@@ -857,6 +915,8 @@ static void mwl_fwcmd_parse_beacon(struct mwl_priv *priv,
 		beacon_info->ie_vht_ptr = &beacon_info->ie_list_vht[0];
 		beacon_info->valid = true;
 	}
+	/* force host crypto if any rsnie ciphers require host crypto */
+	vif->force_host_crypto = laird_ap_select_host_crypto(vif);
 }
 
 static int mwl_fwcmd_set_ies(struct mwl_priv *priv, struct mwl_vif *mwl_vif)
