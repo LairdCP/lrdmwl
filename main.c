@@ -1669,6 +1669,8 @@ int mwl_add_card(void *card, struct mwl_if_ops *if_ops,
 
 #ifdef CONFIG_LRDMWL_FIPS
 	priv->host_crypto = fips_enabled && fips_wifi_enabled;
+	if (priv->host_crypto)
+		host_crypto_mode = 1;
 #endif
 
 	// BZ19005: host_crypto_mode module parameter to force host crypto
