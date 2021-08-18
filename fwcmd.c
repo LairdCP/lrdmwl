@@ -684,7 +684,7 @@ static u8 mwl_fwcmd_get_160m_pri_chnl(u8 channel)
 	return act_primary;
 }
 
-static int laird_is_host_cipher(u8 *buf)
+static int laird_is_host_cipher(const u8 *buf)
 {
 	u32 cipher;
 	cipher = get_unaligned_be32(buf);
