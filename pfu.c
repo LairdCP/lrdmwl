@@ -12,7 +12,7 @@
  * ARE EXPRESSLY DISCLAIMED.  The License provides additional details about
  * this warranty disclaimer.
  */
- 
+
 #include "sysadpt.h"
 #include "dev.h"
 #include "pcie.h"
@@ -36,7 +36,7 @@ int wlan_pcie_create_txbd_ring(struct ieee80211_hw *hw)
 	 */
 	priv->txbd_ring_size =
 		sizeof(struct _mlan_pcie_data_buf) * MLAN_MAX_TXRX_BD;
-	wiphy_err(hw->wiphy, "TX ring: allocating %d bytes\n",
+	wiphy_info(hw->wiphy, "TX ring: allocating %d bytes\n",
 		priv->txbd_ring_size);
 
 	priv->txbd_ring_vbase = pci_alloc_consistent(card->pdev,
@@ -48,7 +48,7 @@ int wlan_pcie_create_txbd_ring(struct ieee80211_hw *hw)
 	    return MLAN_STATUS_FAILURE;
 	}
 
-	wiphy_err(hw->wiphy,
+	wiphy_info(hw->wiphy,
 		"TX ring: - base: %p, pbase: %#x:%x,len: %x\n",
 		priv->txbd_ring_vbase,
 		(unsigned int)((unsigned long long)priv->txbd_ring_pbase >> 32),
@@ -112,4 +112,3 @@ int wlan_pcie_delete_txbd_ring(struct ieee80211_hw *hw)
 
 	return MLAN_STATUS_SUCCESS;
 }
-

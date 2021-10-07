@@ -268,7 +268,7 @@ int mwl_tx_init(struct ieee80211_hw *hw)
 	struct mwl_priv *priv = hw->priv;
 	int rc;
 
-	wiphy_err(hw->wiphy, "%s() called: ctype=%d\n", __FUNCTION__, priv->chip_type);
+	wiphy_info(hw->wiphy, "%s() called: ctype=%d\n", __FUNCTION__, priv->chip_type);
 
 	skb_queue_head_init(&priv->delay_q);
 
@@ -2438,4 +2438,3 @@ MODULE_LICENSE("GPL v2");
 
 module_param(pcie_intr_mode, int, 0);
 MODULE_PARM_DESC(pcie_intr_mode, "0: Legacy, 1: MSI");
-
