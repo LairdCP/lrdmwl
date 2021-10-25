@@ -264,6 +264,7 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 			wiphy_info(hw->wiphy,
 				"Vendor command \"%d\" rejected: Wi-Fi off\n",
 				hdr->lrd_cmd);
+			rc = -ENETDOWN;
 			goto fail;
 		}
 
