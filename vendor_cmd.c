@@ -216,6 +216,7 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	if (hdr->lrd_cmd == cpu_to_le16(LRD_CMD_PWR_TABLE)) {
 		if (priv->recovery_in_progress || priv->shutdown) {
+			rc = -ENETDOWN;
 			goto fail;
 		}
 
