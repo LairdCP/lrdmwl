@@ -261,8 +261,8 @@ lrd_vendor_cmd_lrd_write(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 	else {
 		if (priv->recovery_in_progress) {
-			wiphy_err(hw->wiphy,
-				"Vendor command \"%d\" failed: Wi-Fi off\n",
+			wiphy_info(hw->wiphy,
+				"Vendor command \"%d\" rejected: Wi-Fi off\n",
 				hdr->lrd_cmd);
 			goto fail;
 		}
